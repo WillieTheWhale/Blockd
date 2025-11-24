@@ -27,12 +27,20 @@ export interface RegisterData {
   password: string
   name: string
   role: UserRole
+  organization?: string
+  newOrganization?: string
 }
 
 export interface AuthResponse {
   user: User
   accessToken: string
   refreshToken: string
+}
+
+export interface ProfileUpdateFormData {
+  name: string
+  email: string
+  avatar?: string
 }
 
 /**
@@ -66,6 +74,30 @@ export interface CreateSessionData {
   scheduledAt: string
   position?: string
   department?: string
+}
+
+export interface CreateSessionFormData {
+  title: string
+  description?: string
+  candidateName: string
+  candidateEmail: string
+  scheduledAt: string
+  duration: number
+  position?: string
+  department?: string
+  questions: {
+    content: string
+    type: QuestionType
+    difficulty: DifficultyLevel
+    options?: string[]
+    correctAnswer?: string
+  }[]
+  settings: {
+    enableRecording: boolean
+    enableAiDetection: boolean
+    enableEyeTracking: boolean
+    sendEmailInvitation: boolean
+  }
 }
 
 export interface UpdateSessionData {
@@ -141,6 +173,102 @@ export interface WebSocketMessage {
   type: 'session_started' | 'session_ended' | 'question_sent' | 'answer_received' | 'error'
   payload: unknown
   timestamp: string
+}
+
+/**
+ * Real-time event types
+ */
+export type SecurityEventSeverity = 'low' | 'medium' | 'high' | 'critical'
+export type SecurityEventType =
+  | 'tab_switch'
+  | 'window_blur'
+  | 'copy_paste'
+  | 'multiple_faces'
+  | 'no_face'
+  | 'unauthorized_device'
+  | 'network_disconnect'
+  | 'suspicious_activity'
+
+export interface SecurityEvent {
+  id: string
+  sessionId: string
+  type: SecurityEventType
+  severity: SecurityEventSeverity
+  description: string
+  timestamp: string
+  metadata?: Record<string, unknown>
+}
+
+export interface GazePoint {
+  x: number
+  y: number
+  timestamp: number
+  confidence?: number
+}
+
+export interface GazeData {
+  sessionId: string
+  points: GazePoint[]
+  timestamp: string
+}
+
+export interface ChatMessage {
+  id: string
+  sessionId: string
+  senderId: string
+  senderName: string
+  content: string
+  type: 'user' | 'system'
+  timestamp: string
+  delivered?: boolean
+  read?: boolean
+}
+
+export interface AIDetectionResult {
+  id: string
+  sessionId: string
+  questionId: string
+  answerId: string
+  riskScore: number
+  riskLevel: 'low' | 'medium' | 'high' | 'critical'
+  similarityScores: {
+    gpt4: number
+    claude: number
+    gemini: number
+  }
+  flags: Array<{
+    type: string
+    description: string
+    severity: SecurityEventSeverity
+  }>
+  perplexityScore: number
+  ngramOverlap: number
+  recommendation: string
+  detailedAnalysis?: string
+  createdAt: string
+}
+
+export interface VideoStreamStats {
+  bandwidth: number
+  latency: number
+  packetsLost: number
+  frameRate: number
+  resolution: {
+    width: number
+    height: number
+  }
+}
+
+export interface WebRTCConfig {
+  iceServers: Array<{
+    urls: string | string[]
+    username?: string
+    credential?: string
+  }>
+  codecPreferences?: {
+    video?: string
+    audio?: string
+  }
 }
 
 /**
