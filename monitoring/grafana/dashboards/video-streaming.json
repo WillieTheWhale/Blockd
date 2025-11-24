@@ -1,0 +1,14 @@
+{
+  "dashboard": {
+    "title": "Video Streaming Metrics",
+    "tags": ["blockd", "video", "streaming"],
+    "panels": [
+      {"id": 1, "title": "Active Streams", "type": "stat", "targets": [{"expr": "video_active_streams"}]},
+      {"id": 2, "title": "Average Bitrate", "type": "graph", "targets": [{"expr": "video_stream_bitrate_bytes"}]},
+      {"id": 3, "title": "Upload Success Rate", "type": "graph", "targets": [{"expr": "rate(video_upload_success_total[5m]) / rate(video_upload_attempts_total[5m])"}]},
+      {"id": 4, "title": "Recording Duration", "type": "graph", "targets": [{"expr": "histogram_quantile(0.95, rate(video_recording_duration_seconds_bucket[5m]))"}]},
+      {"id": 5, "title": "S3 Upload Time", "type": "graph", "targets": [{"expr": "histogram_quantile(0.95, rate(video_s3_upload_duration_seconds_bucket[5m]))"}]}
+    ],
+    "refresh": "30s"
+  }
+}

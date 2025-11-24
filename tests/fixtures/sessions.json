@@ -1,0 +1,80 @@
+{
+  "sessions": [
+    {
+      "id": "ses_test_001",
+      "title": "Frontend Developer Interview",
+      "candidateName": "Alice Johnson",
+      "candidateEmail": "alice.johnson@test.com",
+      "position": "Senior Frontend Developer",
+      "duration": 60,
+      "status": "scheduled",
+      "scheduledAt": "2025-02-01T10:00:00.000Z",
+      "interviewerId": "usr_test_interviewer_001",
+      "inviteToken": "invite_token_001",
+      "createdAt": "2025-01-20T00:00:00.000Z",
+      "updatedAt": "2025-01-20T00:00:00.000Z"
+    },
+    {
+      "id": "ses_test_002",
+      "title": "Backend Engineer Interview",
+      "candidateName": "Bob Smith",
+      "candidateEmail": "bob.smith@test.com",
+      "position": "Backend Engineer",
+      "duration": 90,
+      "status": "in_progress",
+      "scheduledAt": "2025-01-25T14:00:00.000Z",
+      "startedAt": "2025-01-25T14:05:00.000Z",
+      "interviewerId": "usr_test_interviewer_001",
+      "inviteToken": "invite_token_002",
+      "createdAt": "2025-01-20T00:00:00.000Z",
+      "updatedAt": "2025-01-25T14:05:00.000Z"
+    },
+    {
+      "id": "ses_test_003",
+      "title": "Full Stack Developer Interview",
+      "candidateName": "Charlie Davis",
+      "candidateEmail": "charlie.davis@test.com",
+      "position": "Full Stack Developer",
+      "duration": 60,
+      "status": "completed",
+      "scheduledAt": "2025-01-15T09:00:00.000Z",
+      "startedAt": "2025-01-15T09:02:00.000Z",
+      "endedAt": "2025-01-15T10:15:00.000Z",
+      "actualDuration": 73,
+      "interviewerId": "usr_test_interviewer_002",
+      "inviteToken": "invite_token_003",
+      "createdAt": "2025-01-10T00:00:00.000Z",
+      "updatedAt": "2025-01-15T10:15:00.000Z"
+    },
+    {
+      "id": "ses_test_004",
+      "title": "DevOps Engineer Interview",
+      "candidateName": "Diana Prince",
+      "candidateEmail": "diana.prince@test.com",
+      "position": "DevOps Engineer",
+      "duration": 45,
+      "status": "cancelled",
+      "scheduledAt": "2025-01-18T16:00:00.000Z",
+      "interviewerId": "usr_test_interviewer_002",
+      "inviteToken": "invite_token_004",
+      "cancelledAt": "2025-01-17T12:00:00.000Z",
+      "cancellationReason": "Candidate withdrew application",
+      "createdAt": "2025-01-12T00:00:00.000Z",
+      "updatedAt": "2025-01-17T12:00:00.000Z"
+    },
+    {
+      "id": "ses_test_005",
+      "title": "Data Scientist Interview",
+      "candidateName": "Eve Anderson",
+      "candidateEmail": "eve.anderson@test.com",
+      "position": "Data Scientist",
+      "duration": 120,
+      "status": "scheduled",
+      "scheduledAt": "2025-02-05T11:00:00.000Z",
+      "interviewerId": "usr_test_interviewer_001",
+      "inviteToken": "invite_token_005",
+      "createdAt": "2025-01-22T00:00:00.000Z",
+      "updatedAt": "2025-01-22T00:00:00.000Z"
+    }
+  ]
+}

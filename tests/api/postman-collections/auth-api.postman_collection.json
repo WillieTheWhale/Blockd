@@ -1,0 +1,416 @@
+{
+  "info": {
+    "name": "Blockd - Authentication API",
+    "description": "API integration tests for authentication endpoints",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_postman_id": "auth-api-001",
+    "version": "1.0.0"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "{{baseUrl}}",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "refreshToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "userId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "testEmail",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "mfaSecret",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "POST /auth/register - Create new user",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "// Generate unique email for test",
+              "const timestamp = Date.now();",
+              "pm.collectionVariables.set('testEmail', `test-${timestamp}@blockd.test`);"
+            ],
+            "type": "text/javascript"
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status code is 201', function () {",
+              "    pm.response.to.have.status(201);",
+              "});",
+              "",
+              "pm.test('Response has user object', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('user');",
+              "    pm.expect(jsonData.user).to.have.property('id');",
+              "    pm.expect(jsonData.user).to.have.property('email');",
+              "    pm.expect(jsonData.user.email).to.eql(pm.collectionVariables.get('testEmail'));",
+              "});",
+              "",
+              "pm.test('Response has success message', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('message');",
+              "    pm.expect(jsonData.message).to.include('Registration successful');",
+              "});",
+              "",
+              "pm.test('User ID is stored', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.collectionVariables.set('userId', jsonData.user.id);",
+              "});",
+              "",
+              "pm.test('Response time is less than 1000ms', function () {",
+              "    pm.expect(pm.response.responseTime).to.be.below(1000);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"firstName\": \"Test\",\n  \"lastName\": \"User\",\n  \"email\": \"{{testEmail}}\",\n  \"password\": \"SecurePass123!\",\n  \"confirmPassword\": \"SecurePass123!\",\n  \"role\": \"interviewer\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/auth/register",
+          "host": ["{{baseUrl}}"],
+          "path": ["auth", "register"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "POST /auth/login - Login and receive JWT",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status code is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('Response has access token', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('accessToken');",
+              "    pm.expect(jsonData.accessToken).to.be.a('string');",
+              "    pm.expect(jsonData.accessToken.length).to.be.above(0);",
+              "    pm.collectionVariables.set('accessToken', jsonData.accessToken);",
+              "});",
+              "",
+              "pm.test('Response has refresh token', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('refreshToken');",
+              "    pm.expect(jsonData.refreshToken).to.be.a('string');",
+              "    pm.collectionVariables.set('refreshToken', jsonData.refreshToken);",
+              "});",
+              "",
+              "pm.test('Response has user object', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('user');",
+              "    pm.expect(jsonData.user).to.have.property('id');",
+              "    pm.expect(jsonData.user).to.have.property('email');",
+              "    pm.expect(jsonData.user).to.have.property('role');",
+              "});",
+              "",
+              "pm.test('Token expires in reasonable time', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('expiresIn');",
+              "    pm.expect(jsonData.expiresIn).to.be.above(0);",
+              "});",
+              "",
+              "pm.test('Response time is less than 500ms', function () {",
+              "    pm.expect(pm.response.responseTime).to.be.below(500);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"interviewer@blockd.test\",\n  \"password\": \"Test123456!\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/auth/login",
+          "host": ["{{baseUrl}}"],
+          "path": ["auth", "login"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "POST /auth/refresh - Refresh access token",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status code is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('Response has new access token', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('accessToken');",
+              "    pm.expect(jsonData.accessToken).to.be.a('string');",
+              "    pm.expect(jsonData.accessToken).to.not.eql(pm.collectionVariables.get('accessToken'));",
+              "    pm.collectionVariables.set('accessToken', jsonData.accessToken);",
+              "});",
+              "",
+              "pm.test('Response has new refresh token', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('refreshToken');",
+              "    pm.collectionVariables.set('refreshToken', jsonData.refreshToken);",
+              "});",
+              "",
+              "pm.test('Response time is less than 300ms', function () {",
+              "    pm.expect(pm.response.responseTime).to.be.below(300);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/auth/refresh",
+          "host": ["{{baseUrl}}"],
+          "path": ["auth", "refresh"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "POST /auth/logout - Invalidate tokens",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status code is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('Response has success message', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('message');",
+              "    pm.expect(jsonData.message).to.include('Logout successful');",
+              "});",
+              "",
+              "pm.test('Response time is less than 200ms', function () {",
+              "    pm.expect(pm.response.responseTime).to.be.below(200);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/auth/logout",
+          "host": ["{{baseUrl}}"],
+          "path": ["auth", "logout"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "POST /auth/mfa/setup - Setup MFA",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "// Login first to get valid token",
+              "// This assumes the login test has already run"
+            ],
+            "type": "text/javascript"
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status code is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('Response has MFA secret', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('secret');",
+              "    pm.expect(jsonData.secret).to.be.a('string');",
+              "    pm.collectionVariables.set('mfaSecret', jsonData.secret);",
+              "});",
+              "",
+              "pm.test('Response has QR code URL', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('qrCodeUrl');",
+              "    pm.expect(jsonData.qrCodeUrl).to.include('otpauth://');",
+              "});",
+              "",
+              "pm.test('Response has backup codes', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('backupCodes');",
+              "    pm.expect(jsonData.backupCodes).to.be.an('array');",
+              "    pm.expect(jsonData.backupCodes.length).to.be.above(0);",
+              "});",
+              "",
+              "pm.test('Response time is less than 500ms', function () {",
+              "    pm.expect(pm.response.responseTime).to.be.below(500);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/auth/mfa/setup",
+          "host": ["{{baseUrl}}"],
+          "path": ["auth", "mfa", "setup"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "POST /auth/mfa/verify - Verify MFA code",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status code is 200 or 400', function () {",
+              "    pm.expect(pm.response.code).to.be.oneOf([200, 400]);",
+              "});",
+              "",
+              "if (pm.response.code === 200) {",
+              "    pm.test('MFA verification successful', function () {",
+              "        const jsonData = pm.response.json();",
+              "        pm.expect(jsonData).to.have.property('verified');",
+              "        pm.expect(jsonData.verified).to.be.true;",
+              "    });",
+              "} else {",
+              "    pm.test('Invalid code error returned', function () {",
+              "        const jsonData = pm.response.json();",
+              "        pm.expect(jsonData).to.have.property('error');",
+              "        pm.expect(jsonData.error).to.include('Invalid');",
+              "    });",
+              "}",
+              "",
+              "pm.test('Response time is less than 300ms', function () {",
+              "    pm.expect(pm.response.responseTime).to.be.below(300);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"123456\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/auth/mfa/verify",
+          "host": ["{{baseUrl}}"],
+          "path": ["auth", "mfa", "verify"]
+        }
+      },
+      "response": []
+    }
+  ]
+}

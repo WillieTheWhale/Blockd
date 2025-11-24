@@ -1,0 +1,15 @@
+{
+  "dashboard": {
+    "title": "Redis Metrics",
+    "tags": ["blockd", "redis", "cache"],
+    "panels": [
+      {"id": 1, "title": "Cache Hit Rate", "type": "graph", "targets": [{"expr": "rate(redis_keyspace_hits_total[5m]) / (rate(redis_keyspace_hits_total[5m]) + rate(redis_keyspace_misses_total[5m]))"}]},
+      {"id": 2, "title": "Memory Usage", "type": "graph", "targets": [{"expr": "redis_memory_used_bytes"}, {"expr": "redis_memory_max_bytes"}]},
+      {"id": 3, "title": "Connected Clients", "type": "graph", "targets": [{"expr": "redis_connected_clients"}]},
+      {"id": 4, "title": "Commands per Second", "type": "graph", "targets": [{"expr": "rate(redis_commands_processed_total[5m])"}]},
+      {"id": 5, "title": "Evicted Keys", "type": "graph", "targets": [{"expr": "rate(redis_evicted_keys_total[5m])"}]},
+      {"id": 6, "title": "Network I/O", "type": "graph", "targets": [{"expr": "rate(redis_net_input_bytes_total[5m])", "legendFormat": "Input"}, {"expr": "rate(redis_net_output_bytes_total[5m])", "legendFormat": "Output"}]}
+    ],
+    "refresh": "30s"
+  }
+}

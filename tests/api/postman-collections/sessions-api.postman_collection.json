@@ -1,0 +1,462 @@
+{
+  "info": {
+    "name": "Blockd - Sessions API",
+    "description": "API integration tests for session management endpoints",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_postman_id": "sessions-api-001",
+    "version": "1.0.0"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "{{baseUrl}}",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "sessionId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "inviteToken",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "exec": [
+          "// Ensure we have a valid access token",
+          "if (!pm.collectionVariables.get('accessToken')) {",
+          "    console.log('Warning: No access token set. Please run auth/login first.');",
+          "}"
+        ],
+        "type": "text/javascript"
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "POST /sessions - Create session",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status code is 201', function () {",
+              "    pm.response.to.have.status(201);",
+              "});",
+              "",
+              "pm.test('Response has session object', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('session');",
+              "    pm.expect(jsonData.session).to.have.property('id');",
+              "    pm.expect(jsonData.session).to.have.property('title');",
+              "    pm.expect(jsonData.session).to.have.property('status');",
+              "    pm.expect(jsonData.session.status).to.eql('scheduled');",
+              "});",
+              "",
+              "pm.test('Session ID is stored', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.collectionVariables.set('sessionId', jsonData.session.id);",
+              "});",
+              "",
+              "pm.test('Response has invite token', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData.session).to.have.property('inviteToken');",
+              "    pm.expect(jsonData.session.inviteToken).to.be.a('string');",
+              "    pm.collectionVariables.set('inviteToken', jsonData.session.inviteToken);",
+              "});",
+              "",
+              "pm.test('Response has candidate details', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData.session).to.have.property('candidateName');",
+              "    pm.expect(jsonData.session).to.have.property('candidateEmail');",
+              "    pm.expect(jsonData.session).to.have.property('position');",
+              "});",
+              "",
+              "pm.test('Response time is less than 500ms', function () {",
+              "    pm.expect(pm.response.responseTime).to.be.below(500);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": \"API Test Interview Session\",\n  \"candidateName\": \"John Doe\",\n  \"candidateEmail\": \"john.doe@test.com\",\n  \"position\": \"Senior Software Engineer\",\n  \"duration\": 60,\n  \"scheduledAt\": \"{{$isoTimestamp}}\",\n  \"questions\": [\n    {\n      \"text\": \"Explain asynchronous programming in JavaScript\",\n      \"difficulty\": \"medium\",\n      \"category\": \"technical\"\n    },\n    {\n      \"text\": \"Describe your experience with React\",\n      \"difficulty\": \"medium\",\n      \"category\": \"experience\"\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/sessions",
+          "host": ["{{baseUrl}}"],
+          "path": ["sessions"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "GET /sessions - List sessions with pagination",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status code is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('Response has sessions array', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('sessions');",
+              "    pm.expect(jsonData.sessions).to.be.an('array');",
+              "});",
+              "",
+              "pm.test('Response has pagination metadata', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('pagination');",
+              "    pm.expect(jsonData.pagination).to.have.property('total');",
+              "    pm.expect(jsonData.pagination).to.have.property('page');",
+              "    pm.expect(jsonData.pagination).to.have.property('limit');",
+              "    pm.expect(jsonData.pagination).to.have.property('totalPages');",
+              "});",
+              "",
+              "pm.test('Sessions have required fields', function () {",
+              "    const jsonData = pm.response.json();",
+              "    if (jsonData.sessions.length > 0) {",
+              "        const session = jsonData.sessions[0];",
+              "        pm.expect(session).to.have.property('id');",
+              "        pm.expect(session).to.have.property('title');",
+              "        pm.expect(session).to.have.property('status');",
+              "        pm.expect(session).to.have.property('createdAt');",
+              "    }",
+              "});",
+              "",
+              "pm.test('Pagination limits are respected', function () {",
+              "    const jsonData = pm.response.json();",
+              "    const limit = parseInt(pm.request.url.query.get('limit') || '10');",
+              "    pm.expect(jsonData.sessions.length).to.be.at.most(limit);",
+              "});",
+              "",
+              "pm.test('Response time is less than 300ms', function () {",
+              "    pm.expect(pm.response.responseTime).to.be.below(300);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/sessions?page=1&limit=10&status=all",
+          "host": ["{{baseUrl}}"],
+          "path": ["sessions"],
+          "query": [
+            {
+              "key": "page",
+              "value": "1"
+            },
+            {
+              "key": "limit",
+              "value": "10"
+            },
+            {
+              "key": "status",
+              "value": "all"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "GET /sessions/:id - Get session details",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status code is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('Response has session object', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('session');",
+              "});",
+              "",
+              "pm.test('Session has all required fields', function () {",
+              "    const jsonData = pm.response.json();",
+              "    const session = jsonData.session;",
+              "    ",
+              "    pm.expect(session).to.have.property('id');",
+              "    pm.expect(session).to.have.property('title');",
+              "    pm.expect(session).to.have.property('status');",
+              "    pm.expect(session).to.have.property('candidateName');",
+              "    pm.expect(session).to.have.property('candidateEmail');",
+              "    pm.expect(session).to.have.property('position');",
+              "    pm.expect(session).to.have.property('duration');",
+              "    pm.expect(session).to.have.property('createdAt');",
+              "    pm.expect(session).to.have.property('questions');",
+              "});",
+              "",
+              "pm.test('Session ID matches requested ID', function () {",
+              "    const jsonData = pm.response.json();",
+              "    const requestedId = pm.collectionVariables.get('sessionId');",
+              "    pm.expect(jsonData.session.id).to.eql(requestedId);",
+              "});",
+              "",
+              "pm.test('Questions array is present', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData.session.questions).to.be.an('array');",
+              "    pm.expect(jsonData.session.questions.length).to.be.above(0);",
+              "});",
+              "",
+              "pm.test('Response time is less than 200ms', function () {",
+              "    pm.expect(pm.response.responseTime).to.be.below(200);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/sessions/{{sessionId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["sessions", "{{sessionId}}"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "POST /sessions/:id/start - Start session",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status code is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('Session status updated to in_progress', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData.session).to.have.property('status');",
+              "    pm.expect(jsonData.session.status).to.eql('in_progress');",
+              "});",
+              "",
+              "pm.test('Session has startedAt timestamp', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData.session).to.have.property('startedAt');",
+              "    pm.expect(jsonData.session.startedAt).to.be.a('string');",
+              "    ",
+              "    const startedAt = new Date(jsonData.session.startedAt);",
+              "    pm.expect(startedAt.getTime()).to.be.below(Date.now());",
+              "});",
+              "",
+              "pm.test('Response has WebSocket connection details', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('wsUrl');",
+              "    pm.expect(jsonData.wsUrl).to.include('ws');",
+              "});",
+              "",
+              "pm.test('Response time is less than 300ms', function () {",
+              "    pm.expect(pm.response.responseTime).to.be.below(300);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/sessions/{{sessionId}}/start",
+          "host": ["{{baseUrl}}"],
+          "path": ["sessions", "{{sessionId}}", "start"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "POST /sessions/:id/end - End session",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status code is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('Session status updated to completed', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData.session).to.have.property('status');",
+              "    pm.expect(jsonData.session.status).to.eql('completed');",
+              "});",
+              "",
+              "pm.test('Session has endedAt timestamp', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData.session).to.have.property('endedAt');",
+              "    pm.expect(jsonData.session.endedAt).to.be.a('string');",
+              "    ",
+              "    const endedAt = new Date(jsonData.session.endedAt);",
+              "    const startedAt = new Date(jsonData.session.startedAt);",
+              "    pm.expect(endedAt.getTime()).to.be.above(startedAt.getTime());",
+              "});",
+              "",
+              "pm.test('Session has duration calculated', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData.session).to.have.property('actualDuration');",
+              "    pm.expect(jsonData.session.actualDuration).to.be.a('number');",
+              "    pm.expect(jsonData.session.actualDuration).to.be.above(0);",
+              "});",
+              "",
+              "pm.test('Response has report URL', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('reportUrl');",
+              "    pm.expect(jsonData.reportUrl).to.be.a('string');",
+              "});",
+              "",
+              "pm.test('Response time is less than 500ms', function () {",
+              "    pm.expect(pm.response.responseTime).to.be.below(500);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"reason\": \"completed\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/sessions/{{sessionId}}/end",
+          "host": ["{{baseUrl}}"],
+          "path": ["sessions", "{{sessionId}}", "end"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "GET /sessions/:id/events - Get security events",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status code is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('Response has events array', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('events');",
+              "    pm.expect(jsonData.events).to.be.an('array');",
+              "});",
+              "",
+              "pm.test('Events have required fields', function () {",
+              "    const jsonData = pm.response.json();",
+              "    if (jsonData.events.length > 0) {",
+              "        const event = jsonData.events[0];",
+              "        pm.expect(event).to.have.property('id');",
+              "        pm.expect(event).to.have.property('type');",
+              "        pm.expect(event).to.have.property('severity');",
+              "        pm.expect(event).to.have.property('timestamp');",
+              "        pm.expect(event).to.have.property('sessionId');",
+              "    }",
+              "});",
+              "",
+              "pm.test('Response has summary statistics', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('summary');",
+              "    pm.expect(jsonData.summary).to.have.property('total');",
+              "    pm.expect(jsonData.summary).to.have.property('bySeverity');",
+              "});",
+              "",
+              "pm.test('Events are ordered by timestamp', function () {",
+              "    const jsonData = pm.response.json();",
+              "    if (jsonData.events.length > 1) {",
+              "        for (let i = 1; i < jsonData.events.length; i++) {",
+              "            const prevTime = new Date(jsonData.events[i-1].timestamp).getTime();",
+              "            const currTime = new Date(jsonData.events[i].timestamp).getTime();",
+              "            pm.expect(prevTime).to.be.at.least(currTime);",
+              "        }",
+              "    }",
+              "});",
+              "",
+              "pm.test('Response time is less than 300ms', function () {",
+              "    pm.expect(pm.response.responseTime).to.be.below(300);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/sessions/{{sessionId}}/events?severity=all",
+          "host": ["{{baseUrl}}"],
+          "path": ["sessions", "{{sessionId}}", "events"],
+          "query": [
+            {
+              "key": "severity",
+              "value": "all"
+            }
+          ]
+        }
+      },
+      "response": []
+    }
+  ]
+}

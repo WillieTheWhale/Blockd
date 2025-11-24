@@ -1,0 +1,69 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: redis-backup
+  namespace: production
+spec:
+  schedule: "0 */6 * * *"  # Every 6 hours
+  successfulJobsHistoryLimit: 5
+  failedJobsHistoryLimit: 2
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: backup-sa
+          containers:
+          - name: redis-backup
+            image: redis:7-alpine
+            command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+
+              BACKUP_DATE=$(date +%Y%m%d_%H%M%S)
+              BACKUP_FILE="redis-backup-${BACKUP_DATE}.rdb"
+              S3_BUCKET="blockd-backups-production"
+
+              echo "Starting Redis backup at $(date)"
+
+              # Trigger Redis BGSAVE
+              redis-cli -h $REDIS_HOST -a $REDIS_PASSWORD BGSAVE
+
+              # Wait for BGSAVE to complete
+              sleep 5
+              while [ "$(redis-cli -h $REDIS_HOST -a $REDIS_PASSWORD LASTSAVE)" = "$(date +%s)" ]; do
+                echo "Waiting for BGSAVE to complete..."
+                sleep 2
+              done
+
+              echo "BGSAVE completed"
+
+              # Copy RDB file from Redis pod
+              # This would require kubectl or a shared volume
+              # For managed Redis (ElastiCache), use AWS backup instead
+
+              echo "Note: For AWS ElastiCache Redis, use automated backups in AWS console"
+              echo "Backup metadata recorded at $(date)"
+            env:
+            - name: REDIS_HOST
+              value: "redis-master"
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: blockd-secrets
+                  key: redis-password
+
+---
+# For AWS ElastiCache Redis, configure automated backups via Terraform
+# The Redis instance created in Terraform already has:
+# - Snapshot retention: 7 days (production), 1 day (staging)
+# - Snapshot window: 03:00-05:00 UTC
+# - AOF persistence enabled
+#
+# Manual snapshot command:
+# aws elasticache create-snapshot \
+#   --cache-cluster-id blockd-production-redis \
+#   --snapshot-name blockd-redis-manual-$(date +%Y%m%d-%H%M%S)

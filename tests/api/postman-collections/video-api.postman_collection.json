@@ -1,0 +1,392 @@
+{
+  "info": {
+    "name": "Blockd - Video API",
+    "description": "API integration tests for WebRTC and video recording endpoints",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_postman_id": "video-api-001",
+    "version": "1.0.0"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "{{baseUrl}}",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "sessionId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "transportId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "producerId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "recordingId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "POST /webrtc/create-transport",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status code is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('Response has transport configuration', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('transport');",
+              "    pm.expect(jsonData.transport).to.have.property('id');",
+              "    pm.expect(jsonData.transport).to.have.property('iceParameters');",
+              "    pm.expect(jsonData.transport).to.have.property('iceCandidates');",
+              "    pm.expect(jsonData.transport).to.have.property('dtlsParameters');",
+              "});",
+              "",
+              "pm.test('Transport ID is stored', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.collectionVariables.set('transportId', jsonData.transport.id);",
+              "});",
+              "",
+              "pm.test('ICE parameters are valid', function () {",
+              "    const jsonData = pm.response.json();",
+              "    const ice = jsonData.transport.iceParameters;",
+              "    pm.expect(ice).to.have.property('usernameFragment');",
+              "    pm.expect(ice).to.have.property('password');",
+              "    pm.expect(ice.usernameFragment).to.be.a('string');",
+              "    pm.expect(ice.password).to.be.a('string');",
+              "});",
+              "",
+              "pm.test('ICE candidates array is present', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData.transport.iceCandidates).to.be.an('array');",
+              "    pm.expect(jsonData.transport.iceCandidates.length).to.be.above(0);",
+              "});",
+              "",
+              "pm.test('Response time is less than 500ms', function () {",
+              "    pm.expect(pm.response.responseTime).to.be.below(500);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"sessionId\": \"{{sessionId}}\",\n  \"direction\": \"send\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/webrtc/create-transport",
+          "host": ["{{baseUrl}}"],
+          "path": ["webrtc", "create-transport"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "POST /webrtc/connect-transport",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status code is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('Response has success confirmation', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('connected');",
+              "    pm.expect(jsonData.connected).to.be.true;",
+              "});",
+              "",
+              "pm.test('Response time is less than 300ms', function () {",
+              "    pm.expect(pm.response.responseTime).to.be.below(300);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"transportId\": \"{{transportId}}\",\n  \"dtlsParameters\": {\n    \"role\": \"client\",\n    \"fingerprints\": [\n      {\n        \"algorithm\": \"sha-256\",\n        \"value\": \"E7:96:7F:2F:7C:E4:8E:3D:12:34:56:78:90:AB:CD:EF:12:34:56:78:90:AB:CD:EF:12:34:56:78:90:AB:CD:EF\"\n      }\n    ]\n  }\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/webrtc/connect-transport",
+          "host": ["{{baseUrl}}"],
+          "path": ["webrtc", "connect-transport"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "POST /webrtc/produce",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status code is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('Response has producer ID', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('producerId');",
+              "    pm.expect(jsonData.producerId).to.be.a('string');",
+              "    pm.collectionVariables.set('producerId', jsonData.producerId);",
+              "});",
+              "",
+              "pm.test('Producer has media type', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('kind');",
+              "    pm.expect(jsonData.kind).to.be.oneOf(['video', 'audio']);",
+              "});",
+              "",
+              "pm.test('Response time is less than 400ms', function () {",
+              "    pm.expect(pm.response.responseTime).to.be.below(400);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"transportId\": \"{{transportId}}\",\n  \"kind\": \"video\",\n  \"rtpParameters\": {\n    \"codecs\": [\n      {\n        \"mimeType\": \"video/VP8\",\n        \"clockRate\": 90000,\n        \"payloadType\": 96\n      }\n    ],\n    \"encodings\": [\n      {\n        \"ssrc\": 12345678\n      }\n    ]\n  }\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/webrtc/produce",
+          "host": ["{{baseUrl}}"],
+          "path": ["webrtc", "produce"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "POST /recording/start",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status code is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('Response has recording ID', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('recordingId');",
+              "    pm.expect(jsonData.recordingId).to.be.a('string');",
+              "    pm.collectionVariables.set('recordingId', jsonData.recordingId);",
+              "});",
+              "",
+              "pm.test('Recording status is active', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('status');",
+              "    pm.expect(jsonData.status).to.eql('recording');",
+              "});",
+              "",
+              "pm.test('Recording has start timestamp', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('startedAt');",
+              "    pm.expect(jsonData.startedAt).to.be.a('string');",
+              "});",
+              "",
+              "pm.test('Response time is less than 500ms', function () {",
+              "    pm.expect(pm.response.responseTime).to.be.below(500);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"sessionId\": \"{{sessionId}}\",\n  \"producerIds\": [\"{{producerId}}\"]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/recording/start",
+          "host": ["{{baseUrl}}"],
+          "path": ["recording", "start"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "POST /recording/stop",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status code is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('Recording status is stopped', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('status');",
+              "    pm.expect(jsonData.status).to.eql('completed');",
+              "});",
+              "",
+              "pm.test('Recording has stop timestamp', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('stoppedAt');",
+              "    pm.expect(jsonData.stoppedAt).to.be.a('string');",
+              "    ",
+              "    const stoppedAt = new Date(jsonData.stoppedAt);",
+              "    const startedAt = new Date(jsonData.startedAt);",
+              "    pm.expect(stoppedAt.getTime()).to.be.above(startedAt.getTime());",
+              "});",
+              "",
+              "pm.test('Recording has duration', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('duration');",
+              "    pm.expect(jsonData.duration).to.be.a('number');",
+              "    pm.expect(jsonData.duration).to.be.above(0);",
+              "});",
+              "",
+              "pm.test('Response time is less than 1000ms', function () {",
+              "    pm.expect(pm.response.responseTime).to.be.below(1000);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"recordingId\": \"{{recordingId}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/recording/stop",
+          "host": ["{{baseUrl}}"],
+          "path": ["recording", "stop"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "GET /recording/:id - Verify S3 URL returned",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status code is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('Response has recording object', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('recording');",
+              "});",
+              "",
+              "pm.test('Recording has S3 URL', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData.recording).to.have.property('url');",
+              "    pm.expect(jsonData.recording.url).to.be.a('string');",
+              "    pm.expect(jsonData.recording.url).to.match(/^https?:\\/\\/.+/);",
+              "});",
+              "",
+              "pm.test('Recording has file metadata', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData.recording).to.have.property('size');",
+              "    pm.expect(jsonData.recording).to.have.property('format');",
+              "    pm.expect(jsonData.recording).to.have.property('duration');",
+              "});",
+              "",
+              "pm.test('Recording status is completed', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData.recording.status).to.eql('completed');",
+              "});",
+              "",
+              "pm.test('Response time is less than 200ms', function () {",
+              "    pm.expect(pm.response.responseTime).to.be.below(200);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/recording/{{recordingId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["recording", "{{recordingId}}"]
+        }
+      },
+      "response": []
+    }
+  ]
+}
