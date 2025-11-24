@@ -1,0 +1,328 @@
+// Blockd Platform - Prisma Schema
+// Based on PostgreSQL 18.1 database schema from Agent 1
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [uuidOssp(map: "uuid-ossp"), vector, timescaledb, pgcrypto]
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+enum UserRole {
+  admin
+  interviewer
+  interviewee
+
+  @@map("user_role")
+}
+
+enum SubscriptionTier {
+  free
+  professional
+  enterprise
+
+  @@map("subscription_tier")
+}
+
+enum SessionStatus {
+  scheduled
+  active
+  ended
+  cancelled
+
+  @@map("session_status")
+}
+
+enum SecurityEventType {
+  suspicious_process
+  screen_recording_detected
+  vm_detected
+  window_focus_changed
+  multi_monitor_detected
+  unauthorized_browser
+  copy_paste_detected
+  keyboard_shortcut_blocked
+
+  @@map("security_event_type")
+}
+
+enum SeverityLevel {
+  low
+  medium
+  high
+  critical
+
+  @@map("severity_level")
+}
+
+enum QuestionDifficulty {
+  easy
+  medium
+  hard
+  expert
+
+  @@map("question_difficulty")
+}
+
+enum AiModelName {
+  gpt_4              @map("gpt-4")
+  gpt_3_5_turbo      @map("gpt-3.5-turbo")
+  claude_3_opus      @map("claude-3-opus")
+  claude_3_sonnet    @map("claude-3-sonnet")
+  gemini_pro         @map("gemini-pro")
+  llama_2            @map("llama-2")
+
+  @@map("ai_model_name")
+}
+
+// ============================================================================
+// MODELS
+// ============================================================================
+
+model Organization {
+  id                     String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name                   String            @db.VarChar(255)
+  subscriptionTier       SubscriptionTier  @default(free) @map("subscription_tier")
+  settings               Json              @default("{}")
+  maxConcurrentSessions  Int               @default(5) @map("max_concurrent_sessions")
+  monthlySessionLimit    Int               @default(100) @map("monthly_session_limit")
+  createdAt              DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt              DateTime?         @map("deleted_at") @db.Timestamptz(6)
+
+  users                  User[]
+  interviewSessions      InterviewSession[]
+
+  @@map("organizations")
+}
+
+model User {
+  id                     String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  email                  String            @unique @db.VarChar(255)
+  passwordHash           String            @map("password_hash") @db.VarChar(255)
+  role                   UserRole          @default(interviewee)
+  organizationId         String?           @map("organization_id") @db.Uuid
+  firstName              String?           @map("first_name") @db.VarChar(100)
+  lastName               String?           @map("last_name") @db.VarChar(100)
+  mfaEnabled             Boolean           @default(false) @map("mfa_enabled")
+  mfaSecret              String?           @map("mfa_secret") @db.VarChar(255)
+  emailVerified          Boolean           @default(false) @map("email_verified")
+  lastLoginAt            DateTime?         @map("last_login_at") @db.Timestamptz(6)
+  createdAt              DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt              DateTime?         @map("deleted_at") @db.Timestamptz(6)
+
+  organization           Organization?     @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  interviewedSessions    InterviewSession[] @relation("InterviewerSessions")
+  attendedSessions       InterviewSession[] @relation("IntervieweeSessions")
+  auditLogs              AuditLog[]
+
+  @@index([email])
+  @@index([organizationId])
+  @@index([role])
+  @@map("users")
+}
+
+model InterviewSession {
+  id                     String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  interviewerId          String            @map("interviewer_id") @db.Uuid
+  intervieweeId          String?           @map("interviewee_id") @db.Uuid
+  intervieweeEmail       String?           @map("interviewee_email") @db.VarChar(255)
+  organizationId         String            @map("organization_id") @db.Uuid
+  status                 SessionStatus     @default(scheduled)
+  sessionToken           String?           @unique @map("session_token") @db.VarChar(255)
+  scheduledStart         DateTime?         @map("scheduled_start") @db.Timestamptz(6)
+  actualStart            DateTime?         @map("actual_start") @db.Timestamptz(6)
+  actualEnd              DateTime?         @map("actual_end") @db.Timestamptz(6)
+  durationMinutes        Int?              @map("duration_minutes")
+  riskScore              Decimal?          @map("risk_score") @db.Decimal(5, 4)
+  videoUrl               String?           @map("video_url")
+  recordingUrl           String?           @map("recording_url")
+  metadata               Json              @default("{}")
+  createdAt              DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  interviewer            User              @relation("InterviewerSessions", fields: [interviewerId], references: [id], onDelete: Cascade)
+  interviewee            User?             @relation("IntervieweeSessions", fields: [intervieweeId], references: [id], onDelete: SetNull)
+  organization           Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  securityEvents         SecurityEvent[]
+  questions              Question[]
+  gazeEvents             GazeEvent[]
+  browserTelemetry       BrowserTelemetry[]
+  sessionReports         SessionReport?
+
+  @@index([interviewerId])
+  @@index([intervieweeId])
+  @@index([organizationId, status])
+  @@index([status])
+  @@index([scheduledStart])
+  @@index([sessionToken])
+  @@map("interview_sessions")
+}
+
+model SecurityEvent {
+  id                     String                @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  sessionId              String                @map("session_id") @db.Uuid
+  eventType              SecurityEventType     @map("event_type")
+  severity               SeverityLevel         @default(medium)
+  description            String?
+  metadata               Json                  @default("{}")
+  timestamp              DateTime              @default(now()) @db.Timestamptz(6)
+  createdAt              DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  session                InterviewSession      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([sessionId, timestamp(sort: Desc)])
+  @@index([eventType])
+  @@index([severity])
+  @@map("security_events")
+}
+
+model Question {
+  id                     String                @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  sessionId              String                @map("session_id") @db.Uuid
+  questionText           String                @map("question_text")
+  questionOrder          Int?                  @map("question_order")
+  expectedDuration       Int?                  @map("expected_duration")
+  difficulty             QuestionDifficulty?
+  askedAt                DateTime?             @map("asked_at") @db.Timestamptz(6)
+  createdAt              DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  session                InterviewSession      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  answerAnalysis         AnswerAnalysis[]
+
+  @@index([sessionId])
+  @@index([sessionId, questionOrder])
+  @@map("questions")
+}
+
+model AiAnswerCache {
+  id                     String                @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  questionHash           String                @map("question_hash") @db.VarChar(64)
+  questionText           String                @map("question_text")
+  modelName              AiModelName           @map("model_name")
+  answerText             String                @map("answer_text")
+  embedding              Unsupported("vector(384)")?
+  perplexityScore        Decimal?              @map("perplexity_score") @db.Decimal(10, 6)
+  tokenCount             Int?                  @map("token_count")
+  metadata               Json                  @default("{}")
+  createdAt              DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([questionHash, modelName])
+  @@index([questionHash])
+  @@index([modelName])
+  @@map("ai_answer_cache")
+}
+
+model AnswerAnalysis {
+  id                     String                @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  questionId             String                @map("question_id") @db.Uuid
+  answerText             String                @map("answer_text")
+  answerAudioUrl         String?               @map("answer_audio_url")
+  transcriptionText      String?               @map("transcription_text")
+  riskScore              Decimal?              @map("risk_score") @db.Decimal(5, 4)
+  similarityScores       Json                  @default("{}") @map("similarity_scores")
+  responseTiming         Json                  @default("{}") @map("response_timing")
+  perplexityScore        Decimal?              @map("perplexity_score") @db.Decimal(10, 6)
+  isAiGenerated          Boolean?              @map("is_ai_generated")
+  confidenceScore        Decimal?              @map("confidence_score") @db.Decimal(5, 4)
+  metadata               Json                  @default("{}")
+  analyzedAt             DateTime              @default(now()) @map("analyzed_at") @db.Timestamptz(6)
+  createdAt              DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  question               Question              @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@index([questionId])
+  @@index([riskScore(sort: Desc)])
+  @@index([isAiGenerated])
+  @@map("answer_analysis")
+}
+
+model GazeEvent {
+  id                     String                @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  sessionId              String                @map("session_id") @db.Uuid
+  timestamp              DateTime              @db.Timestamptz(6)
+  gazeX                  Decimal?              @map("gaze_x") @db.Decimal(10, 8)
+  gazeY                  Decimal?              @map("gaze_y") @db.Decimal(10, 8)
+  isOffScreen            Boolean               @default(false) @map("is_off_screen")
+  offScreenDirection     String?               @map("off_screen_direction") @db.VarChar(20)
+  confidence             Decimal?              @db.Decimal(5, 4)
+  pupilDiameterLeft      Decimal?              @map("pupil_diameter_left") @db.Decimal(10, 6)
+  pupilDiameterRight     Decimal?              @map("pupil_diameter_right") @db.Decimal(10, 6)
+  metadata               Json                  @default("{}")
+
+  session                InterviewSession      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, timestamp(sort: Desc)])
+  @@index([sessionId, isOffScreen])
+  @@map("gaze_events")
+}
+
+model BrowserTelemetry {
+  id                     String                @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  sessionId              String                @map("session_id") @db.Uuid
+  timestamp              DateTime              @db.Timestamptz(6)
+  cpuPercent             Decimal?              @map("cpu_percent") @db.Decimal(5, 2)
+  memoryMb               Int?                  @map("memory_mb")
+  activeProcesses        Json                  @default("[]") @map("active_processes")
+  windowTitle            String?               @map("window_title") @db.VarChar(500)
+  browserTabsCount       Int?                  @map("browser_tabs_count")
+  networkRequests        Json                  @default("[]") @map("network_requests")
+  metadata               Json                  @default("{}")
+
+  session                InterviewSession      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, timestamp(sort: Desc)])
+  @@map("browser_telemetry")
+}
+
+model SessionReport {
+  id                     String                @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  sessionId              String                @unique @map("session_id") @db.Uuid
+  overallRiskScore       Decimal?              @map("overall_risk_score") @db.Decimal(5, 4)
+  aiDetectionScore       Decimal?              @map("ai_detection_score") @db.Decimal(5, 4)
+  gazeAnomalyScore       Decimal?              @map("gaze_anomaly_score") @db.Decimal(5, 4)
+  timingAnomalyScore     Decimal?              @map("timing_anomaly_score") @db.Decimal(5, 4)
+  securityEventsCount    Int                   @default(0) @map("security_events_count")
+  recommendations        Json                  @default("[]")
+  detailedAnalysis       Json                  @default("{}") @map("detailed_analysis")
+  generatedAt            DateTime              @default(now()) @map("generated_at") @db.Timestamptz(6)
+  createdAt              DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  session                InterviewSession      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([overallRiskScore(sort: Desc)])
+  @@map("session_reports")
+}
+
+model AuditLog {
+  id                     String                @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId                 String?               @map("user_id") @db.Uuid
+  action                 String                @db.VarChar(100)
+  resourceType           String                @map("resource_type") @db.VarChar(100)
+  resourceId             String?               @map("resource_id") @db.Uuid
+  ipAddress              String?               @map("ip_address")
+  userAgent              String?               @map("user_agent")
+  metadata               Json                  @default("{}")
+  timestamp              DateTime              @default(now()) @db.Timestamptz(6)
+  createdAt              DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user                   User?                 @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([resourceType, resourceId])
+  @@index([timestamp(sort: Desc)])
+  @@index([action])
+  @@map("audit_logs")
+}

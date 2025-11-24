@@ -1,0 +1,985 @@
+{
+  "service": "Blockd Authentication Service",
+  "version": "1.0.0",
+  "agent": "Agent 6",
+  "created": "2025-11-24",
+  "description": "Comprehensive authentication flows documentation for the Blockd platform",
+
+  "authentication_flows": {
+    "registration_flow": {
+      "name": "User Registration Flow",
+      "description": "Complete flow for new user registration with email verification",
+      "steps": [
+        {
+          "step": 1,
+          "action": "User submits registration form",
+          "endpoint": "POST /auth/register",
+          "request": {
+            "email": "user@example.com",
+            "password": "SecurePass123!@#",
+            "full_name": "John Doe",
+            "role": "interviewer | interviewee",
+            "organization_id": "uuid (optional)"
+          },
+          "validation": [
+            "Email format validation",
+            "Password strength check (12+ chars, mixed case, numbers, special chars)",
+            "Role validation",
+            "Email uniqueness check"
+          ]
+        },
+        {
+          "step": 2,
+          "action": "Password hashed with bcrypt",
+          "details": "Salt rounds: 12, automatically salted"
+        },
+        {
+          "step": 3,
+          "action": "User record created in database",
+          "table": "users",
+          "fields": ["id", "email", "password_hash", "role", "organization_id", "first_name", "last_name"]
+        },
+        {
+          "step": 4,
+          "action": "Email verification token generated",
+          "storage": "Redis",
+          "ttl": "24 hours",
+          "key_format": "email_verification:{token}"
+        },
+        {
+          "step": 5,
+          "action": "Verification email sent",
+          "email_type": "verification",
+          "contains": "Verification link and token"
+        },
+        {
+          "step": 6,
+          "action": "JWT tokens generated and returned",
+          "response": {
+            "user_id": "uuid",
+            "email": "user@example.com",
+            "access_token": "JWT (RS256, 1h expiry)",
+            "refresh_token": "Random token (7d expiry)",
+            "expires_in": 3600
+          }
+        },
+        {
+          "step": 7,
+          "action": "Refresh token stored in Redis",
+          "key_format": "refresh_token:{token}",
+          "ttl": "7 days"
+        }
+      ],
+      "error_handling": [
+        {
+          "error": "Weak password",
+          "status": 400,
+          "code": "WEAK_PASSWORD",
+          "message": "Password requirements listed"
+        },
+        {
+          "error": "Email already exists",
+          "status": 409,
+          "code": "EMAIL_EXISTS",
+          "message": "Email already registered"
+        },
+        {
+          "error": "Invalid email format",
+          "status": 400,
+          "code": "VALIDATION_ERROR",
+          "message": "Invalid email address"
+        }
+      ]
+    },
+
+    "login_flow": {
+      "name": "User Login Flow",
+      "description": "Standard login flow with optional MFA",
+      "steps": [
+        {
+          "step": 1,
+          "action": "Check for account lockout",
+          "middleware": "checkAccountLock",
+          "redis_key": "account_lock:{email}",
+          "lockout_duration": "15 minutes after 5 failed attempts"
+        },
+        {
+          "step": 2,
+          "action": "User submits credentials",
+          "endpoint": "POST /auth/login",
+          "request": {
+            "email": "user@example.com",
+            "password": "SecurePass123!@#",
+            "mfa_code": "123456 (optional)"
+          }
+        },
+        {
+          "step": 3,
+          "action": "Retrieve user from database",
+          "query": "SELECT * FROM users WHERE email = ? AND deleted_at IS NULL"
+        },
+        {
+          "step": 4,
+          "action": "Verify password with bcrypt",
+          "function": "bcrypt.compare()",
+          "constant_time": true
+        },
+        {
+          "step": 5,
+          "action": "Track login attempt",
+          "storage": "Redis",
+          "key_format": "rate_limit:login:{email}",
+          "on_success": "Clear failed attempts counter",
+          "on_failure": "Increment failed attempts counter"
+        },
+        {
+          "step": 6,
+          "action": "Check MFA requirement",
+          "condition": "If user.mfa_enabled === true",
+          "branches": {
+            "mfa_required": {
+              "action": "Generate MFA temporary token",
+              "token_type": "JWT (5 minute expiry)",
+              "response": {
+                "requires_mfa": true,
+                "mfa_token": "temporary_jwt_token"
+              }
+            },
+            "no_mfa": {
+              "action": "Proceed to token generation"
+            }
+          }
+        },
+        {
+          "step": 7,
+          "action": "Generate JWT tokens",
+          "access_token": {
+            "algorithm": "RS256",
+            "expiry": "1 hour",
+            "payload": {
+              "sub": "user_id",
+              "email": "user@example.com",
+              "role": "interviewer",
+              "organization_id": "uuid",
+              "iat": "timestamp",
+              "exp": "timestamp",
+              "iss": "blockd-auth",
+              "aud": "blockd-api"
+            }
+          },
+          "refresh_token": {
+            "type": "Random 32-byte token",
+            "expiry": "7 days",
+            "storage": "Redis"
+          }
+        },
+        {
+          "step": 8,
+          "action": "Update last login timestamp",
+          "update": "users.last_login_at = NOW()"
+        },
+        {
+          "step": 9,
+          "action": "Return tokens",
+          "response": {
+            "user_id": "uuid",
+            "email": "user@example.com",
+            "access_token": "jwt_token",
+            "refresh_token": "refresh_token",
+            "expires_in": 3600,
+            "requires_mfa": false
+          }
+        }
+      ],
+      "rate_limiting": {
+        "max_attempts": 5,
+        "time_window": "15 minutes",
+        "lockout_duration": "15 minutes",
+        "counter_reset": "On successful login"
+      },
+      "error_handling": [
+        {
+          "error": "Invalid credentials",
+          "status": 401,
+          "code": "INVALID_CREDENTIALS",
+          "message": "Invalid email or password"
+        },
+        {
+          "error": "Account locked",
+          "status": 429,
+          "code": "ACCOUNT_LOCKED",
+          "message": "Too many failed attempts",
+          "locked_until": "ISO timestamp"
+        },
+        {
+          "error": "MFA required",
+          "status": 200,
+          "requires_mfa": true,
+          "mfa_token": "temporary_token"
+        }
+      ]
+    },
+
+    "mfa_setup_flow": {
+      "name": "MFA Setup Flow",
+      "description": "Two-factor authentication setup with TOTP",
+      "steps": [
+        {
+          "step": 1,
+          "action": "User initiates MFA setup",
+          "endpoint": "POST /auth/mfa/setup",
+          "authentication": "Required (JWT Bearer token)",
+          "preconditions": [
+            "User must be authenticated",
+            "Email must be verified",
+            "MFA not already enabled"
+          ]
+        },
+        {
+          "step": 2,
+          "action": "Generate TOTP secret",
+          "library": "speakeasy",
+          "parameters": {
+            "name": "Blockd (user@example.com)",
+            "issuer": "Blockd",
+            "length": 32
+          }
+        },
+        {
+          "step": 3,
+          "action": "Generate QR code",
+          "library": "qrcode",
+          "format": "Data URL",
+          "contains": "otpauth:// URL"
+        },
+        {
+          "step": 4,
+          "action": "Generate backup codes",
+          "count": 10,
+          "format": "XXXX-XXXX",
+          "algorithm": "Secure random alphanumeric"
+        },
+        {
+          "step": 5,
+          "action": "Return setup data",
+          "response": {
+            "secret": "base32_encoded_secret",
+            "qr_code_url": "data:image/png;base64,...",
+            "backup_codes": ["CODE1-CODE2", "CODE3-CODE4", "..."]
+          }
+        },
+        {
+          "step": 6,
+          "action": "User scans QR code with authenticator app",
+          "apps": ["Google Authenticator", "Authy", "Microsoft Authenticator"]
+        },
+        {
+          "step": 7,
+          "action": "User verifies TOTP code",
+          "endpoint": "POST /auth/mfa/verify",
+          "request": {
+            "code": "123456",
+            "secret": "base32_secret",
+            "backup_codes": ["CODE1-CODE2", "..."]
+          }
+        },
+        {
+          "step": 8,
+          "action": "Verify TOTP code",
+          "function": "speakeasy.totp.verify()",
+          "window": 2,
+          "time_step": "30 seconds"
+        },
+        {
+          "step": 9,
+          "action": "Encrypt and store MFA data",
+          "encryption": {
+            "algorithm": "AES-256-GCM",
+            "key_source": "MFA_ENCRYPTION_KEY environment variable"
+          },
+          "storage": {
+            "secret": "users.mfa_secret (encrypted)",
+            "backup_codes": "Encrypted JSON array"
+          }
+        },
+        {
+          "step": 10,
+          "action": "Enable MFA for user",
+          "update": "users.mfa_enabled = true"
+        },
+        {
+          "step": 11,
+          "action": "Send confirmation email",
+          "email_type": "mfa_enabled"
+        }
+      ],
+      "security": [
+        "Secret encrypted at rest using AES-256-GCM",
+        "Backup codes encrypted separately",
+        "Time-based codes (30-second window)",
+        "Window of 2 time steps for clock drift",
+        "One-time verification required for setup"
+      ]
+    },
+
+    "mfa_login_flow": {
+      "name": "MFA Login Verification",
+      "description": "Login with MFA verification step",
+      "steps": [
+        {
+          "step": 1,
+          "action": "User completes standard login",
+          "result": "Receives mfa_token instead of access_token"
+        },
+        {
+          "step": 2,
+          "action": "User submits MFA code",
+          "endpoint": "POST /auth/mfa/verify-login",
+          "request": {
+            "mfa_token": "temporary_jwt_token",
+            "code": "123456 or BACKUP-CODE"
+          }
+        },
+        {
+          "step": 3,
+          "action": "Verify MFA token",
+          "validation": [
+            "JWT signature verification",
+            "Expiry check (5 minutes)",
+            "Type check (must be 'mfa_required')"
+          ]
+        },
+        {
+          "step": 4,
+          "action": "Get user and decrypt MFA secret",
+          "decryption": "AES-256-GCM with MFA_ENCRYPTION_KEY"
+        },
+        {
+          "step": 5,
+          "action": "Verify code",
+          "code_types": {
+            "totp": {
+              "format": "6 digits",
+              "validation": "speakeasy.totp.verify()",
+              "window": 2
+            },
+            "backup_code": {
+              "format": "XXXX-XXXX",
+              "validation": "Lookup in encrypted backup codes",
+              "mark_used": true
+            }
+          }
+        },
+        {
+          "step": 6,
+          "action": "If backup code used, mark as used",
+          "update": "Update encrypted backup codes array"
+        },
+        {
+          "step": 7,
+          "action": "Clear failed login attempts",
+          "redis_key": "rate_limit:login:{email}"
+        },
+        {
+          "step": 8,
+          "action": "Generate and return JWT tokens",
+          "response": {
+            "user_id": "uuid",
+            "email": "user@example.com",
+            "access_token": "jwt_token",
+            "refresh_token": "refresh_token",
+            "expires_in": 3600
+          }
+        }
+      ],
+      "rate_limiting": {
+        "max_attempts": 5,
+        "time_window": "5 minutes",
+        "applies_to": "MFA code verification"
+      }
+    },
+
+    "token_refresh_flow": {
+      "name": "Token Refresh Flow",
+      "description": "Refresh expired access token using refresh token",
+      "steps": [
+        {
+          "step": 1,
+          "action": "Client detects expired access token",
+          "detection": "JWT exp claim or 401 response"
+        },
+        {
+          "step": 2,
+          "action": "Client requests token refresh",
+          "endpoint": "POST /auth/refresh",
+          "request": {
+            "refresh_token": "refresh_token_string"
+          }
+        },
+        {
+          "step": 3,
+          "action": "Verify refresh token in Redis",
+          "redis_key": "refresh_token:{token}",
+          "checks": [
+            "Token exists in Redis",
+            "Token not expired",
+            "Token data valid JSON"
+          ]
+        },
+        {
+          "step": 4,
+          "action": "Get user from database",
+          "user_id": "From refresh token data"
+        },
+        {
+          "step": 5,
+          "action": "Revoke old refresh token",
+          "action_type": "Delete from Redis",
+          "reason": "Token rotation security"
+        },
+        {
+          "step": 6,
+          "action": "Generate new tokens",
+          "access_token": "New JWT (1h expiry)",
+          "refresh_token": "New random token (7d expiry)"
+        },
+        {
+          "step": 7,
+          "action": "Store new refresh token in Redis",
+          "key_format": "refresh_token:{new_token}",
+          "ttl": "7 days"
+        },
+        {
+          "step": 8,
+          "action": "Return new tokens",
+          "response": {
+            "access_token": "new_jwt_token",
+            "refresh_token": "new_refresh_token",
+            "expires_in": 3600
+          }
+        }
+      ],
+      "security": [
+        "Token rotation on every refresh",
+        "Old refresh token immediately invalidated",
+        "Refresh tokens stored in Redis, not client",
+        "7-day expiry on refresh tokens",
+        "Support for revoking all user sessions"
+      ],
+      "error_handling": [
+        {
+          "error": "Invalid refresh token",
+          "status": 401,
+          "code": "INVALID_TOKEN",
+          "action": "Client must re-authenticate"
+        },
+        {
+          "error": "Expired refresh token",
+          "status": 401,
+          "code": "TOKEN_EXPIRED",
+          "action": "Client must re-authenticate"
+        }
+      ]
+    },
+
+    "oauth_flow": {
+      "name": "OAuth 2.0 Flow (Google/Microsoft)",
+      "description": "Third-party authentication flow",
+      "providers": ["Google", "Microsoft"],
+      "steps": [
+        {
+          "step": 1,
+          "action": "User clicks OAuth login button",
+          "frontend": "Redirects to /auth/oauth/{provider}"
+        },
+        {
+          "step": 2,
+          "action": "Generate OAuth state parameter",
+          "purpose": "CSRF protection",
+          "storage": "Session or Redis",
+          "format": "32-byte random string"
+        },
+        {
+          "step": 3,
+          "action": "Redirect to OAuth provider",
+          "providers": {
+            "google": {
+              "auth_url": "https://accounts.google.com/o/oauth2/v2/auth",
+              "scopes": ["openid", "email", "profile"]
+            },
+            "microsoft": {
+              "auth_url": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+              "scopes": ["openid", "email", "profile"]
+            }
+          }
+        },
+        {
+          "step": 4,
+          "action": "User authorizes on provider site"
+        },
+        {
+          "step": 5,
+          "action": "Provider redirects to callback URL",
+          "callback": "/auth/oauth/{provider}/callback",
+          "parameters": {
+            "code": "authorization_code",
+            "state": "csrf_token"
+          }
+        },
+        {
+          "step": 6,
+          "action": "Verify state parameter",
+          "security": "Prevent CSRF attacks"
+        },
+        {
+          "step": 7,
+          "action": "Exchange code for access token",
+          "method": "POST to provider token endpoint",
+          "credentials": "Client ID and Secret"
+        },
+        {
+          "step": 8,
+          "action": "Fetch user info from provider",
+          "google_endpoint": "https://www.googleapis.com/oauth2/v2/userinfo",
+          "microsoft_endpoint": "https://graph.microsoft.com/v1.0/me",
+          "data_retrieved": ["email", "given_name", "family_name", "picture"]
+        },
+        {
+          "step": 9,
+          "action": "Get or create user in database",
+          "logic": {
+            "existing_user": "Return existing user by email",
+            "new_user": "Create new user with OAuth data",
+            "email_verified": true,
+            "random_password": "Generated but not used"
+          }
+        },
+        {
+          "step": 10,
+          "action": "Generate JWT tokens"
+        },
+        {
+          "step": 11,
+          "action": "Redirect to frontend with tokens",
+          "url_format": "{frontend_url}/oauth/callback?access_token={token}&refresh_token={token}&expires_in=3600"
+        }
+      ],
+      "configuration": {
+        "google": {
+          "client_id": "From Google Cloud Console",
+          "client_secret": "From Google Cloud Console",
+          "callback_url": "http://localhost:3001/auth/oauth/google/callback"
+        },
+        "microsoft": {
+          "client_id": "From Azure AD",
+          "client_secret": "From Azure AD",
+          "callback_url": "http://localhost:3001/auth/oauth/microsoft/callback"
+        }
+      },
+      "security": [
+        "State parameter for CSRF protection",
+        "Authorization code flow (not implicit)",
+        "Client secret stored server-side only",
+        "Email verification automatic for OAuth users",
+        "Callback URL whitelist"
+      ]
+    },
+
+    "password_reset_flow": {
+      "name": "Password Reset Flow",
+      "description": "Secure password reset with email verification",
+      "steps": [
+        {
+          "step": 1,
+          "action": "User requests password reset",
+          "endpoint": "POST /auth/password-reset/request",
+          "request": {
+            "email": "user@example.com"
+          }
+        },
+        {
+          "step": 2,
+          "action": "Check if user exists",
+          "note": "Always return success to prevent email enumeration"
+        },
+        {
+          "step": 3,
+          "action": "Generate reset token",
+          "format": "64-character random hex string",
+          "storage": "Redis",
+          "ttl": "1 hour",
+          "key_format": "password_reset:{token}"
+        },
+        {
+          "step": 4,
+          "action": "Send reset email",
+          "contains": ["Reset link", "Reset token", "Expiry time"],
+          "link_format": "{frontend_url}/reset-password?token={token}"
+        },
+        {
+          "step": 5,
+          "action": "Return success response",
+          "response": {
+            "success": true,
+            "message": "If the email exists, a password reset link has been sent"
+          }
+        },
+        {
+          "step": 6,
+          "action": "User clicks reset link",
+          "frontend": "Displays password reset form"
+        },
+        {
+          "step": 7,
+          "action": "User submits new password",
+          "endpoint": "POST /auth/password-reset/confirm",
+          "request": {
+            "reset_token": "token_from_email",
+            "new_password": "NewSecurePass123!@#"
+          }
+        },
+        {
+          "step": 8,
+          "action": "Verify reset token",
+          "redis_lookup": "password_reset:{token}",
+          "validation": "Token exists and not expired"
+        },
+        {
+          "step": 9,
+          "action": "Validate new password strength",
+          "requirements": "Same as registration"
+        },
+        {
+          "step": 10,
+          "action": "Hash new password",
+          "algorithm": "bcrypt",
+          "salt_rounds": 12
+        },
+        {
+          "step": 11,
+          "action": "Update user password",
+          "update": "users.password_hash"
+        },
+        {
+          "step": 12,
+          "action": "Consume reset token",
+          "action_type": "Delete from Redis",
+          "reason": "One-time use only"
+        },
+        {
+          "step": 13,
+          "action": "Return success response",
+          "response": {
+            "success": true,
+            "message": "Password reset successfully"
+          }
+        }
+      ],
+      "security": [
+        "Email enumeration protection",
+        "Short token expiry (1 hour)",
+        "One-time use tokens",
+        "Same password strength requirements",
+        "Token stored in Redis, not database"
+      ],
+      "rate_limiting": {
+        "max_requests": 3,
+        "time_window": "1 hour",
+        "per": "email address"
+      }
+    }
+  },
+
+  "security_features": {
+    "password_security": {
+      "hashing": {
+        "algorithm": "bcrypt",
+        "salt_rounds": 12,
+        "automatic_salting": true
+      },
+      "requirements": {
+        "min_length": 12,
+        "uppercase": true,
+        "lowercase": true,
+        "numbers": true,
+        "special_chars": true,
+        "common_password_check": true
+      },
+      "strength_scoring": {
+        "weak": "< 40",
+        "fair": "40-60",
+        "good": "60-80",
+        "strong": "> 80"
+      }
+    },
+    "jwt_tokens": {
+      "algorithm": "RS256",
+      "key_size": "2048-bit RSA",
+      "access_token_expiry": "1 hour",
+      "refresh_token_expiry": "7 days",
+      "issuer": "blockd-auth",
+      "audience": "blockd-api",
+      "key_rotation": "Recommended every 90 days",
+      "storage": {
+        "private_key": "keys/private.pem (never commit)",
+        "public_key": "keys/public.pem (can be shared)"
+      }
+    },
+    "mfa_security": {
+      "algorithm": "TOTP (RFC 6238)",
+      "time_step": "30 seconds",
+      "code_length": 6,
+      "window": "2 steps (±60 seconds)",
+      "secret_length": "32 characters (base32)",
+      "backup_codes": {
+        "count": 10,
+        "format": "XXXX-XXXX",
+        "one_time_use": true
+      },
+      "encryption": {
+        "algorithm": "AES-256-GCM",
+        "key_length": "256 bits",
+        "storage": "Encrypted in database"
+      }
+    },
+    "rate_limiting": {
+      "login": {
+        "max_requests": 10,
+        "time_window": "1 minute",
+        "lockout_threshold": 5,
+        "lockout_duration": "15 minutes"
+      },
+      "registration": {
+        "max_requests": 5,
+        "time_window": "1 minute"
+      },
+      "password_reset": {
+        "max_requests": 3,
+        "time_window": "1 hour"
+      },
+      "mfa_verification": {
+        "max_requests": 5,
+        "time_window": "5 minutes"
+      },
+      "token_refresh": {
+        "max_requests": 20,
+        "time_window": "1 minute"
+      }
+    },
+    "session_management": {
+      "storage": "Redis",
+      "refresh_token_ttl": "7 days",
+      "token_rotation": true,
+      "multiple_sessions": true,
+      "revocation": "Single session or all sessions",
+      "tracking": ["IP address", "User agent", "Created at", "Last used"]
+    }
+  },
+
+  "error_codes": {
+    "authentication": [
+      {
+        "code": "INVALID_CREDENTIALS",
+        "status": 401,
+        "message": "Invalid email or password"
+      },
+      {
+        "code": "UNAUTHORIZED",
+        "status": 401,
+        "message": "Authentication required"
+      },
+      {
+        "code": "TOKEN_EXPIRED",
+        "status": 401,
+        "message": "Token has expired"
+      },
+      {
+        "code": "INVALID_TOKEN",
+        "status": 401,
+        "message": "Invalid or malformed token"
+      }
+    ],
+    "validation": [
+      {
+        "code": "VALIDATION_ERROR",
+        "status": 400,
+        "message": "Input validation failed"
+      },
+      {
+        "code": "WEAK_PASSWORD",
+        "status": 400,
+        "message": "Password does not meet requirements"
+      }
+    ],
+    "authorization": [
+      {
+        "code": "FORBIDDEN",
+        "status": 403,
+        "message": "Insufficient permissions"
+      },
+      {
+        "code": "MFA_REQUIRED",
+        "status": 403,
+        "message": "MFA verification required"
+      },
+      {
+        "code": "EMAIL_NOT_VERIFIED",
+        "status": 403,
+        "message": "Email verification required"
+      }
+    ],
+    "conflicts": [
+      {
+        "code": "EMAIL_EXISTS",
+        "status": 409,
+        "message": "Email already registered"
+      },
+      {
+        "code": "MFA_ALREADY_ENABLED",
+        "status": 409,
+        "message": "MFA already enabled"
+      }
+    ],
+    "rate_limiting": [
+      {
+        "code": "RATE_LIMIT_EXCEEDED",
+        "status": 429,
+        "message": "Too many requests"
+      },
+      {
+        "code": "ACCOUNT_LOCKED",
+        "status": 429,
+        "message": "Account temporarily locked"
+      }
+    ]
+  },
+
+  "integration_points": {
+    "database": {
+      "provider": "PostgreSQL 18.1",
+      "schema": "Managed by Agent 1",
+      "tables": ["users", "organizations", "audit_logs"],
+      "connection": "Prisma ORM"
+    },
+    "cache": {
+      "provider": "Redis",
+      "managed_by": "Agent 2",
+      "usage": [
+        "Refresh tokens",
+        "Email verification tokens",
+        "Password reset tokens",
+        "Rate limiting counters",
+        "Account lockout status",
+        "MFA sessions"
+      ]
+    },
+    "api_gateway": {
+      "route_prefix": "/auth",
+      "authentication": "JWT Bearer tokens",
+      "public_endpoints": [
+        "/auth/register",
+        "/auth/login",
+        "/auth/verify-email",
+        "/auth/password-reset/request",
+        "/auth/password-reset/confirm",
+        "/auth/oauth/*",
+        "/auth/refresh"
+      ],
+      "protected_endpoints": [
+        "/auth/mfa/setup",
+        "/auth/mfa/verify",
+        "/auth/mfa/disable",
+        "/auth/mfa/status",
+        "/auth/revoke-all",
+        "/auth/sessions"
+      ]
+    }
+  },
+
+  "deployment": {
+    "environment_variables": [
+      "NODE_ENV",
+      "PORT",
+      "HOST",
+      "DATABASE_URL",
+      "REDIS_HOST",
+      "REDIS_PORT",
+      "REDIS_PASSWORD",
+      "MFA_ENCRYPTION_KEY",
+      "GOOGLE_CLIENT_ID",
+      "GOOGLE_CLIENT_SECRET",
+      "GOOGLE_CALLBACK_URL",
+      "MICROSOFT_CLIENT_ID",
+      "MICROSOFT_CLIENT_SECRET",
+      "MICROSOFT_CALLBACK_URL",
+      "FRONTEND_URL",
+      "CORS_ORIGIN"
+    ],
+    "required_setup": [
+      "Generate RSA keys: npm run keys:generate",
+      "Generate Prisma client: npm run prisma:generate",
+      "Configure OAuth credentials",
+      "Set up Redis connection",
+      "Configure database connection",
+      "Set MFA encryption key"
+    ],
+    "health_check": {
+      "endpoint": "GET /health",
+      "response": {
+        "status": "ok",
+        "service": "auth-service",
+        "timestamp": "ISO 8601"
+      }
+    }
+  },
+
+  "testing": {
+    "framework": "Jest",
+    "test_types": [
+      "Unit tests (password validation, crypto functions)",
+      "Integration tests (API endpoints)",
+      "Security tests (rate limiting, token validation)",
+      "Flow tests (complete auth flows)"
+    ],
+    "coverage_targets": {
+      "statements": 80,
+      "branches": 75,
+      "functions": 80,
+      "lines": 80
+    },
+    "test_files": [
+      "registration.test.ts",
+      "login.test.ts",
+      "mfa.test.ts",
+      "token-refresh.test.ts",
+      "password-strength.test.ts",
+      "rate-limit.test.ts"
+    ]
+  },
+
+  "monitoring": {
+    "metrics": [
+      "Login attempts (success/failure)",
+      "Registration rate",
+      "Token refresh rate",
+      "MFA setup rate",
+      "OAuth login rate",
+      "Account lockouts",
+      "Password reset requests",
+      "Average response time"
+    ],
+    "logging": {
+      "level": "info (production), debug (development)",
+      "format": "JSON (production), pretty (development)",
+      "events": [
+        "Authentication attempts",
+        "MFA setup/disable",
+        "Token refresh",
+        "Account lockouts",
+        "Password resets",
+        "OAuth logins",
+        "Errors and exceptions"
+      ]
+    }
+  }
+}

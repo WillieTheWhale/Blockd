@@ -1,0 +1,495 @@
+import prisma from '../src/database';
+import { RiskCalculator, defaultRiskCalculator } from '../lib/risk-calculator';
+import { ReportGenerator } from '../lib/report-generator';
+import {
+  SessionReport,
+  GenerateReportDTO,
+  ReportExport,
+  RiskAnalysis,
+  SecuritySummary,
+  GazeAnalysisSummary,
+  TimingAnalysisSummary,
+  Recommendation,
+  OverallAssessment,
+  QuestionAnswerReport,
+} from '../types/report.types';
+import { SessionNotFoundError, ReportGenerationError } from '../lib/errors';
+import notificationService from './notification.service';
+
+/**
+ * Report Service
+ * Handles session report generation and risk scoring
+ */
+
+export class ReportService {
+  private riskCalculator: RiskCalculator;
+
+  constructor() {
+    this.riskCalculator = defaultRiskCalculator;
+  }
+
+  /**
+   * Generate comprehensive session report
+   */
+  async generateReport(sessionId: string): Promise<SessionReport> {
+    // Get session with all related data
+    const session = await prisma.interviewSession.findUnique({
+      where: { id: sessionId },
+      include: {
+        interviewer: true,
+        interviewee: true,
+        organization: true,
+        questions: {
+          orderBy: { questionOrder: 'asc' },
+          include: {
+            answerAnalysis: true,
+          },
+        },
+        securityEvents: {
+          orderBy: { timestamp: 'desc' },
+        },
+      },
+    });
+
+    if (!session) {
+      throw new SessionNotFoundError(sessionId);
+    }
+
+    // Calculate risk analysis
+    const riskAnalysis = await this.calculateRiskAnalysis(sessionId);
+
+    // Generate security summary
+    const securitySummary = await this.generateSecuritySummary(sessionId);
+
+    // Generate gaze analysis (if available)
+    const gazeAnalysis = await this.generateGazeAnalysis(sessionId);
+
+    // Generate timing analysis (if available)
+    const timingAnalysis = await this.generateTimingAnalysis(sessionId);
+
+    // Generate recommendations
+    const recommendations = this.generateRecommendations(
+      riskAnalysis,
+      securitySummary,
+      gazeAnalysis,
+      timingAnalysis
+    );
+
+    // Generate overall assessment
+    const overallAssessment = this.generateOverallAssessment(
+      riskAnalysis,
+      securitySummary,
+      recommendations
+    );
+
+    // Create report record in database
+    const reportRecord = await prisma.sessionReport.create({
+      data: {
+        sessionId,
+        overallRiskScore: riskAnalysis.overall_risk_score,
+        aiDetectionScore: riskAnalysis.ai_detection_score,
+        gazeAnomalyScore: riskAnalysis.gaze_anomaly_score,
+        timingAnomalyScore: riskAnalysis.timing_anomaly_score,
+        securityEventsCount: securitySummary.total_events,
+        recommendations: recommendations,
+        detailedAnalysis: {
+          risk_analysis: riskAnalysis,
+          security_summary: securitySummary,
+          gaze_analysis: gazeAnalysis,
+          timing_analysis: timingAnalysis,
+        },
+      },
+    });
+
+    // Build report
+    const report: SessionReport = {
+      report_id: reportRecord.id,
+      session_id: sessionId,
+      generated_at: reportRecord.generatedAt.toISOString(),
+      session_metadata: {
+        session_id: session.id,
+        status: session.status,
+        scheduled_start: session.scheduledStart?.toISOString() || null,
+        actual_start: session.actualStart?.toISOString() || null,
+        actual_end: session.actualEnd?.toISOString() || null,
+        duration_minutes: session.durationMinutes,
+        organization: {
+          id: session.organization.id,
+          name: session.organization.name,
+        },
+      },
+      interviewer: {
+        user_id: session.interviewer.id,
+        full_name: `${session.interviewer.firstName} ${session.interviewer.lastName}`,
+        email: session.interviewer.email,
+        role: session.interviewer.role,
+      },
+      interviewee: session.interviewee
+        ? {
+            user_id: session.interviewee.id,
+            full_name: `${session.interviewee.firstName} ${session.interviewee.lastName}`,
+            email: session.interviewee.email,
+            role: session.interviewee.role,
+          }
+        : {
+            user_id: '',
+            full_name: 'Unknown',
+            email: session.intervieweeEmail || '',
+            role: 'interviewee',
+          },
+      questions_and_answers: this.formatQuestionsAndAnswers(session.questions),
+      risk_analysis: riskAnalysis,
+      security_summary: securitySummary,
+      gaze_analysis: gazeAnalysis,
+      timing_analysis: timingAnalysis,
+      recommendations,
+      overall_assessment: overallAssessment,
+    };
+
+    // Send notification to interviewer
+    await notificationService.sendReportEmail(session.interviewer.email, report);
+
+    return report;
+  }
+
+  /**
+   * Export report in specified format
+   */
+  async exportReport(dto: GenerateReportDTO): Promise<ReportExport> {
+    const report = await this.generateReport(dto.session_id);
+
+    if (dto.format === 'pdf') {
+      return await ReportGenerator.generatePDF(report);
+    }
+
+    return ReportGenerator.generateJSON(report);
+  }
+
+  /**
+   * Calculate comprehensive risk analysis
+   */
+  private async calculateRiskAnalysis(sessionId: string): Promise<RiskAnalysis> {
+    // Get answer analysis data
+    const answers = await prisma.answerAnalysis.findMany({
+      where: {
+        question: {
+          sessionId,
+        },
+      },
+    });
+
+    // Calculate AI detection score
+    const aiScores = answers
+      .filter((a) => a.riskScore !== null)
+      .map((a) => parseFloat(a.riskScore!.toString()));
+    const aiDetectionScore = aiScores.length > 0 ? Math.max(...aiScores) : 0;
+
+    // Get security events
+    const securityEvents = await prisma.securityEvent.findMany({
+      where: { sessionId },
+    });
+
+    const securityEventsScore = this.riskCalculator.calculateSecurityEventsScore(
+      securityEvents.map((e) => ({ severity: e.severity, count: 1 }))
+    );
+
+    // Get gaze data
+    const gazeEventsCount = await prisma.gazeEvent.count({
+      where: { sessionId },
+    });
+
+    const offScreenCount = await prisma.gazeEvent.count({
+      where: { sessionId, isOffScreen: true },
+    });
+
+    const session = await prisma.interviewSession.findUnique({
+      where: { id: sessionId },
+    });
+
+    const gazeAnomalyScore = this.riskCalculator.calculateGazeAnomalyScore(
+      gazeEventsCount,
+      offScreenCount,
+      0, // Would need to calculate actual off-screen duration
+      session?.durationMinutes || 0
+    );
+
+    // Calculate timing anomaly score
+    const timingAnomalyScore = 0; // Would be calculated from actual timing data
+
+    // Calculate overall risk
+    const overallRiskScore = this.riskCalculator.calculateOverallRisk({
+      ai_detection_score: aiDetectionScore,
+      security_events_score: securityEventsScore,
+      gaze_anomaly_score: gazeAnomalyScore,
+      timing_anomaly_score: timingAnomalyScore,
+    });
+
+    const riskLevel = this.riskCalculator.getRiskLevel(overallRiskScore);
+
+    // Flagged answers (risk > 0.75)
+    const flaggedAnswers = answers
+      .filter((a) => a.riskScore && parseFloat(a.riskScore.toString()) > 0.75)
+      .map((a) => a.id);
+
+    return {
+      overall_risk_score: overallRiskScore,
+      risk_level: riskLevel,
+      ai_detection_score: aiDetectionScore,
+      security_events_score: securityEventsScore,
+      gaze_anomaly_score: gazeAnomalyScore,
+      timing_anomaly_score: timingAnomalyScore,
+      weights: {
+        ai_detection: 0.4,
+        security_events: 0.3,
+        gaze_anomaly: 0.2,
+        timing_anomaly: 0.1,
+      },
+      flagged_answers: flaggedAnswers,
+      flagged_behaviors: [],
+    };
+  }
+
+  /**
+   * Generate security summary
+   */
+  private async generateSecuritySummary(sessionId: string): Promise<SecuritySummary> {
+    const events = await prisma.securityEvent.findMany({
+      where: { sessionId },
+      orderBy: { timestamp: 'desc' },
+    });
+
+    const eventsBySeverity = {
+      low: events.filter((e) => e.severity === 'low').length,
+      medium: events.filter((e) => e.severity === 'medium').length,
+      high: events.filter((e) => e.severity === 'high').length,
+      critical: events.filter((e) => e.severity === 'critical').length,
+    };
+
+    const eventsByType: Record<string, number> = {};
+    events.forEach((e) => {
+      eventsByType[e.eventType] = (eventsByType[e.eventType] || 0) + 1;
+    });
+
+    const criticalEvents = events
+      .filter((e) => e.severity === 'critical')
+      .map((e) => ({
+        event_id: e.id,
+        event_type: e.eventType,
+        severity: e.severity,
+        description: e.description,
+        metadata: e.metadata as Record<string, unknown>,
+        timestamp: e.timestamp.toISOString(),
+      }));
+
+    return {
+      total_events: events.length,
+      events_by_severity: eventsBySeverity,
+      events_by_type: eventsByType,
+      timeline: events.map((e) => ({
+        event_id: e.id,
+        event_type: e.eventType,
+        severity: e.severity,
+        description: e.description,
+        metadata: e.metadata as Record<string, unknown>,
+        timestamp: e.timestamp.toISOString(),
+      })),
+      critical_events: criticalEvents,
+    };
+  }
+
+  /**
+   * Generate gaze analysis summary
+   */
+  private async generateGazeAnalysis(sessionId: string): Promise<GazeAnalysisSummary | undefined> {
+    const gazeEvents = await prisma.gazeEvent.findMany({
+      where: { sessionId },
+    });
+
+    if (gazeEvents.length === 0) return undefined;
+
+    const offScreenEvents = gazeEvents.filter((e) => e.isOffScreen);
+    const offScreenPercentage = (offScreenEvents.length / gazeEvents.length) * 100;
+
+    const offScreenByDirection = {
+      left: offScreenEvents.filter((e) => e.offScreenDirection === 'left').length,
+      right: offScreenEvents.filter((e) => e.offScreenDirection === 'right').length,
+      up: offScreenEvents.filter((e) => e.offScreenDirection === 'up').length,
+      down: offScreenEvents.filter((e) => e.offScreenDirection === 'down').length,
+    };
+
+    return {
+      total_gaze_events: gazeEvents.length,
+      off_screen_events: offScreenEvents.length,
+      off_screen_percentage: offScreenPercentage,
+      off_screen_duration_seconds: 0, // Would calculate from timestamps
+      off_screen_by_direction: offScreenByDirection,
+      anomaly_score: offScreenPercentage > 20 ? 0.8 : offScreenPercentage / 25,
+      suspicious_patterns: [],
+    };
+  }
+
+  /**
+   * Generate timing analysis summary
+   */
+  private async generateTimingAnalysis(
+    sessionId: string
+  ): Promise<TimingAnalysisSummary | undefined> {
+    const answers = await prisma.answerAnalysis.findMany({
+      where: {
+        question: {
+          sessionId,
+        },
+      },
+    });
+
+    if (answers.length === 0) return undefined;
+
+    return {
+      total_answers: answers.length,
+      avg_response_latency_ms: 0,
+      avg_words_per_minute: 0,
+      avg_pause_count: 0,
+      avg_filler_ratio: 0,
+      anomaly_score: 0,
+      unusually_fast_responses: 0,
+      unusually_slow_responses: 0,
+      suspicious_patterns: [],
+    };
+  }
+
+  /**
+   * Generate recommendations
+   */
+  private generateRecommendations(
+    riskAnalysis: RiskAnalysis,
+    securitySummary: SecuritySummary,
+    gazeAnalysis?: GazeAnalysisSummary,
+    timingAnalysis?: TimingAnalysisSummary
+  ): Recommendation[] {
+    const recommendations: Recommendation[] = [];
+
+    // High risk recommendations
+    if (riskAnalysis.risk_level === 'high' || riskAnalysis.risk_level === 'critical') {
+      recommendations.push({
+        type: 'action',
+        category: 'integrity',
+        title: 'Manual Review Required',
+        description:
+          'High risk score detected. Immediate manual review of session recordings and answers is recommended.',
+        severity: 'critical',
+        action_required: true,
+      });
+    }
+
+    // Security event recommendations
+    if (securitySummary.events_by_severity.critical > 0) {
+      recommendations.push({
+        type: 'warning',
+        category: 'security',
+        title: 'Critical Security Events Detected',
+        description: `${securitySummary.events_by_severity.critical} critical security events were logged during the session.`,
+        severity: 'critical',
+        action_required: true,
+      });
+    }
+
+    // AI detection recommendations
+    if (riskAnalysis.ai_detection_score > 0.75) {
+      recommendations.push({
+        type: 'warning',
+        category: 'integrity',
+        title: 'Possible AI-Generated Answers',
+        description: 'High similarity to AI-generated content detected in one or more answers.',
+        severity: 'high',
+        action_required: true,
+      });
+    }
+
+    return recommendations;
+  }
+
+  /**
+   * Generate overall assessment
+   */
+  private generateOverallAssessment(
+    riskAnalysis: RiskAnalysis,
+    securitySummary: SecuritySummary,
+    recommendations: Recommendation[]
+  ): OverallAssessment {
+    const criticalRecommendations = recommendations.filter((r) => r.severity === 'critical');
+    const highRecommendations = recommendations.filter((r) => r.severity === 'high');
+
+    let verdict: 'pass' | 'review_required' | 'fail';
+    let confidence: number;
+
+    if (riskAnalysis.risk_level === 'critical' || criticalRecommendations.length > 0) {
+      verdict = 'fail';
+      confidence = 0.9;
+    } else if (riskAnalysis.risk_level === 'high' || highRecommendations.length > 0) {
+      verdict = 'review_required';
+      confidence = 0.75;
+    } else {
+      verdict = 'pass';
+      confidence = 0.85;
+    }
+
+    return {
+      verdict,
+      confidence,
+      summary: this.generateSummaryText(verdict, riskAnalysis),
+      key_findings: [],
+      red_flags: [],
+    };
+  }
+
+  /**
+   * Format questions and answers for report
+   */
+  private formatQuestionsAndAnswers(questions: any[]): QuestionAnswerReport[] {
+    return questions.map((q) => {
+      const answer = q.answerAnalysis && q.answerAnalysis.length > 0 ? q.answerAnalysis[0] : null;
+
+      return {
+        question_id: q.id,
+        question_text: q.questionText,
+        difficulty: q.difficulty,
+        expected_duration_seconds: q.expectedDuration,
+        asked_at: q.askedAt?.toISOString() || null,
+        answer: answer
+          ? {
+              answer_id: answer.id,
+              answer_text: answer.answerText,
+              audio_url: answer.answerAudioUrl,
+              risk_score: answer.riskScore ? parseFloat(answer.riskScore.toString()) : null,
+              is_ai_generated: answer.isAiGenerated,
+              confidence_score: answer.confidenceScore
+                ? parseFloat(answer.confidenceScore.toString())
+                : null,
+              ai_similarity_scores: answer.similarityScores as Record<string, number>,
+              response_timing: answer.responseTiming as any,
+              perplexity_score: answer.perplexityScore
+                ? parseFloat(answer.perplexityScore.toString())
+                : null,
+            }
+          : undefined,
+      };
+    });
+  }
+
+  /**
+   * Generate summary text
+   */
+  private generateSummaryText(verdict: string, riskAnalysis: RiskAnalysis): string {
+    const riskPercentage = (riskAnalysis.overall_risk_score * 100).toFixed(1);
+
+    if (verdict === 'fail') {
+      return `Session failed integrity checks with a risk score of ${riskPercentage}%. Multiple concerning indicators detected.`;
+    } else if (verdict === 'review_required') {
+      return `Session requires manual review with a risk score of ${riskPercentage}%. Some anomalies detected.`;
+    } else {
+      return `Session passed integrity checks with a risk score of ${riskPercentage}%. No significant concerns detected.`;
+    }
+  }
+}
+
+export default new ReportService();
