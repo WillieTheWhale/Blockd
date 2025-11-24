@@ -1,0 +1,584 @@
+{
+  "service": "AI Detection Service",
+  "agent": "Agent 9",
+  "version": "1.0.0",
+  "created": "2025-11-24",
+  "description": "Comprehensive AI answer detection using multi-LLM comparison, semantic similarity, perplexity scoring, and XGBoost ensemble classification",
+
+  "architecture": {
+    "overview": "Multi-stage detection pipeline combining multiple AI models and analysis techniques",
+    "components": [
+      "Multi-LLM Answer Generation",
+      "Semantic Similarity Analysis",
+      "Perplexity Scoring",
+      "N-gram Overlap Analysis",
+      "Stylometric Feature Extraction",
+      "XGBoost Ensemble Classification"
+    ],
+    "data_flow": [
+      "1. Question Analysis → Generate AI answers from multiple LLMs",
+      "2. Generate embeddings for all AI answers",
+      "3. Calculate perplexity scores",
+      "4. Cache results in Redis and PostgreSQL (pgvector)",
+      "5. Answer Analysis → Compare human answer to cached AI answers",
+      "6. Extract 15 features for classification",
+      "7. XGBoost prediction → Risk score",
+      "8. Flag generation and recommendation"
+    ]
+  },
+
+  "multi_llm_generation": {
+    "description": "Generates answers from multiple state-of-the-art language models to create reference AI responses",
+    "models": {
+      "gpt-4": {
+        "model_id": "gpt-4-turbo-2024-04-09",
+        "provider": "OpenAI",
+        "max_tokens": 500,
+        "temperature": 0.7,
+        "characteristics": "Formal, structured, comprehensive answers with technical precision"
+      },
+      "claude-3.5-sonnet": {
+        "model_id": "claude-3-5-sonnet-20241022",
+        "provider": "Anthropic",
+        "max_tokens": 500,
+        "characteristics": "Nuanced, well-reasoned answers with strong attention to context"
+      },
+      "gemini-1.5-pro": {
+        "model_id": "gemini-1.5-pro",
+        "provider": "Google",
+        "characteristics": "Balanced, informative answers with clear explanations"
+      }
+    },
+    "execution": {
+      "mode": "parallel",
+      "timeout": "30 seconds per model",
+      "retry_strategy": {
+        "max_attempts": 3,
+        "backoff": "exponential (2s min, 10s max)"
+      },
+      "error_handling": "Continue with available models if one fails"
+    },
+    "prompt_template": "Answer this interview question concisely and professionally: {question}",
+    "processing_time": "< 5 seconds for all 3 models in parallel"
+  },
+
+  "semantic_similarity": {
+    "description": "Measures semantic similarity between human answers and AI-generated answers using sentence embeddings",
+    "embedding_model": {
+      "name": "sentence-transformers/all-MiniLM-L6-v2",
+      "dimension": 384,
+      "description": "Lightweight sentence embedding model optimized for semantic similarity",
+      "normalization": "L2 normalization for unit length vectors"
+    },
+    "similarity_metric": {
+      "method": "cosine_similarity",
+      "formula": "cos(θ) = (A · B) / (||A|| × ||B||)",
+      "range": "0 to 1 (higher = more similar)",
+      "interpretation": {
+        "0.0-0.3": "Very different content",
+        "0.3-0.6": "Somewhat related",
+        "0.6-0.8": "Similar content",
+        "0.8-0.95": "Very similar (suspicious)",
+        "0.95-1.0": "Nearly identical (highly suspicious)"
+      }
+    },
+    "aggregation": {
+      "max_similarity": "Maximum similarity across all AI models",
+      "avg_similarity": "Average similarity across all AI models",
+      "per_model_similarity": "Individual similarities to GPT-4, Claude, Gemini"
+    },
+    "thresholds": {
+      "high_similarity_threshold": 0.85,
+      "description": "Similarities above this threshold trigger high_similarity flags"
+    }
+  },
+
+  "perplexity_scoring": {
+    "description": "Measures how predictable/natural the text is using a language model. Lower perplexity indicates more AI-like text.",
+    "model": {
+      "name": "GPT-2",
+      "provider": "Hugging Face Transformers",
+      "description": "Pre-trained autoregressive language model"
+    },
+    "calculation": {
+      "formula": "Perplexity = exp(cross_entropy_loss)",
+      "process": [
+        "1. Tokenize input text",
+        "2. Calculate cross-entropy loss using GPT-2",
+        "3. Apply exponential function to get perplexity",
+        "4. For long texts, use sliding window (512 token window, 256 stride)"
+      ]
+    },
+    "interpretation": {
+      "very_low": {
+        "range": "< 30",
+        "meaning": "Highly predictable, likely AI-generated"
+      },
+      "low": {
+        "range": "30-50",
+        "meaning": "Predictable, suspicious"
+      },
+      "moderate": {
+        "range": "50-100",
+        "meaning": "Normal human variation"
+      },
+      "high": {
+        "range": "> 100",
+        "meaning": "Unpredictable, likely human with errors or informal language"
+      }
+    },
+    "thresholds": {
+      "low_perplexity_threshold": 50.0,
+      "description": "Perplexity below this triggers low_perplexity flag"
+    },
+    "limitations": [
+      "Sensitive to text length",
+      "May not work well for code snippets",
+      "Domain-specific jargon can increase perplexity"
+    ]
+  },
+
+  "ngram_overlap": {
+    "description": "Measures direct text overlap using n-gram (sequence of n words) Jaccard similarity",
+    "ngram_sizes": {
+      "trigram": {
+        "n": 3,
+        "example": "['the', 'quick', 'brown']",
+        "description": "3-word sequences"
+      },
+      "fourgram": {
+        "n": 4,
+        "example": "['the', 'quick', 'brown', 'fox']",
+        "description": "4-word sequences"
+      }
+    },
+    "similarity_metric": {
+      "method": "jaccard_similarity",
+      "formula": "J(A,B) = |A ∩ B| / |A ∪ B|",
+      "range": "0 to 1",
+      "description": "Ratio of common n-grams to total unique n-grams"
+    },
+    "processing": {
+      "steps": [
+        "1. Normalize text (lowercase, remove punctuation)",
+        "2. Tokenize into words",
+        "3. Extract n-grams (sliding window)",
+        "4. Convert to sets",
+        "5. Calculate Jaccard similarity"
+      ]
+    },
+    "interpretation": {
+      "0.0-0.3": "Different phrasing, likely independent",
+      "0.3-0.5": "Some common phrases",
+      "0.5-0.7": "Significant overlap",
+      "0.7-1.0": "High overlap, likely copied or AI-generated"
+    },
+    "thresholds": {
+      "high_overlap_threshold": 0.70,
+      "description": "Overlap above this triggers high_ngram_overlap flag"
+    }
+  },
+
+  "stylometric_analysis": {
+    "description": "Analyzes writing style characteristics to identify AI-generated patterns",
+    "features": {
+      "vocabulary_richness": {
+        "formula": "unique_words / total_words",
+        "range": "0 to 1",
+        "interpretation": {
+          "< 0.3": "Limited vocabulary (AI or non-native speaker)",
+          "0.3-0.7": "Normal human range",
+          "> 0.8": "Unusually diverse vocabulary (AI or expert)"
+        },
+        "ai_pattern": "Often 0.2-0.4 or 0.8-0.9 (extremes)"
+      },
+      "avg_sentence_length": {
+        "calculation": "total_words / sentence_count",
+        "typical_ranges": {
+          "human": "12-25 words",
+          "ai": "18-28 words (more consistent)"
+        },
+        "ai_pattern": "Consistently moderate length, less variation"
+      },
+      "punctuation_density": {
+        "formula": "punctuation_count / total_characters",
+        "range": "0 to 1",
+        "typical_ranges": {
+          "human": "0.03-0.10 (variable)",
+          "ai": "0.06-0.12 (consistent)"
+        },
+        "ai_pattern": "Perfect punctuation, consistent density"
+      },
+      "capitalization_ratio": {
+        "formula": "capital_letters / total_letters",
+        "ai_pattern": "Consistent, proper capitalization"
+      },
+      "filler_word_ratio": {
+        "filler_words": ["um", "uh", "like", "you know", "i mean", "sort of"],
+        "formula": "filler_count / total_words",
+        "typical_ranges": {
+          "human_spoken": "0.05-0.15",
+          "human_written": "0.01-0.05",
+          "ai": "< 0.02"
+        },
+        "ai_pattern": "Very few or no filler words"
+      }
+    },
+    "flags": {
+      "unnatural_vocabulary": "vocabulary_richness < 0.3 or > 0.8",
+      "robotic_tone": "filler_ratio < 0.02 AND punct_density > 0.05 AND 15 <= sent_length <= 25"
+    }
+  },
+
+  "xgboost_classifier": {
+    "description": "Ensemble classifier that combines all features to predict AI-generated content probability",
+    "model_type": "XGBoost (Extreme Gradient Boosting)",
+    "features": [
+      {
+        "name": "max_similarity_score",
+        "type": "float",
+        "range": "0-1",
+        "importance": "very_high"
+      },
+      {
+        "name": "avg_similarity_score",
+        "type": "float",
+        "range": "0-1",
+        "importance": "high"
+      },
+      {
+        "name": "gpt4_similarity",
+        "type": "float",
+        "range": "0-1",
+        "importance": "high"
+      },
+      {
+        "name": "claude_similarity",
+        "type": "float",
+        "range": "0-1",
+        "importance": "high"
+      },
+      {
+        "name": "gemini_similarity",
+        "type": "float",
+        "range": "0-1",
+        "importance": "high"
+      },
+      {
+        "name": "perplexity_score",
+        "type": "float",
+        "range": "0-200+",
+        "importance": "high"
+      },
+      {
+        "name": "trigram_overlap",
+        "type": "float",
+        "range": "0-1",
+        "importance": "medium"
+      },
+      {
+        "name": "fourgram_overlap",
+        "type": "float",
+        "range": "0-1",
+        "importance": "medium"
+      },
+      {
+        "name": "vocabulary_richness",
+        "type": "float",
+        "range": "0-1",
+        "importance": "medium"
+      },
+      {
+        "name": "avg_sentence_length",
+        "type": "float",
+        "range": "0-50+",
+        "importance": "low"
+      },
+      {
+        "name": "punctuation_density",
+        "type": "float",
+        "range": "0-1",
+        "importance": "low"
+      },
+      {
+        "name": "response_time_ms",
+        "type": "float",
+        "range": "0-180000+",
+        "importance": "medium"
+      },
+      {
+        "name": "gaze_off_screen_percentage",
+        "type": "float",
+        "range": "0-100",
+        "importance": "medium",
+        "source": "eye_tracking_service"
+      },
+      {
+        "name": "security_event_count",
+        "type": "integer",
+        "range": "0-50+",
+        "importance": "medium",
+        "source": "session_service"
+      },
+      {
+        "name": "answer_length",
+        "type": "integer",
+        "range": "0-10000+",
+        "importance": "low"
+      }
+    ],
+    "hyperparameters": {
+      "max_depth": 6,
+      "eta": 0.1,
+      "objective": "binary:logistic",
+      "subsample": 0.8,
+      "colsample_bytree": 0.8,
+      "min_child_weight": 3,
+      "gamma": 0.1
+    },
+    "training": {
+      "data_split": {
+        "train": "70%",
+        "validation": "15%",
+        "test": "15%"
+      },
+      "cross_validation": "5-fold",
+      "early_stopping": "10 rounds",
+      "target_accuracy": "> 90%"
+    },
+    "output": {
+      "risk_score": {
+        "range": "0-1",
+        "description": "Probability of AI generation"
+      },
+      "confidence": {
+        "range": "0-1",
+        "calculation": "abs(risk_score - 0.5) * 2",
+        "description": "How confident the model is in its prediction"
+      }
+    },
+    "fallback": {
+      "description": "Rule-based scoring when trained model is unavailable",
+      "weights": {
+        "max_similarity > 0.85": 0.3,
+        "avg_similarity > 0.75": 0.2,
+        "perplexity < 50": 0.2,
+        "trigram_overlap > 0.7": 0.15,
+        "unnatural_vocabulary": 0.15
+      }
+    }
+  },
+
+  "risk_score_calculation": {
+    "description": "Final risk assessment combining all detection signals",
+    "risk_levels": {
+      "minimal": {
+        "range": "0.00-0.29",
+        "color": "green",
+        "action": "No action required",
+        "interpretation": "Answer appears to be genuinely human-written"
+      },
+      "low": {
+        "range": "0.30-0.49",
+        "color": "yellow",
+        "action": "Monitor",
+        "interpretation": "Minor concerns detected, continue monitoring"
+      },
+      "medium": {
+        "range": "0.50-0.74",
+        "color": "orange",
+        "action": "Review recommended",
+        "interpretation": "Possible AI assistance, consider additional verification"
+      },
+      "high": {
+        "range": "0.75-0.89",
+        "color": "red",
+        "action": "Manual review required",
+        "interpretation": "Likely AI-generated, manual review strongly recommended"
+      },
+      "critical": {
+        "range": "0.90-1.00",
+        "color": "dark_red",
+        "action": "Investigation required",
+        "interpretation": "Strong evidence of AI usage, investigation and consequences required"
+      }
+    },
+    "adjustable_thresholds": {
+      "description": "Thresholds can be configured based on organizational tolerance",
+      "configuration": "Set via environment variables (RISK_THRESHOLD_*)"
+    }
+  },
+
+  "flag_generation": {
+    "description": "Specific warning flags based on individual detection signals",
+    "flags": {
+      "high_similarity_gpt4": {
+        "condition": "gpt4_similarity > 0.85",
+        "severity": "high",
+        "description": "Very high similarity to GPT-4 answer"
+      },
+      "high_similarity_claude": {
+        "condition": "claude_similarity > 0.85",
+        "severity": "high",
+        "description": "Very high similarity to Claude answer"
+      },
+      "high_similarity_gemini": {
+        "condition": "gemini_similarity > 0.85",
+        "severity": "high",
+        "description": "Very high similarity to Gemini answer"
+      },
+      "low_perplexity": {
+        "condition": "perplexity_score < 50",
+        "severity": "high",
+        "description": "Unusually low perplexity indicating AI-like predictability"
+      },
+      "high_ngram_overlap": {
+        "condition": "trigram_overlap > 0.70 OR fourgram_overlap > 0.70",
+        "severity": "high",
+        "description": "High n-gram overlap suggesting direct copying"
+      },
+      "unnatural_vocabulary": {
+        "condition": "vocabulary_richness < 0.3 OR vocabulary_richness > 0.8",
+        "severity": "medium",
+        "description": "Unusual vocabulary patterns"
+      },
+      "instant_response": {
+        "condition": "response_time_ms < 2000 AND question_difficulty IN ['hard', 'expert']",
+        "severity": "medium",
+        "description": "Suspiciously fast response for complex question"
+      },
+      "robotic_tone": {
+        "condition": "filler_word_ratio < 0.02 AND punctuation_density > 0.05",
+        "severity": "low",
+        "description": "Overly formal, AI-like writing style"
+      }
+    }
+  },
+
+  "caching_strategy": {
+    "description": "Two-tier caching for performance optimization",
+    "redis_cache": {
+      "purpose": "Fast in-memory cache for recent queries",
+      "keys": {
+        "ai_answers": {
+          "format": "ai_detection:ai_answers:{question_hash}",
+          "ttl": "24 hours",
+          "data": "All AI answers with embeddings and perplexity"
+        },
+        "analysis": {
+          "format": "ai_detection:analysis:{analysis_id}",
+          "ttl": "7 days",
+          "data": "Complete analysis results"
+        }
+      },
+      "benefits": [
+        "< 10ms lookup time",
+        "Reduces LLM API calls",
+        "Handles burst traffic"
+      ]
+    },
+    "postgresql_cache": {
+      "purpose": "Persistent storage with vector similarity search",
+      "table": "ai_answer_cache",
+      "features": [
+        "pgvector for semantic search",
+        "Access count tracking",
+        "Permanent storage of AI answers",
+        "Fallback when Redis unavailable"
+      ],
+      "indexes": [
+        "question_hash + model_name (unique)",
+        "IVFFlat vector index for similarity search"
+      ]
+    },
+    "cache_strategy": {
+      "lookup": [
+        "1. Check Redis cache",
+        "2. If miss, check PostgreSQL",
+        "3. If miss, generate from LLMs",
+        "4. Store in both Redis and PostgreSQL"
+      ],
+      "invalidation": "TTL-based expiration",
+      "hit_rate_target": "> 80%"
+    }
+  },
+
+  "performance_benchmarks": {
+    "latency": {
+      "question_analysis_cached": "< 100ms",
+      "question_analysis_uncached": "< 5000ms",
+      "answer_analysis": "< 3000ms",
+      "cache_lookup_redis": "< 10ms",
+      "cache_lookup_postgresql": "< 50ms"
+    },
+    "throughput": {
+      "concurrent_requests": 50,
+      "requests_per_second": 20
+    },
+    "accuracy": {
+      "target": "> 90%",
+      "false_positive_rate": "< 5%",
+      "false_negative_rate": "< 10%"
+    },
+    "resource_usage": {
+      "memory": "2-4 GB (models loaded)",
+      "cpu": "2-4 cores recommended",
+      "gpu": "Optional, improves embedding/perplexity speed"
+    }
+  },
+
+  "limitations_and_considerations": {
+    "false_positives": [
+      "Expert answers that happen to be similar to AI answers",
+      "Answers using standard textbook definitions",
+      "Non-native speakers with formal language"
+    ],
+    "false_negatives": [
+      "Heavily edited AI answers",
+      "AI answers intentionally made informal",
+      "Paraphrased AI content"
+    ],
+    "domain_limitations": [
+      "Code-heavy answers (perplexity may be unreliable)",
+      "Non-English languages (models trained on English)",
+      "Highly technical jargon (may increase perplexity)"
+    ],
+    "ethical_considerations": [
+      "Bias in training data",
+      "Impact on candidates with disabilities",
+      "Privacy concerns with answer storage"
+    ],
+    "recommendations": [
+      "Use as decision support, not final arbiter",
+      "Combine with human review for high-stakes decisions",
+      "Regularly retrain models with new data",
+      "Monitor for adversarial attacks",
+      "Provide transparency to candidates"
+    ]
+  },
+
+  "future_enhancements": {
+    "planned": [
+      "Support for more LLMs (Llama 3, Mistral, etc.)",
+      "Multilingual detection",
+      "Domain-specific models",
+      "Real-time detection during typing",
+      "Adversarial robustness improvements",
+      "Explainable AI (feature importance visualization)",
+      "A/B testing framework for threshold optimization"
+    ]
+  },
+
+  "references": {
+    "papers": [
+      "Mitchell et al. (2023) - DetectGPT: Zero-Shot Machine-Generated Text Detection",
+      "Krishna et al. (2024) - Paraphrasing evades detectors of AI-generated text",
+      "Guo et al. (2023) - How Close is ChatGPT to Human Experts?"
+    ],
+    "models": [
+      "sentence-transformers (Reimers & Gurevych, 2019)",
+      "GPT-2 (Radford et al., 2019)",
+      "XGBoost (Chen & Guestrin, 2016)"
+    ]
+  }
+}
