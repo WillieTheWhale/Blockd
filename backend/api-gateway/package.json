@@ -1,0 +1,13 @@
+{
+  "name": "api-gateway",
+  "version": "1.0.0",
+  "description": "Blockd API Gateway",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "echo 'Build will be configured by Agent 5'",
+    "start": "node dist/index.js",
+    "dev": "echo 'Dev mode - to be configured by Agent 5'"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

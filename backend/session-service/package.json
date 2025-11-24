@@ -1,0 +1,13 @@
+{
+  "name": "session-service",
+  "version": "1.0.0",
+  "description": "Blockd Session Management Service",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "echo 'Build will be configured by Agent 7'",
+    "start": "node dist/index.js",
+    "dev": "echo 'Dev mode - to be configured by Agent 7'"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

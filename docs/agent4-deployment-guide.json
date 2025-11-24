@@ -1,0 +1,842 @@
+{
+  "agent": 4,
+  "name": "Docker & Kubernetes Infrastructure",
+  "version": "1.0.0",
+  "created": "2025-11-24",
+  "overview": {
+    "description": "Complete Docker and Kubernetes infrastructure for the Blockd platform, including Dockerfiles, docker-compose for local development, Kubernetes manifests, and Helm charts for production deployment.",
+    "technologies": {
+      "docker": "27.x",
+      "kubernetes": "1.31",
+      "helm": "3.x",
+      "nodejs": "24.11.0",
+      "python": "3.14.0",
+      "postgres": "18.1",
+      "redis": "8.4",
+      "rabbitmq": "4.x"
+    }
+  },
+  "deliverables": {
+    "dockerfiles": {
+      "description": "Production-ready multi-stage Dockerfiles for all services",
+      "files": [
+        {
+          "path": "/backend/api-gateway/Dockerfile",
+          "base_image": "node:24.11.0-alpine",
+          "type": "multi-stage",
+          "port": 3000,
+          "features": ["non-root user", "health check", "layer caching"]
+        },
+        {
+          "path": "/backend/auth-service/Dockerfile",
+          "base_image": "node:24.11.0-alpine",
+          "type": "multi-stage",
+          "port": 3001,
+          "features": ["non-root user", "health check", "layer caching"]
+        },
+        {
+          "path": "/backend/session-service/Dockerfile",
+          "base_image": "node:24.11.0-alpine",
+          "type": "multi-stage",
+          "port": 3002,
+          "features": ["non-root user", "health check", "layer caching"]
+        },
+        {
+          "path": "/backend/ai-detection/Dockerfile",
+          "base_image": "python:3.14.0-slim",
+          "type": "multi-stage",
+          "port": 8000,
+          "features": ["non-root user", "health check", "optimized dependencies"]
+        },
+        {
+          "path": "/backend/eye-tracking/Dockerfile",
+          "base_image": "python:3.14.0-slim",
+          "type": "multi-stage",
+          "port": 8001,
+          "features": ["non-root user", "health check", "OpenCV runtime dependencies"]
+        },
+        {
+          "path": "/backend/response-timing/Dockerfile",
+          "base_image": "python:3.14.0-slim",
+          "type": "multi-stage",
+          "port": 8002,
+          "features": ["non-root user", "health check", "optimized dependencies"]
+        },
+        {
+          "path": "/backend/video-service/Dockerfile",
+          "base_image": "python:3.14.0-slim",
+          "type": "multi-stage",
+          "port": 8003,
+          "features": ["non-root user", "health check", "FFmpeg 7.x", "video storage volumes"]
+        },
+        {
+          "path": "/frontend/interviewer-app/Dockerfile",
+          "base_image": "node:24.11.0-alpine (builder), nginx:1.27-alpine (runtime)",
+          "type": "multi-stage",
+          "port": 80,
+          "features": ["Vite build", "nginx static hosting", "API proxy configuration"]
+        }
+      ]
+    },
+    "docker_compose": {
+      "path": "/docker-compose.yml",
+      "description": "Complete local development environment with all services",
+      "services": {
+        "infrastructure": [
+          {
+            "name": "postgres",
+            "image": "postgres:18.1-alpine",
+            "port": 5432,
+            "volumes": ["postgres_data"],
+            "health_check": true
+          },
+          {
+            "name": "redis",
+            "image": "redis:8.4-alpine",
+            "port": 6379,
+            "volumes": ["redis_data"],
+            "health_check": true
+          },
+          {
+            "name": "rabbitmq",
+            "image": "rabbitmq:4-management-alpine",
+            "ports": [5672, 15672],
+            "volumes": ["rabbitmq_data"],
+            "health_check": true
+          }
+        ],
+        "backend": [
+          {
+            "name": "api-gateway",
+            "build": "./backend/api-gateway",
+            "port": 3000,
+            "depends_on": ["postgres", "redis", "rabbitmq"]
+          },
+          {
+            "name": "auth-service",
+            "build": "./backend/auth-service",
+            "port": 3001,
+            "depends_on": ["postgres", "redis"]
+          },
+          {
+            "name": "session-service",
+            "build": "./backend/session-service",
+            "port": 3002,
+            "depends_on": ["postgres", "redis", "rabbitmq"]
+          },
+          {
+            "name": "ai-detection",
+            "build": "./backend/ai-detection",
+            "port": 8000,
+            "depends_on": ["postgres", "redis", "rabbitmq"]
+          },
+          {
+            "name": "eye-tracking",
+            "build": "./backend/eye-tracking",
+            "port": 8001,
+            "depends_on": ["postgres", "rabbitmq"]
+          },
+          {
+            "name": "response-timing",
+            "build": "./backend/response-timing",
+            "port": 8002,
+            "depends_on": ["postgres", "rabbitmq"]
+          },
+          {
+            "name": "video-service",
+            "build": "./backend/video-service",
+            "port": 8003,
+            "depends_on": ["postgres", "rabbitmq"]
+          }
+        ],
+        "frontend": [
+          {
+            "name": "frontend",
+            "build": "./frontend/interviewer-app",
+            "port": 5173,
+            "depends_on": ["api-gateway"]
+          }
+        ]
+      },
+      "networks": ["blockd-network"],
+      "volumes": ["postgres_data", "redis_data", "rabbitmq_data", "ai_models", "eye_tracking_models", "video_recordings"]
+    },
+    "kubernetes_manifests": {
+      "path": "/k8s/manifests/",
+      "description": "Production-ready Kubernetes manifests for all services",
+      "files": [
+        {
+          "file": "namespace.yaml",
+          "description": "Creates blockd namespace with labels"
+        },
+        {
+          "file": "configmap.yaml",
+          "description": "Application configuration (non-sensitive)"
+        },
+        {
+          "file": "secrets.yaml",
+          "description": "TEMPLATE for secrets - use external secret manager in production"
+        },
+        {
+          "file": "postgres-deployment.yaml",
+          "type": "StatefulSet",
+          "replicas": 1,
+          "storage": "20Gi",
+          "resources": {
+            "requests": {"memory": "1Gi", "cpu": "500m"},
+            "limits": {"memory": "2Gi", "cpu": "1000m"}
+          }
+        },
+        {
+          "file": "redis-deployment.yaml",
+          "type": "StatefulSet",
+          "replicas": 3,
+          "storage": "5Gi",
+          "resources": {
+            "requests": {"memory": "256Mi", "cpu": "250m"},
+            "limits": {"memory": "512Mi", "cpu": "500m"}
+          }
+        },
+        {
+          "file": "rabbitmq-deployment.yaml",
+          "type": "StatefulSet",
+          "replicas": 3,
+          "storage": "10Gi",
+          "resources": {
+            "requests": {"memory": "512Mi", "cpu": "250m"},
+            "limits": {"memory": "1Gi", "cpu": "500m"}
+          }
+        },
+        {
+          "file": "api-gateway-deployment.yaml",
+          "type": "Deployment + HPA",
+          "replicas": 3,
+          "autoscaling": {"min": 3, "max": 10, "cpu_threshold": 70},
+          "resources": {
+            "requests": {"memory": "256Mi", "cpu": "250m"},
+            "limits": {"memory": "512Mi", "cpu": "500m"}
+          }
+        },
+        {
+          "file": "auth-service-deployment.yaml",
+          "type": "Deployment",
+          "replicas": 2,
+          "resources": {
+            "requests": {"memory": "256Mi", "cpu": "250m"},
+            "limits": {"memory": "512Mi", "cpu": "500m"}
+          }
+        },
+        {
+          "file": "session-service-deployment.yaml",
+          "type": "Deployment",
+          "replicas": 2,
+          "resources": {
+            "requests": {"memory": "256Mi", "cpu": "250m"},
+            "limits": {"memory": "512Mi", "cpu": "500m"}
+          }
+        },
+        {
+          "file": "ai-detection-deployment.yaml",
+          "type": "Deployment + HPA",
+          "replicas": 3,
+          "autoscaling": {"min": 3, "max": 10, "cpu_threshold": 70},
+          "resources": {
+            "requests": {"memory": "1Gi", "cpu": "500m"},
+            "limits": {"memory": "2Gi", "cpu": "1000m"}
+          }
+        },
+        {
+          "file": "eye-tracking-deployment.yaml",
+          "type": "Deployment",
+          "replicas": 2,
+          "resources": {
+            "requests": {"memory": "512Mi", "cpu": "500m"},
+            "limits": {"memory": "1Gi", "cpu": "1000m"}
+          }
+        },
+        {
+          "file": "response-timing-deployment.yaml",
+          "type": "Deployment",
+          "replicas": 2,
+          "resources": {
+            "requests": {"memory": "512Mi", "cpu": "500m"},
+            "limits": {"memory": "1Gi", "cpu": "1000m"}
+          }
+        },
+        {
+          "file": "video-service-deployment.yaml",
+          "type": "Deployment",
+          "replicas": 2,
+          "resources": {
+            "requests": {"memory": "1Gi", "cpu": "500m"},
+            "limits": {"memory": "2Gi", "cpu": "1000m"}
+          }
+        },
+        {
+          "file": "frontend-deployment.yaml",
+          "type": "Deployment + HPA",
+          "replicas": 3,
+          "autoscaling": {"min": 3, "max": 10, "cpu_threshold": 70},
+          "resources": {
+            "requests": {"memory": "128Mi", "cpu": "100m"},
+            "limits": {"memory": "256Mi", "cpu": "250m"}
+          }
+        },
+        {
+          "file": "ingress.yaml",
+          "description": "NGINX ingress with TLS, WebSocket support, and API routing"
+        }
+      ]
+    },
+    "helm_chart": {
+      "path": "/k8s/helm/blockd/",
+      "description": "Production-ready Helm chart with environment-specific values",
+      "files": [
+        {
+          "file": "Chart.yaml",
+          "version": "1.0.0",
+          "description": "Helm chart metadata and dependencies"
+        },
+        {
+          "file": "values.yaml",
+          "environment": "development/local",
+          "description": "Default values with development settings"
+        },
+        {
+          "file": "values-staging.yaml",
+          "environment": "staging",
+          "description": "Staging environment overrides with reduced resources"
+        },
+        {
+          "file": "values-production.yaml",
+          "environment": "production",
+          "description": "Production environment with full resources and HA setup"
+        },
+        {
+          "file": "templates/_helpers.tpl",
+          "description": "Helm template helpers for labels, names, and URLs"
+        },
+        {
+          "file": "templates/namespace.yaml",
+          "description": "Namespace template"
+        },
+        {
+          "file": "templates/configmap.yaml",
+          "description": "ConfigMap template with dynamic values"
+        },
+        {
+          "file": "templates/secrets.yaml",
+          "description": "Secrets template (conditional creation)"
+        },
+        {
+          "file": "templates/NOTES.txt",
+          "description": "Post-installation notes and instructions"
+        }
+      ]
+    },
+    "deployment_script": {
+      "path": "/k8s/scripts/deploy.sh",
+      "description": "Automated deployment script for all environments",
+      "features": [
+        "Environment selection (local/staging/production)",
+        "Prerequisite checking (kubectl, helm)",
+        "Kubernetes context management",
+        "Helm chart validation",
+        "Deployment verification",
+        "Health checks",
+        "Rollback support"
+      ],
+      "usage": {
+        "install": "./deploy.sh [environment] install",
+        "upgrade": "./deploy.sh [environment] upgrade",
+        "uninstall": "./deploy.sh [environment] uninstall",
+        "examples": [
+          "./deploy.sh local install",
+          "./deploy.sh staging upgrade",
+          "./deploy.sh production install"
+        ]
+      }
+    },
+    "dockerignore": {
+      "description": ".dockerignore files to optimize Docker builds",
+      "files": [
+        "/.dockerignore",
+        "/backend/api-gateway/.dockerignore",
+        "/backend/auth-service/.dockerignore",
+        "/backend/session-service/.dockerignore",
+        "/backend/ai-detection/.dockerignore",
+        "/backend/eye-tracking/.dockerignore",
+        "/backend/response-timing/.dockerignore",
+        "/backend/video-service/.dockerignore",
+        "/frontend/interviewer-app/.dockerignore"
+      ]
+    }
+  },
+  "docker_build_instructions": {
+    "build_all_images": {
+      "description": "Build all Docker images for the platform",
+      "commands": [
+        "# Build backend services (Node.js)",
+        "docker build -t blockd/api-gateway:latest ./backend/api-gateway",
+        "docker build -t blockd/auth-service:latest ./backend/auth-service",
+        "docker build -t blockd/session-service:latest ./backend/session-service",
+        "",
+        "# Build backend services (Python)",
+        "docker build -t blockd/ai-detection:latest ./backend/ai-detection",
+        "docker build -t blockd/eye-tracking:latest ./backend/eye-tracking",
+        "docker build -t blockd/response-timing:latest ./backend/response-timing",
+        "docker build -t blockd/video-service:latest ./backend/video-service",
+        "",
+        "# Build frontend",
+        "docker build -t blockd/frontend:latest ./frontend/interviewer-app"
+      ]
+    },
+    "build_single_service": {
+      "description": "Build a single service",
+      "example": "docker build -t blockd/api-gateway:latest ./backend/api-gateway"
+    },
+    "build_with_cache": {
+      "description": "Build with Docker BuildKit for better caching",
+      "commands": [
+        "export DOCKER_BUILDKIT=1",
+        "docker build -t blockd/api-gateway:latest ./backend/api-gateway"
+      ]
+    },
+    "push_to_registry": {
+      "description": "Tag and push images to container registry",
+      "commands": [
+        "# Tag images",
+        "docker tag blockd/api-gateway:latest registry.blockd.com/api-gateway:1.0.0",
+        "",
+        "# Push to registry",
+        "docker push registry.blockd.com/api-gateway:1.0.0"
+      ]
+    }
+  },
+  "local_development_setup": {
+    "prerequisites": [
+      "Docker 27.x or higher",
+      "Docker Compose 2.x or higher",
+      "At least 8GB RAM available for containers",
+      "At least 20GB disk space"
+    ],
+    "steps": [
+      {
+        "step": 1,
+        "description": "Clone the repository and navigate to project root",
+        "command": "cd /path/to/Blockd"
+      },
+      {
+        "step": 2,
+        "description": "Create .env file with required API keys",
+        "commands": [
+          "cp .env.example .env",
+          "# Edit .env and add:",
+          "# OPENAI_API_KEY=your_key_here",
+          "# ANTHROPIC_API_KEY=your_key_here",
+          "# AWS_ACCESS_KEY_ID=your_key_here",
+          "# AWS_SECRET_ACCESS_KEY=your_key_here"
+        ]
+      },
+      {
+        "step": 3,
+        "description": "Start all services with docker-compose",
+        "command": "docker-compose up -d"
+      },
+      {
+        "step": 4,
+        "description": "View logs",
+        "commands": [
+          "docker-compose logs -f",
+          "docker-compose logs -f api-gateway",
+          "docker-compose logs -f postgres"
+        ]
+      },
+      {
+        "step": 5,
+        "description": "Access services",
+        "urls": {
+          "frontend": "http://localhost:5173",
+          "api_gateway": "http://localhost:3000",
+          "auth_service": "http://localhost:3001",
+          "rabbitmq_management": "http://localhost:15672"
+        }
+      },
+      {
+        "step": 6,
+        "description": "Stop all services",
+        "command": "docker-compose down"
+      },
+      {
+        "step": 7,
+        "description": "Stop and remove volumes (clean slate)",
+        "command": "docker-compose down -v"
+      }
+    ],
+    "troubleshooting": {
+      "port_conflicts": {
+        "issue": "Port already in use",
+        "solution": "Modify port mappings in docker-compose.yml or stop conflicting services"
+      },
+      "build_failures": {
+        "issue": "Docker build fails",
+        "solution": "Ensure all package.json and requirements.txt files exist, or remove build step from Dockerfiles"
+      },
+      "health_checks_failing": {
+        "issue": "Services not becoming healthy",
+        "solution": "Check logs with 'docker-compose logs [service-name]' and ensure dependencies are ready"
+      }
+    }
+  },
+  "kubernetes_deployment_guide": {
+    "minikube_local_deployment": {
+      "prerequisites": [
+        "minikube installed",
+        "kubectl installed",
+        "helm installed",
+        "At least 8GB RAM allocated to minikube"
+      ],
+      "steps": [
+        {
+          "step": 1,
+          "description": "Start minikube",
+          "command": "minikube start --memory=8192 --cpus=4"
+        },
+        {
+          "step": 2,
+          "description": "Enable ingress addon",
+          "command": "minikube addons enable ingress"
+        },
+        {
+          "step": 3,
+          "description": "Build images and load into minikube",
+          "commands": [
+            "eval $(minikube docker-env)",
+            "docker build -t blockd/api-gateway:latest ./backend/api-gateway",
+            "# Repeat for all services..."
+          ]
+        },
+        {
+          "step": 4,
+          "description": "Deploy using script",
+          "command": "cd k8s/scripts && ./deploy.sh local install"
+        },
+        {
+          "step": 5,
+          "description": "Access services via minikube",
+          "commands": [
+            "minikube service frontend -n blockd",
+            "minikube service api-gateway -n blockd"
+          ]
+        }
+      ]
+    },
+    "staging_deployment": {
+      "prerequisites": [
+        "Access to staging Kubernetes cluster",
+        "kubectl configured with staging context",
+        "helm installed",
+        "Container registry access"
+      ],
+      "steps": [
+        {
+          "step": 1,
+          "description": "Build and push images to registry",
+          "commands": [
+            "docker build -t registry.staging.blockd.com/api-gateway:staging-latest ./backend/api-gateway",
+            "docker push registry.staging.blockd.com/api-gateway:staging-latest",
+            "# Repeat for all services..."
+          ]
+        },
+        {
+          "step": 2,
+          "description": "Set kubectl context",
+          "command": "kubectl config use-context blockd-staging"
+        },
+        {
+          "step": 3,
+          "description": "Create secrets (using external secret manager)",
+          "command": "# Use AWS Secrets Manager, Vault, or kubectl create secret"
+        },
+        {
+          "step": 4,
+          "description": "Deploy using script",
+          "command": "cd k8s/scripts && ./deploy.sh staging install"
+        },
+        {
+          "step": 5,
+          "description": "Verify deployment",
+          "commands": [
+            "kubectl get pods -n blockd-staging",
+            "kubectl get svc -n blockd-staging",
+            "kubectl get ingress -n blockd-staging"
+          ]
+        }
+      ]
+    },
+    "production_deployment": {
+      "prerequisites": [
+        "Access to production Kubernetes cluster",
+        "kubectl configured with production context",
+        "helm installed",
+        "Container registry with versioned images",
+        "External secret manager configured (AWS Secrets Manager, Vault, etc.)",
+        "TLS certificates configured",
+        "DNS configured"
+      ],
+      "steps": [
+        {
+          "step": 1,
+          "description": "Build and push versioned images",
+          "commands": [
+            "docker build -t registry.blockd.com/api-gateway:1.0.0 ./backend/api-gateway",
+            "docker push registry.blockd.com/api-gateway:1.0.0",
+            "# Repeat for all services with same version tag"
+          ]
+        },
+        {
+          "step": 2,
+          "description": "Set kubectl context",
+          "command": "kubectl config use-context blockd-production"
+        },
+        {
+          "step": 3,
+          "description": "Configure external secrets",
+          "note": "Use AWS Secrets Manager, Vault, or Sealed Secrets - never commit secrets to git"
+        },
+        {
+          "step": 4,
+          "description": "Update values-production.yaml with correct image tags",
+          "command": "# Edit k8s/helm/blockd/values-production.yaml"
+        },
+        {
+          "step": 5,
+          "description": "Deploy using script",
+          "command": "cd k8s/scripts && ./deploy.sh production install"
+        },
+        {
+          "step": 6,
+          "description": "Verify deployment and monitor",
+          "commands": [
+            "kubectl get pods -n blockd",
+            "kubectl get svc -n blockd",
+            "kubectl get ingress -n blockd",
+            "kubectl logs -n blockd -l app=api-gateway -f"
+          ]
+        }
+      ],
+      "rollback": {
+        "description": "Rollback to previous version",
+        "commands": [
+          "helm rollback blockd -n blockd",
+          "# Or rollback to specific revision:",
+          "helm rollback blockd 2 -n blockd"
+        ]
+      }
+    }
+  },
+  "service_discovery": {
+    "internal_dns": {
+      "description": "Services communicate using Kubernetes DNS",
+      "format": "<service-name>.<namespace>.svc.cluster.local",
+      "examples": {
+        "api_gateway": "api-gateway.blockd.svc.cluster.local:3000",
+        "auth_service": "auth-service.blockd.svc.cluster.local:3001",
+        "postgres": "postgres.blockd.svc.cluster.local:5432",
+        "redis": "redis.blockd.svc.cluster.local:6379",
+        "rabbitmq": "rabbitmq.blockd.svc.cluster.local:5672"
+      }
+    },
+    "short_names": {
+      "description": "Within the same namespace, use short service names",
+      "examples": {
+        "api_gateway": "http://api-gateway:3000",
+        "auth_service": "http://auth-service:3001",
+        "postgres": "postgres:5432"
+      }
+    },
+    "environment_variables": {
+      "description": "Services discover each other via environment variables",
+      "examples": {
+        "DATABASE_URL": "postgresql://user:pass@postgres:5432/blockd",
+        "REDIS_URL": "redis://:password@redis:6379",
+        "RABBITMQ_URL": "amqp://user:pass@rabbitmq:5672/blockd",
+        "AUTH_SERVICE_URL": "http://auth-service:3001",
+        "SESSION_SERVICE_URL": "http://session-service:3002"
+      }
+    }
+  },
+  "scaling_strategies": {
+    "horizontal_pod_autoscaler": {
+      "description": "HPA automatically scales pods based on CPU/memory metrics",
+      "configured_services": [
+        {
+          "service": "api-gateway",
+          "min_replicas": 3,
+          "max_replicas": 10,
+          "cpu_threshold": "70%",
+          "memory_threshold": "80%"
+        },
+        {
+          "service": "ai-detection",
+          "min_replicas": 3,
+          "max_replicas": 10,
+          "cpu_threshold": "70%",
+          "memory_threshold": "80%"
+        },
+        {
+          "service": "frontend",
+          "min_replicas": 3,
+          "max_replicas": 10,
+          "cpu_threshold": "70%",
+          "memory_threshold": "80%"
+        }
+      ]
+    },
+    "manual_scaling": {
+      "description": "Manually scale deployments using kubectl",
+      "commands": [
+        "# Scale up",
+        "kubectl scale deployment api-gateway --replicas=5 -n blockd",
+        "",
+        "# Scale down",
+        "kubectl scale deployment api-gateway --replicas=2 -n blockd"
+      ]
+    },
+    "statefulset_scaling": {
+      "description": "Scale StatefulSets for databases",
+      "commands": [
+        "# Scale Redis cluster",
+        "kubectl scale statefulset redis --replicas=5 -n blockd",
+        "",
+        "# Scale RabbitMQ cluster",
+        "kubectl scale statefulset rabbitmq --replicas=5 -n blockd"
+      ],
+      "note": "PostgreSQL should remain at 1 replica unless setting up replication"
+    }
+  },
+  "monitoring_and_observability": {
+    "health_checks": {
+      "liveness_probe": "Checks if container is alive, restarts if failing",
+      "readiness_probe": "Checks if container is ready to receive traffic",
+      "endpoints": {
+        "nodejs_services": "GET /health",
+        "python_services": "GET /health"
+      }
+    },
+    "logs": {
+      "view_logs": "kubectl logs -n blockd -l app=api-gateway -f",
+      "view_previous": "kubectl logs -n blockd api-gateway-pod --previous",
+      "all_pods": "kubectl logs -n blockd --all-containers=true -f"
+    },
+    "metrics": {
+      "pod_metrics": "kubectl top pods -n blockd",
+      "node_metrics": "kubectl top nodes",
+      "hpa_status": "kubectl get hpa -n blockd"
+    }
+  },
+  "security_best_practices": {
+    "container_security": [
+      "All containers run as non-root users",
+      "Multi-stage builds minimize attack surface",
+      "Alpine/slim base images reduce vulnerabilities",
+      "No secrets in Dockerfiles or images"
+    ],
+    "kubernetes_security": [
+      "Secrets stored in Kubernetes Secrets (or external secret manager)",
+      "RBAC configured for service accounts",
+      "Network policies to restrict pod-to-pod communication",
+      "TLS/SSL for all external traffic via Ingress",
+      "Resource limits prevent resource exhaustion attacks"
+    ],
+    "secrets_management": {
+      "development": "Use Kubernetes Secrets (acceptable for dev/staging)",
+      "production": "Use external secret managers (AWS Secrets Manager, Vault, GCP Secret Manager)",
+      "rotation": "Implement secret rotation policies",
+      "never": "Never commit secrets to version control"
+    }
+  },
+  "testing_results": {
+    "docker_builds": {
+      "status": "Ready for testing",
+      "note": "Docker builds require package.json and requirements.txt files to be created by other agents (5-12)",
+      "test_commands": [
+        "docker build -t blockd/api-gateway:test ./backend/api-gateway",
+        "docker build -t blockd/ai-detection:test ./backend/ai-detection",
+        "docker build -t blockd/frontend:test ./frontend/interviewer-app"
+      ]
+    },
+    "docker_compose": {
+      "status": "Ready for testing",
+      "note": "Requires application code from other agents",
+      "test_command": "docker-compose up -d",
+      "verify_command": "docker-compose ps"
+    },
+    "kubernetes_manifests": {
+      "status": "Validated",
+      "validation": "YAML syntax validated",
+      "test_deployment": "Use deploy.sh script with minikube"
+    },
+    "helm_charts": {
+      "status": "Ready for testing",
+      "lint_command": "helm lint k8s/helm/blockd",
+      "dry_run": "helm install blockd k8s/helm/blockd --dry-run --debug",
+      "template_test": "helm template blockd k8s/helm/blockd"
+    }
+  },
+  "next_steps": {
+    "for_developers": [
+      "Agents 5-12 will create the application code",
+      "Once application code is ready, test Docker builds",
+      "Test local development with docker-compose up",
+      "Verify all services start and communicate correctly"
+    ],
+    "for_devops": [
+      "Set up container registry (Docker Hub, ECR, GCR, etc.)",
+      "Configure Kubernetes clusters (staging, production)",
+      "Set up external secret management",
+      "Configure DNS and TLS certificates",
+      "Set up CI/CD pipeline for automated builds and deployments"
+    ],
+    "for_testing": [
+      "Test docker-compose in local environment",
+      "Deploy to minikube for local K8s testing",
+      "Verify service discovery and networking",
+      "Test HPA scaling behavior under load",
+      "Verify health checks and readiness probes"
+    ]
+  },
+  "useful_commands": {
+    "docker": {
+      "build": "docker build -t <image>:<tag> <path>",
+      "run": "docker run -p <host>:<container> <image>",
+      "compose_up": "docker-compose up -d",
+      "compose_down": "docker-compose down",
+      "compose_logs": "docker-compose logs -f <service>",
+      "prune": "docker system prune -a"
+    },
+    "kubectl": {
+      "get_pods": "kubectl get pods -n blockd",
+      "describe_pod": "kubectl describe pod <pod-name> -n blockd",
+      "logs": "kubectl logs <pod-name> -n blockd -f",
+      "exec": "kubectl exec -it <pod-name> -n blockd -- /bin/sh",
+      "port_forward": "kubectl port-forward svc/<service> <local>:<remote> -n blockd",
+      "delete_pod": "kubectl delete pod <pod-name> -n blockd"
+    },
+    "helm": {
+      "install": "helm install <release> <chart> -n <namespace>",
+      "upgrade": "helm upgrade <release> <chart> -n <namespace>",
+      "uninstall": "helm uninstall <release> -n <namespace>",
+      "list": "helm list -n <namespace>",
+      "status": "helm status <release> -n <namespace>",
+      "rollback": "helm rollback <release> <revision> -n <namespace>"
+    }
+  },
+  "references": {
+    "docker_docs": "https://docs.docker.com/",
+    "kubernetes_docs": "https://kubernetes.io/docs/",
+    "helm_docs": "https://helm.sh/docs/",
+    "docker_best_practices": "https://docs.docker.com/develop/dev-best-practices/",
+    "kubernetes_best_practices": "https://kubernetes.io/docs/concepts/configuration/overview/"
+  }
+}

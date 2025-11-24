@@ -1,0 +1,24 @@
+# AI Detection Service Dependencies
+# To be configured by Agent 9
+
+# FastAPI and server
+fastapi==0.121.3
+uvicorn[standard]==0.32.1
+pydantic==2.10.4
+
+# Database
+psycopg2-binary==2.9.10
+sqlalchemy==2.0.36
+
+# Redis
+redis==5.2.1
+
+# Message Queue
+pika==1.3.2
+
+# AI/ML (placeholder versions)
+# openai==1.59.5
+# anthropic==0.42.0
+# sentence-transformers==3.3.1
+# xgboost==2.1.3
+# torch==2.5.1

@@ -1,0 +1,293 @@
+version: '3.9'
+
+services:
+  # Database Services
+  postgres:
+    image: postgres:18.1-alpine
+    container_name: blockd-postgres
+    environment:
+      POSTGRES_DB: blockd
+      POSTGRES_USER: blockd_user
+      POSTGRES_PASSWORD: blockd_password_dev
+      POSTGRES_INITDB_ARGS: "-E UTF8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - ./database/init.sh:/docker-entrypoint-initdb.d/02-init.sh
+    networks:
+      - blockd-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U blockd_user -d blockd"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Redis Cache
+  redis:
+    image: redis:8.4-alpine
+    container_name: blockd-redis
+    command: redis-server --appendonly yes --requirepass blockd_redis_dev
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - blockd-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # RabbitMQ Message Queue
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    container_name: blockd-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: blockd_mq
+      RABBITMQ_DEFAULT_PASS: blockd_mq_dev
+      RABBITMQ_DEFAULT_VHOST: blockd
+    ports:
+      - "5672:5672"   # AMQP
+      - "15672:15672" # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - blockd-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  # API Gateway (Node.js)
+  api-gateway:
+    build:
+      context: ./backend/api-gateway
+      dockerfile: Dockerfile
+    container_name: blockd-api-gateway
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      DATABASE_URL: postgresql://blockd_user:blockd_password_dev@postgres:5432/blockd
+      REDIS_URL: redis://:blockd_redis_dev@redis:6379
+      RABBITMQ_URL: amqp://blockd_mq:blockd_mq_dev@rabbitmq:5672/blockd
+      JWT_SECRET: dev_jwt_secret_change_in_production
+      AUTH_SERVICE_URL: http://auth-service:3001
+      SESSION_SERVICE_URL: http://session-service:3002
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - blockd-network
+    volumes:
+      - ./backend/api-gateway:/app
+      - /app/node_modules
+    restart: unless-stopped
+
+  # Auth Service (Node.js)
+  auth-service:
+    build:
+      context: ./backend/auth-service
+      dockerfile: Dockerfile
+    container_name: blockd-auth-service
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+      DATABASE_URL: postgresql://blockd_user:blockd_password_dev@postgres:5432/blockd
+      REDIS_URL: redis://:blockd_redis_dev@redis:6379
+      JWT_SECRET: dev_jwt_secret_change_in_production
+      JWT_EXPIRY: 1h
+      REFRESH_TOKEN_EXPIRY: 7d
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - blockd-network
+    volumes:
+      - ./backend/auth-service:/app
+      - /app/node_modules
+    restart: unless-stopped
+
+  # Session Service (Node.js)
+  session-service:
+    build:
+      context: ./backend/session-service
+      dockerfile: Dockerfile
+    container_name: blockd-session-service
+    environment:
+      NODE_ENV: development
+      PORT: 3002
+      DATABASE_URL: postgresql://blockd_user:blockd_password_dev@postgres:5432/blockd
+      REDIS_URL: redis://:blockd_redis_dev@redis:6379
+      RABBITMQ_URL: amqp://blockd_mq:blockd_mq_dev@rabbitmq:5672/blockd
+    ports:
+      - "3002:3002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - blockd-network
+    volumes:
+      - ./backend/session-service:/app
+      - /app/node_modules
+    restart: unless-stopped
+
+  # AI Detection Service (Python)
+  ai-detection:
+    build:
+      context: ./backend/ai-detection
+      dockerfile: Dockerfile
+    container_name: blockd-ai-detection
+    environment:
+      PYTHONUNBUFFERED: 1
+      DATABASE_URL: postgresql://blockd_user:blockd_password_dev@postgres:5432/blockd
+      REDIS_URL: redis://:blockd_redis_dev@redis:6379
+      RABBITMQ_URL: amqp://blockd_mq:blockd_mq_dev@rabbitmq:5672/blockd
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-your_openai_key_here}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-your_anthropic_key_here}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - blockd-network
+    volumes:
+      - ./backend/ai-detection:/app
+      - ai_models:/app/models
+    restart: unless-stopped
+
+  # Eye Tracking Service (Python)
+  eye-tracking:
+    build:
+      context: ./backend/eye-tracking
+      dockerfile: Dockerfile
+    container_name: blockd-eye-tracking
+    environment:
+      PYTHONUNBUFFERED: 1
+      DATABASE_URL: postgresql://blockd_user:blockd_password_dev@postgres:5432/blockd
+      RABBITMQ_URL: amqp://blockd_mq:blockd_mq_dev@rabbitmq:5672/blockd
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - blockd-network
+    volumes:
+      - ./backend/eye-tracking:/app
+      - eye_tracking_models:/app/models
+    restart: unless-stopped
+
+  # Response Timing Service (Python)
+  response-timing:
+    build:
+      context: ./backend/response-timing
+      dockerfile: Dockerfile
+    container_name: blockd-response-timing
+    environment:
+      PYTHONUNBUFFERED: 1
+      DATABASE_URL: postgresql://blockd_user:blockd_password_dev@postgres:5432/blockd
+      RABBITMQ_URL: amqp://blockd_mq:blockd_mq_dev@rabbitmq:5672/blockd
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-your_openai_key_here}
+    ports:
+      - "8002:8002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - blockd-network
+    volumes:
+      - ./backend/response-timing:/app
+    restart: unless-stopped
+
+  # Video Service (Python with FFmpeg)
+  video-service:
+    build:
+      context: ./backend/video-service
+      dockerfile: Dockerfile
+    container_name: blockd-video-service
+    environment:
+      PYTHONUNBUFFERED: 1
+      DATABASE_URL: postgresql://blockd_user:blockd_password_dev@postgres:5432/blockd
+      RABBITMQ_URL: amqp://blockd_mq:blockd_mq_dev@rabbitmq:5672/blockd
+      S3_BUCKET: ${S3_BUCKET:-blockd-videos-dev}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+    ports:
+      - "8003:8003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - blockd-network
+    volumes:
+      - ./backend/video-service:/app
+      - video_recordings:/app/recordings
+    restart: unless-stopped
+
+  # Frontend Interviewer App
+  frontend:
+    build:
+      context: ./frontend/interviewer-app
+      dockerfile: Dockerfile
+    container_name: blockd-frontend
+    environment:
+      VITE_API_URL: http://localhost:3000/api/v1
+      VITE_WS_URL: ws://localhost:3000
+    ports:
+      - "5173:80"
+    depends_on:
+      - api-gateway
+    networks:
+      - blockd-network
+    restart: unless-stopped
+
+networks:
+  blockd-network:
+    driver: bridge
+    name: blockd-network
+
+volumes:
+  postgres_data:
+    name: blockd-postgres-data
+  redis_data:
+    name: blockd-redis-data
+  rabbitmq_data:
+    name: blockd-rabbitmq-data
+  ai_models:
+    name: blockd-ai-models
+  eye_tracking_models:
+    name: blockd-eye-tracking-models
+  video_recordings:
+    name: blockd-video-recordings

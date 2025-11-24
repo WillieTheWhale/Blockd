@@ -1,0 +1,13 @@
+{
+  "name": "auth-service",
+  "version": "1.0.0",
+  "description": "Blockd Authentication Service",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "echo 'Build will be configured by Agent 6'",
+    "start": "node dist/index.js",
+    "dev": "echo 'Dev mode - to be configured by Agent 6'"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

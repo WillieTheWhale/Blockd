@@ -1,0 +1,490 @@
+{
+  "rabbit_version": "4.0.0",
+  "rabbitmq_version": "4.0.0",
+  "users": [
+    {
+      "name": "blockd_user",
+      "password_hash": "blockd_password_change_in_production",
+      "hashing_algorithm": "rabbit_password_hashing_sha256",
+      "tags": "administrator"
+    }
+  ],
+  "vhosts": [
+    {
+      "name": "blockd"
+    }
+  ],
+  "permissions": [
+    {
+      "user": "blockd_user",
+      "vhost": "blockd",
+      "configure": ".*",
+      "write": ".*",
+      "read": ".*"
+    }
+  ],
+  "parameters": [],
+  "global_parameters": [
+    {
+      "name": "cluster_name",
+      "value": "blockd-rabbitmq-cluster"
+    }
+  ],
+  "policies": [
+    {
+      "vhost": "blockd",
+      "name": "ha-all",
+      "pattern": ".*",
+      "apply-to": "queues",
+      "definition": {
+        "ha-mode": "exactly",
+        "ha-params": 2,
+        "ha-sync-mode": "automatic",
+        "queue-master-locator": "min-masters"
+      },
+      "priority": 0
+    },
+    {
+      "vhost": "blockd",
+      "name": "ttl-policy",
+      "pattern": "^(video_|ai_|gaze_)",
+      "apply-to": "queues",
+      "definition": {
+        "message-ttl": 86400000,
+        "expires": 172800000
+      },
+      "priority": 1
+    }
+  ],
+  "exchanges": [
+    {
+      "name": "video_processing",
+      "vhost": "blockd",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "ai_detection",
+      "vhost": "blockd",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "security_events",
+      "vhost": "blockd",
+      "type": "fanout",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "gaze_analysis",
+      "vhost": "blockd",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "dlx",
+      "vhost": "blockd",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    }
+  ],
+  "queues": [
+    {
+      "name": "video_encode",
+      "vhost": "blockd",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-dead-letter-exchange": "dlx",
+        "x-dead-letter-routing-key": "video_encode.dlq",
+        "x-max-length": 100000,
+        "x-overflow": "reject-publish"
+      }
+    },
+    {
+      "name": "video_thumbnail",
+      "vhost": "blockd",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-dead-letter-exchange": "dlx",
+        "x-dead-letter-routing-key": "video_thumbnail.dlq",
+        "x-max-length": 50000,
+        "x-overflow": "reject-publish"
+      }
+    },
+    {
+      "name": "video_upload",
+      "vhost": "blockd",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-dead-letter-exchange": "dlx",
+        "x-dead-letter-routing-key": "video_upload.dlq",
+        "x-max-length": 50000,
+        "x-overflow": "reject-publish"
+      }
+    },
+    {
+      "name": "ai_analyze",
+      "vhost": "blockd",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-dead-letter-exchange": "dlx",
+        "x-dead-letter-routing-key": "ai_analyze.dlq",
+        "x-max-length": 100000,
+        "x-overflow": "reject-publish"
+      }
+    },
+    {
+      "name": "embedding_generate",
+      "vhost": "blockd",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-dead-letter-exchange": "dlx",
+        "x-dead-letter-routing-key": "embedding_generate.dlq",
+        "x-max-length": 50000,
+        "x-overflow": "reject-publish"
+      }
+    },
+    {
+      "name": "cache_warmup",
+      "vhost": "blockd",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-dead-letter-exchange": "dlx",
+        "x-dead-letter-routing-key": "cache_warmup.dlq",
+        "x-max-length": 10000,
+        "x-overflow": "drop-head"
+      }
+    },
+    {
+      "name": "security_alert",
+      "vhost": "blockd",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-dead-letter-exchange": "dlx",
+        "x-dead-letter-routing-key": "security_alert.dlq",
+        "x-max-length": 10000,
+        "x-overflow": "reject-publish"
+      }
+    },
+    {
+      "name": "security_log",
+      "vhost": "blockd",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-dead-letter-exchange": "dlx",
+        "x-dead-letter-routing-key": "security_log.dlq",
+        "x-max-length": 100000,
+        "x-overflow": "drop-head"
+      }
+    },
+    {
+      "name": "gaze_process",
+      "vhost": "blockd",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-dead-letter-exchange": "dlx",
+        "x-dead-letter-routing-key": "gaze_process.dlq",
+        "x-max-length": 100000,
+        "x-overflow": "reject-publish"
+      }
+    },
+    {
+      "name": "anomaly_detect",
+      "vhost": "blockd",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-dead-letter-exchange": "dlx",
+        "x-dead-letter-routing-key": "anomaly_detect.dlq",
+        "x-max-length": 50000,
+        "x-overflow": "reject-publish"
+      }
+    },
+    {
+      "name": "video_encode.dlq",
+      "vhost": "blockd",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum"
+      }
+    },
+    {
+      "name": "video_thumbnail.dlq",
+      "vhost": "blockd",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum"
+      }
+    },
+    {
+      "name": "video_upload.dlq",
+      "vhost": "blockd",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum"
+      }
+    },
+    {
+      "name": "ai_analyze.dlq",
+      "vhost": "blockd",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum"
+      }
+    },
+    {
+      "name": "embedding_generate.dlq",
+      "vhost": "blockd",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum"
+      }
+    },
+    {
+      "name": "cache_warmup.dlq",
+      "vhost": "blockd",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum"
+      }
+    },
+    {
+      "name": "security_alert.dlq",
+      "vhost": "blockd",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum"
+      }
+    },
+    {
+      "name": "security_log.dlq",
+      "vhost": "blockd",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum"
+      }
+    },
+    {
+      "name": "gaze_process.dlq",
+      "vhost": "blockd",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum"
+      }
+    },
+    {
+      "name": "anomaly_detect.dlq",
+      "vhost": "blockd",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum"
+      }
+    }
+  ],
+  "bindings": [
+    {
+      "source": "video_processing",
+      "vhost": "blockd",
+      "destination": "video_encode",
+      "destination_type": "queue",
+      "routing_key": "video.encode.*",
+      "arguments": {}
+    },
+    {
+      "source": "video_processing",
+      "vhost": "blockd",
+      "destination": "video_thumbnail",
+      "destination_type": "queue",
+      "routing_key": "video.thumbnail.*",
+      "arguments": {}
+    },
+    {
+      "source": "video_processing",
+      "vhost": "blockd",
+      "destination": "video_upload",
+      "destination_type": "queue",
+      "routing_key": "video.upload.*",
+      "arguments": {}
+    },
+    {
+      "source": "ai_detection",
+      "vhost": "blockd",
+      "destination": "ai_analyze",
+      "destination_type": "queue",
+      "routing_key": "ai.analyze.*",
+      "arguments": {}
+    },
+    {
+      "source": "ai_detection",
+      "vhost": "blockd",
+      "destination": "embedding_generate",
+      "destination_type": "queue",
+      "routing_key": "ai.embedding.*",
+      "arguments": {}
+    },
+    {
+      "source": "ai_detection",
+      "vhost": "blockd",
+      "destination": "cache_warmup",
+      "destination_type": "queue",
+      "routing_key": "ai.cache.*",
+      "arguments": {}
+    },
+    {
+      "source": "security_events",
+      "vhost": "blockd",
+      "destination": "security_alert",
+      "destination_type": "queue",
+      "routing_key": "",
+      "arguments": {}
+    },
+    {
+      "source": "security_events",
+      "vhost": "blockd",
+      "destination": "security_log",
+      "destination_type": "queue",
+      "routing_key": "",
+      "arguments": {}
+    },
+    {
+      "source": "gaze_analysis",
+      "vhost": "blockd",
+      "destination": "gaze_process",
+      "destination_type": "queue",
+      "routing_key": "gaze.process.*",
+      "arguments": {}
+    },
+    {
+      "source": "gaze_analysis",
+      "vhost": "blockd",
+      "destination": "anomaly_detect",
+      "destination_type": "queue",
+      "routing_key": "gaze.anomaly.*",
+      "arguments": {}
+    },
+    {
+      "source": "dlx",
+      "vhost": "blockd",
+      "destination": "video_encode.dlq",
+      "destination_type": "queue",
+      "routing_key": "video_encode.dlq",
+      "arguments": {}
+    },
+    {
+      "source": "dlx",
+      "vhost": "blockd",
+      "destination": "video_thumbnail.dlq",
+      "destination_type": "queue",
+      "routing_key": "video_thumbnail.dlq",
+      "arguments": {}
+    },
+    {
+      "source": "dlx",
+      "vhost": "blockd",
+      "destination": "video_upload.dlq",
+      "destination_type": "queue",
+      "routing_key": "video_upload.dlq",
+      "arguments": {}
+    },
+    {
+      "source": "dlx",
+      "vhost": "blockd",
+      "destination": "ai_analyze.dlq",
+      "destination_type": "queue",
+      "routing_key": "ai_analyze.dlq",
+      "arguments": {}
+    },
+    {
+      "source": "dlx",
+      "vhost": "blockd",
+      "destination": "embedding_generate.dlq",
+      "destination_type": "queue",
+      "routing_key": "embedding_generate.dlq",
+      "arguments": {}
+    },
+    {
+      "source": "dlx",
+      "vhost": "blockd",
+      "destination": "cache_warmup.dlq",
+      "destination_type": "queue",
+      "routing_key": "cache_warmup.dlq",
+      "arguments": {}
+    },
+    {
+      "source": "dlx",
+      "vhost": "blockd",
+      "destination": "security_alert.dlq",
+      "destination_type": "queue",
+      "routing_key": "security_alert.dlq",
+      "arguments": {}
+    },
+    {
+      "source": "dlx",
+      "vhost": "blockd",
+      "destination": "security_log.dlq",
+      "destination_type": "queue",
+      "routing_key": "security_log.dlq",
+      "arguments": {}
+    },
+    {
+      "source": "dlx",
+      "vhost": "blockd",
+      "destination": "gaze_process.dlq",
+      "destination_type": "queue",
+      "routing_key": "gaze_process.dlq",
+      "arguments": {}
+    },
+    {
+      "source": "dlx",
+      "vhost": "blockd",
+      "destination": "anomaly_detect.dlq",
+      "destination_type": "queue",
+      "routing_key": "anomaly_detect.dlq",
+      "arguments": {}
+    }
+  ]
+}

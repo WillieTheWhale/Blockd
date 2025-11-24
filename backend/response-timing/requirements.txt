@@ -1,0 +1,19 @@
+# Response Timing Service Dependencies
+# To be configured by Agent 11
+
+# FastAPI and server
+fastapi==0.121.3
+uvicorn[standard]==0.32.1
+pydantic==2.10.4
+
+# Database
+psycopg2-binary==2.9.10
+sqlalchemy==2.0.36
+
+# Message Queue
+pika==1.3.2
+
+# Audio processing (placeholder versions)
+# openai==1.59.5
+# librosa==0.10.2
+# soundfile==0.12.1

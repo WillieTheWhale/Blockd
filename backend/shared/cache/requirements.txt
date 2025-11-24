@@ -1,0 +1,8 @@
+# Redis client for Python
+redis>=5.0.0,<6.0.0
+
+# Optional: Performance boost with hiredis C parser
+hiredis>=2.3.0,<3.0.0
+
+# Type hints
+types-redis>=4.6.0
