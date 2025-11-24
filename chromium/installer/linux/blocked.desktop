@@ -1,0 +1,22 @@
+[Desktop Entry]
+Version=1.0
+Name=Blockd Browser
+GenericName=Web Browser
+Comment=Secure interview browser with AI-powered anti-cheating
+Exec=/opt/blockd-browser/blocked %U
+Icon=blockd-browser
+Terminal=false
+Type=Application
+Categories=Network;WebBrowser;
+MimeType=text/html;text/xml;application/xhtml+xml;x-scheme-handler/http;x-scheme-handler/https;x-scheme-handler/blockd;
+StartupNotify=true
+StartupWMClass=blockd-browser
+Actions=NewWindow;NewPrivateWindow;
+
+[Desktop Action NewWindow]
+Name=New Window
+Exec=/opt/blockd-browser/blocked --new-window
+
+[Desktop Action NewPrivateWindow]
+Name=New Private Window
+Exec=/opt/blockd-browser/blocked --incognito

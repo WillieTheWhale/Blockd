@@ -1,0 +1,65 @@
+// Copyright 2025 The Blockd Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+// Mojo interface for Blocked session management.
+
+module blocked.mojom;
+
+import "chrome/browser/blocked/public/mojom/eye_tracking.mojom";
+import "chrome/browser/blocked/public/mojom/video_capture.mojom";
+
+// Session state.
+enum SessionState {
+  IDLE,
+  INITIALIZING,
+  CALIBRATING,
+  ACTIVE,
+  PAUSED,
+  ENDED,
+  ERROR,
+};
+
+// Browser-side interface (implemented in browser process).
+// Main interface for session coordination.
+interface BlockedSessionHost {
+  // Renderer reports ready for session.
+  OnRendererReady();
+
+  // Renderer sends session event.
+  OnSessionEvent(string event_type, string data);
+
+  // Get current session state.
+  GetSessionState() => (SessionState state);
+
+  // Bind eye tracking interface.
+  BindEyeTracking(pending_receiver<EyeTrackingHost> eye_tracking_host,
+                  pending_remote<EyeTrackingClient> eye_tracking_client);
+
+  // Bind video capture interface.
+  BindVideoCapture(pending_receiver<VideoCaptureHost> video_capture_host,
+                   pending_remote<VideoCaptureClient> video_capture_client);
+};
+
+// Renderer-side interface (implemented in renderer process).
+interface BlockedSessionClient {
+  // Browser notifies session state change.
+  OnSessionStateChanged(SessionState new_state);
+
+  // Browser sends session configuration.
+  OnSessionConfig(SessionConfig config);
+
+  // Browser requests to end session.
+  EndSession();
+};
+
+// Session configuration.
+struct SessionConfig {
+  string session_id;
+  string session_token;
+  bool enable_eye_tracking;
+  bool enable_video_capture;
+  bool enable_security_monitoring;
+  CalibrationSettings calibration_settings;
+  VideoCaptureSettings video_settings;
+};

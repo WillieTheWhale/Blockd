@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Omaha (Google Update) configuration for Blockd Browser
+  Copyright 2025 The Blockd Authors. All rights reserved.
+-->
+<response protocol="3.0" server="prod">
+  <daystart elapsed_seconds="0"/>
+  <app appid="{BLOCKD-GUID-HERE}" status="ok">
+    <updatecheck status="ok">
+      <urls>
+        <url codebase="https://update.blockd.com/releases/windows/"/>
+      </urls>
+      <manifest version="1.0.0">
+        <packages>
+          <package name="BlockedBrowser_Setup_v1.0.0.exe"
+                   size="85000000"
+                   hash_sha256="INSERT_SHA256_HASH_HERE"
+                   required="true"/>
+        </packages>
+        <actions>
+          <action event="install"
+                  run="BlockedBrowser_Setup_v1.0.0.exe"
+                  arguments="/S"
+                  successaction="exitsilentlyonlaunchcmd"/>
+          <action event="update"
+                  run="BlockedBrowser_Setup_v1.0.0.exe"
+                  arguments="/S /UPDATE"
+                  successaction="exitsilentlyonlaunchcmd"/>
+        </actions>
+      </manifest>
+    </updatecheck>
+  </app>
+</response>

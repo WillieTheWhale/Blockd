@@ -1,0 +1,11 @@
+COMPANY_FULLNAME=Blocked Inc.
+COMPANY_SHORTNAME=Blocked
+PRODUCT_FULLNAME=Blocked Interview Browser
+PRODUCT_SHORTNAME=Blocked
+PRODUCT_INSTALLER_FULLNAME=Blocked Interview Browser Installer
+PRODUCT_INSTALLER_SHORTNAME=Blocked Installer
+CHROMIUM_PRODUCT_NAME=Blocked
+MAC_BUNDLE_ID=com.blockd.browser
+MAC_CREATOR_CODE=Blkd
+WIN_APP_ID=BlockdBrowser
+LINUX_PACKAGE_NAME=blocked-browser

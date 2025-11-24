@@ -1,0 +1,110 @@
+# Blocked Browser - Root BUILD.gn
+# Custom build targets for Blocked browser components
+
+import("//build/config/features.gni")
+import("//build/config/ui.gni")
+
+# Blocked feature flags (defined in args.gn)
+declare_args() {
+  blocked_enable_security_monitoring = true
+  blocked_enable_eye_tracking = true
+  blocked_enable_telemetry = true
+  blocked_enable_video_capture = true
+  blocked_backend_url = "wss://api.blockd.com"
+}
+
+# Main Blocked browser group
+# This target includes all custom Blocked components
+group("blocked") {
+  deps = [
+    "//chrome/browser/blocked:blocked_browser_modules",
+    "//content/renderer/blocked_eye_tracking:eye_tracking",
+  ]
+
+  if (blocked_enable_security_monitoring) {
+    deps += [ "//chrome/browser/blocked/blocked_security:security_monitoring" ]
+  }
+
+  if (blocked_enable_telemetry) {
+    deps += [ "//chrome/browser/blocked/blocked_telemetry:telemetry" ]
+  }
+
+  if (blocked_enable_video_capture) {
+    deps += [ "//chrome/browser/blocked/blocked_video:video_capture" ]
+  }
+}
+
+# Blocked unit tests
+test("blocked_unittests") {
+  testonly = true
+
+  sources = [
+    "//chrome/browser/blocked/blocked_security/blocked_security_service_unittest.cc",
+    "//chrome/browser/blocked/blocked_security/process_monitor_unittest.cc",
+    "//chrome/browser/blocked/blocked_security/window_monitor_unittest.cc",
+    "//chrome/browser/blocked/blocked_security/vm_detector_unittest.cc",
+    "//chrome/browser/blocked/blocked_telemetry/telemetry_service_unittest.cc",
+    "//chrome/browser/blocked/blocked_ipc/backend_connector_unittest.cc",
+    "//content/renderer/blocked_eye_tracking/eye_tracking_worker_unittest.cc",
+  ]
+
+  deps = [
+    "//base/test:test_support",
+    "//chrome/browser/blocked:blocked_browser_modules",
+    "//content/test:test_support",
+    "//testing/gtest",
+  ]
+}
+
+# Blocked integration tests
+test("blocked_integration_tests") {
+  testonly = true
+
+  sources = [
+    "//chrome/test/blocked/session_lifecycle_test.cc",
+    "//chrome/test/blocked/security_monitoring_test.cc",
+    "//chrome/test/blocked/eye_tracking_integration_test.cc",
+    "//chrome/test/blocked/backend_communication_test.cc",
+  ]
+
+  deps = [
+    "//base/test:test_support",
+    "//chrome/browser",
+    "//chrome/browser/blocked:blocked_browser_modules",
+    "//chrome/test:test_support",
+    "//content/test:test_support",
+    "//testing/gtest",
+  ]
+
+  data_deps = [
+    "//chrome",
+    "//content/shell:content_shell",
+  ]
+}
+
+# Config for Blocked-specific defines
+config("blocked_config") {
+  defines = [
+    "BLOCKED_BROWSER",
+    "BLOCKED_BACKEND_URL=\"${blocked_backend_url}\"",
+  ]
+
+  if (blocked_enable_security_monitoring) {
+    defines += [ "BLOCKED_ENABLE_SECURITY_MONITORING" ]
+  }
+
+  if (blocked_enable_eye_tracking) {
+    defines += [ "BLOCKED_ENABLE_EYE_TRACKING" ]
+  }
+
+  if (blocked_enable_telemetry) {
+    defines += [ "BLOCKED_ENABLE_TELEMETRY" ]
+  }
+
+  if (blocked_enable_video_capture) {
+    defines += [ "BLOCKED_ENABLE_VIDEO_CAPTURE" ]
+  }
+}
+
+# Blocked browser modules (aggregates all modules)
+# This is referenced by //chrome/browser/blocked/BUILD.gn

@@ -1,0 +1,83 @@
+# Copyright 2025 The Blockd Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# MediaPipe FaceMesh integration for Blocked eye tracking.
+
+import("//build/config/features.gni")
+import("//third_party/protobuf/proto_library.gni")
+
+config("mediapipe_config") {
+  include_dirs = [
+    ".",
+    "//third_party/mediapipe",
+    "//third_party/mediapipe/mediapipe",
+  ]
+
+  defines = [
+    "MEDIAPIPE_DISABLE_GPU=1",  # Use CPU-only for renderer process
+  ]
+}
+
+# MediaPipe FaceMesh library
+component("mediapipe_facemesh") {
+  sources = [
+    "mediapipe/graphs/face_mesh/face_mesh_desktop.cc",
+    "mediapipe/graphs/face_mesh/face_mesh_desktop.h",
+    "mediapipe/modules/face_geometry/face_geometry.cc",
+    "mediapipe/modules/face_geometry/face_geometry.h",
+    "mediapipe/modules/face_landmark/face_landmark_front.cc",
+    "mediapipe/modules/face_landmark/face_landmark_front.h",
+  ]
+
+  public_configs = [ ":mediapipe_config" ]
+
+  deps = [
+    "//base",
+    "//third_party/protobuf:protobuf_lite",
+    "//third_party/tensorflow:tensorflow_lite",
+  ]
+
+  # Model files will be included as resources
+  data_deps = [ ":mediapipe_models" ]
+}
+
+# MediaPipe model resources
+copy("mediapipe_models") {
+  sources = [
+    "models/face_detection_short_range.tflite",
+    "models/face_landmark.tflite",
+    "models/iris_landmark.tflite",
+  ]
+
+  outputs = [ "$root_out_dir/resources/mediapipe/{{source_file_part}}" ]
+}
+
+# Blocked-specific MediaPipe wrapper
+static_library("blocked_mediapipe") {
+  sources = [
+    "blocked_facemesh_wrapper.cc",
+    "blocked_facemesh_wrapper.h",
+  ]
+
+  public_configs = [ ":mediapipe_config" ]
+
+  deps = [
+    ":mediapipe_facemesh",
+    "//base",
+  ]
+}
+
+# Unit tests
+test("mediapipe_unittests") {
+  sources = [
+    "blocked_facemesh_wrapper_unittest.cc",
+  ]
+
+  deps = [
+    ":blocked_mediapipe",
+    "//base",
+    "//base/test:test_support",
+    "//testing/gtest",
+  ]
+}

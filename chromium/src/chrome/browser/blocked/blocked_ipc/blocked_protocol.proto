@@ -1,0 +1,101 @@
+// Copyright 2025 The Blocked Authors. All rights reserved.
+//
+// Protocol Buffer definitions for Blocked Browser <-> Backend communication
+
+syntax = "proto3";
+
+package blocked.proto;
+
+// Message types
+enum MessageType {
+  UNKNOWN = 0;
+  SESSION_VALIDATE = 1;
+  SESSION_START = 2;
+  SESSION_END = 3;
+  SECURITY_EVENT = 4;
+  GAZE_DATA = 5;
+  TELEMETRY_DATA = 6;
+  HEARTBEAT = 7;
+}
+
+// Session validation request (Browser -> Backend)
+message SessionValidateRequest {
+  string session_token = 1;
+  string browser_version = 2;
+  string platform = 3;  // "windows", "macos", "linux"
+  string user_agent = 4;
+}
+
+// Session validation response (Backend -> Browser)
+message SessionValidateResponse {
+  bool valid = 1;
+  string session_id = 2;
+  string error_message = 3;
+}
+
+// Session start notification (Backend -> Browser)
+message SessionStartNotification {
+  string session_id = 1;
+  SessionSettings settings = 2;
+}
+
+message SessionSettings {
+  bool enable_eye_tracking = 1;
+  bool enable_screen_recording = 2;
+  bool enable_telemetry = 3;
+  int32 monitoring_interval_seconds = 4;
+}
+
+// Security event (Browser -> Backend)
+message SecurityEventMessage {
+  string session_id = 1;
+  string event_type = 2;
+  string severity = 3;
+  int64 timestamp = 4;
+  string description = 5;
+  string metadata_json = 6;
+}
+
+// Gaze data batch (Browser -> Backend)
+message GazeDataBatch {
+  string session_id = 1;
+  repeated GazePoint points = 2;
+}
+
+message GazePoint {
+  float gaze_x = 1;
+  float gaze_y = 2;
+  float confidence = 3;
+  int64 timestamp = 4;
+  bool is_off_screen = 5;
+}
+
+// Telemetry data (Browser -> Backend)
+message TelemetryMessage {
+  string session_id = 1;
+  int64 timestamp = 2;
+  double cpu_percent = 3;
+  int64 memory_mb = 4;
+  int32 active_processes = 5;
+  bool window_focused = 6;
+}
+
+// Heartbeat (bidirectional)
+message HeartbeatMessage {
+  int64 timestamp = 1;
+}
+
+// Generic message wrapper
+message BlockedMessage {
+  MessageType type = 1;
+
+  oneof payload {
+    SessionValidateRequest session_validate_request = 10;
+    SessionValidateResponse session_validate_response = 11;
+    SessionStartNotification session_start = 12;
+    SecurityEventMessage security_event = 13;
+    GazeDataBatch gaze_data = 14;
+    TelemetryMessage telemetry = 15;
+    HeartbeatMessage heartbeat = 16;
+  }
+}

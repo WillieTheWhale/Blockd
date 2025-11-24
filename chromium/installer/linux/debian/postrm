@@ -1,0 +1,35 @@
+#!/bin/bash
+# Post-removal script for Blockd Browser
+# Copyright 2025 The Blockd Authors. All rights reserved.
+
+set -e
+
+case "$1" in
+    remove|purge)
+        # Update desktop database
+        if command -v update-desktop-database >/dev/null 2>&1; then
+            update-desktop-database -q
+        fi
+
+        # Update icon cache
+        if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+            gtk-update-icon-cache -q -f /usr/share/icons/hicolor || true
+        fi
+
+        # Remove user data on purge
+        if [ "$1" = "purge" ]; then
+            rm -rf /home/*/.config/blockd-browser || true
+            rm -rf /home/*/.cache/blockd-browser || true
+        fi
+        ;;
+
+    upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+        ;;
+
+    *)
+        echo "postrm called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+exit 0
