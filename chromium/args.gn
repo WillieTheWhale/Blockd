@@ -1,0 +1,127 @@
+# Blocked Browser - GN Build Arguments
+# Production build configuration for Blocked Interview Browser
+
+# ============================================
+# Core Build Settings
+# ============================================
+is_component_build = false       # Monolithic build (all code in one binary)
+is_official_build = true         # Enable release optimizations
+is_debug = false                 # No debug assertions
+symbol_level = 1                 # Minimal symbols for crash reporting
+
+# ============================================
+# Blocked Feature Flags
+# ============================================
+blocked_enable_security_monitoring = true
+blocked_enable_eye_tracking = true
+blocked_enable_telemetry = true
+blocked_enable_video_capture = true
+blocked_backend_url = "wss://api.blockd.com"
+
+# ============================================
+# Branding
+# ============================================
+# Note: Requires custom branding files in chrome/app/theme/blocked/
+is_chrome_branded = false
+chrome_branding_directory = "//chrome/app/theme/blocked"
+
+# ============================================
+# Compiler Optimization
+# ============================================
+use_thin_lto = true              # Link-time optimization
+is_cfi = false                   # Control Flow Integrity (disabled for compatibility)
+optimize_webui = true            # Optimize WebUI resources
+enable_resource_allowlist_generation = false
+
+# ============================================
+# Codecs & Media
+# ============================================
+proprietary_codecs = true        # H.264, AAC support
+ffmpeg_branding = "Chrome"       # Full codec support
+enable_widevine = false          # No DRM needed
+enable_hangout_services_extension = false
+
+# ============================================
+# Security & Sandboxing
+# ============================================
+is_asan = false                  # Address Sanitizer (disable for production)
+is_msan = false                  # Memory Sanitizer (disable for production)
+is_tsan = false                  # Thread Sanitizer (disable for production)
+use_safe_libcxx = true           # Hardened libc++
+
+# ============================================
+# Platform Features
+# ============================================
+enable_nacl = false              # No Native Client support
+enable_pdf = true                # PDF viewer support
+enable_print_preview = true      # Print preview support
+enable_extensions = true         # Chrome extensions (blocked during session)
+enable_service_discovery = false # mDNS/DNS-SD (not needed)
+
+# ============================================
+# Network & Updates
+# ============================================
+enable_reporting = false         # No crash reporting to Google
+google_api_key = ""              # No Google API key
+google_default_client_id = ""
+google_default_client_secret = ""
+
+# ============================================
+# Build Performance
+# ============================================
+use_jumbo_build = false          # Disable jumbo builds (better incremental builds)
+enable_precompiled_headers = true
+use_goma = false                 # Set to true if using distributed builds
+
+# ============================================
+# Toolchain
+# ============================================
+use_sysroot = true               # Use Chromium's sysroot (Linux)
+use_custom_libcxx = true         # Use Chromium's libc++
+clang_use_chrome_plugins = true  # Enable Chrome-specific compiler plugins
+
+# ============================================
+# Platform-Specific Settings
+# ============================================
+
+# Windows
+if (is_win) {
+  # Windows 10 minimum
+  win_console_app = false
+
+  # Code signing (uncomment and configure for production)
+  # win_signing_cert_path = "path/to/cert.pfx"
+  # win_signing_cert_password = "password"
+}
+
+# macOS
+if (is_mac) {
+  # macOS 12.0 minimum
+  mac_deployment_target = "12.0"
+
+  # Code signing (uncomment and configure for production)
+  # mac_signing_identity = "Developer ID Application: Your Name"
+  # mac_signing_keychain = "~/Library/Keychains/login.keychain-db"
+}
+
+# Linux
+if (is_linux) {
+  # Use system libraries where possible
+  use_system_freetype = false    # Use bundled FreeType
+  use_system_harfbuzz = false    # Use bundled HarfBuzz
+  use_system_lcms2 = false       # Use bundled LCMS2
+  use_system_libdrm = false      # Use bundled libdrm
+}
+
+# ============================================
+# Testing
+# ============================================
+# Note: These can be overridden for test builds
+enable_js_type_check = false
+enable_vr = false                # No VR support needed
+enable_mdns = false              # No mDNS needed
+
+# ============================================
+# Custom Blocked Targets
+# ============================================
+# Defined in //chrome/browser/blocked/BUILD.gn

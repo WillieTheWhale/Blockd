@@ -1,0 +1,348 @@
+{
+  "agents": [14, 15],
+  "phase": 4,
+  "status": "architecture_complete",
+  "implementation_notes": "Core foundation from Agent 13 provides base. These specs define remaining components.",
+
+  "agent_14": {
+    "name": "Authentication & Session UI Developer",
+    "components_required": [
+      {
+        "name": "LoginForm",
+        "path": "/src/pages/LoginPage.tsx",
+        "features": [
+          "Email and password inputs with validation",
+          "MFA code input (conditional)",
+          "Remember me checkbox",
+          "Forgot password link",
+          "OAuth buttons (Google, Microsoft)",
+          "Error handling with toast notifications",
+          "Loading states during authentication",
+          "Redirect to dashboard on success"
+        ],
+        "integration": "Uses auth-store from Agent 13, calls auth-service endpoints"
+      },
+      {
+        "name": "RegisterForm",
+        "path": "/src/pages/RegisterPage.tsx",
+        "features": [
+          "Full name, email, password inputs",
+          "Password strength indicator",
+          "Role selection (interviewer/admin)",
+          "Organization selection/creation",
+          "Terms and conditions checkbox",
+          "Email verification workflow",
+          "Success page with instructions"
+        ]
+      },
+      {
+        "name": "SessionsList",
+        "path": "/src/pages/SessionsPage.tsx",
+        "features": [
+          "Table with pagination (shadcn/ui table)",
+          "Columns: interviewee, date, status, risk score, actions",
+          "Filters: status, date range, interviewer",
+          "Search by interviewee name or email",
+          "Create session button",
+          "View details, start session, end session actions",
+          "Status badges (scheduled/active/ended)",
+          "Real-time updates via WebSocket"
+        ],
+        "integration": "Uses session-store, TanStack Query for data fetching"
+      },
+      {
+        "name": "CreateSessionForm",
+        "path": "/src/pages/CreateSessionPage.tsx",
+        "features": [
+          "Interviewee selection (autocomplete)",
+          "Scheduled start date/time picker",
+          "Duration input",
+          "Questions editor (add/remove/reorder)",
+          "Question difficulty selector",
+          "Session settings (recording, AI detection, eye tracking)",
+          "Preview before creation",
+          "Email invitation checkbox",
+          "Generate join URL and session token"
+        ],
+        "validation": "React Hook Form + Zod schema"
+      },
+      {
+        "name": "SessionSettings",
+        "path": "/src/pages/SettingsPage.tsx",
+        "features": [
+          "Profile editing (name, email)",
+          "Password change",
+          "MFA setup/disable",
+          "Notification preferences",
+          "API key management",
+          "Organization settings (admin only)",
+          "Theme toggle (light/dark)"
+        ]
+      }
+    ],
+
+    "state_management": {
+      "auth_store": {
+        "fields": ["user", "tokens", "isAuthenticated", "isLoading"],
+        "actions": ["login", "logout", "register", "refreshToken", "updateProfile"]
+      },
+      "session_store": {
+        "fields": ["sessions", "currentSession", "filters", "pagination"],
+        "actions": ["fetchSessions", "createSession", "startSession", "endSession", "updateFilters"]
+      }
+    },
+
+    "api_integration": {
+      "endpoints": [
+        "POST /api/v1/auth/login",
+        "POST /api/v1/auth/register",
+        "POST /api/v1/auth/refresh",
+        "POST /api/v1/auth/logout",
+        "GET /api/v1/sessions",
+        "POST /api/v1/sessions",
+        "POST /api/v1/sessions/:id/start",
+        "POST /api/v1/sessions/:id/end"
+      ],
+      "error_handling": "Toast notifications for all errors, field-level validation errors"
+    },
+
+    "estimated_files": 12,
+    "estimated_loc": 1500
+  },
+
+  "agent_15": {
+    "name": "Real-time & Video UI Developer",
+    "components_required": [
+      {
+        "name": "VideoPlayer",
+        "path": "/src/components/VideoPlayer.tsx",
+        "features": [
+          "WebRTC video display",
+          "Video controls (mute, volume, fullscreen)",
+          "Connection status indicator",
+          "Bandwidth and latency display",
+          "Picture-in-picture support",
+          "Recording indicator",
+          "Screenshot capability"
+        ],
+        "integration": "Uses mediasoup client library, WebRTC APIs"
+      },
+      {
+        "name": "SecurityEventsDashboard",
+        "path": "/src/components/SecurityEventsDashboard.tsx",
+        "features": [
+          "Real-time event list (WebSocket updates)",
+          "Event severity badges (low/medium/high/critical)",
+          "Event type icons",
+          "Timestamp display",
+          "Event details expansion",
+          "Filter by severity and type",
+          "Auto-scroll to new events",
+          "Sound notifications for critical events"
+        ],
+        "integration": "Socket.io client, subscribes to 'security:alert' events"
+      },
+      {
+        "name": "GazeHeatmap",
+        "path": "/src/components/GazeHeatmap.tsx",
+        "features": [
+          "Canvas-based heatmap rendering",
+          "Real-time gaze point plotting",
+          "Color gradient (blue to red)",
+          "Overlay on video or static frame",
+          "Playback controls for recorded sessions",
+          "Export as PNG",
+          "Off-screen indicators"
+        ],
+        "libraries": ["react-konva or canvas API", "heatmap.js"]
+      },
+      {
+        "name": "AIDetectionResults",
+        "path": "/src/components/AIDetectionResults.tsx",
+        "features": [
+          "Risk score gauge (0-100%)",
+          "Risk level badge",
+          "Similarity scores per LLM (GPT-4, Claude, Gemini)",
+          "Flags list with descriptions",
+          "Perplexity score display",
+          "N-gram overlap visualization",
+          "Recommendation text",
+          "Expand/collapse detailed analysis"
+        ]
+      },
+      {
+        "name": "SessionDetailView",
+        "path": "/src/pages/SessionDetailPage.tsx",
+        "features": [
+          "Session metadata card",
+          "Video player with live stream or recording",
+          "Security events dashboard (right panel)",
+          "Gaze heatmap overlay toggle",
+          "Questions and answers timeline",
+          "AI detection results per answer",
+          "Response timing metrics",
+          "Session controls (start/end/cancel)",
+          "Export session report (PDF)",
+          "Real-time status updates"
+        ],
+        "layout": "3-column: metadata left, video center, events right"
+      },
+      {
+        "name": "RealtimeChat",
+        "path": "/src/components/RealtimeChat.tsx",
+        "features": [
+          "Message list with timestamps",
+          "Message input and send button",
+          "System messages (participant joined/left)",
+          "Typing indicators",
+          "Message delivery status",
+          "Auto-scroll to latest",
+          "Emoji support"
+        ],
+        "integration": "Socket.io 'chat:message' events"
+      }
+    ],
+
+    "websocket_integration": {
+      "hook": "/src/hooks/useWebSocket.ts",
+      "events_subscribed": [
+        "session:started",
+        "session:ended",
+        "participant:joined",
+        "participant:left",
+        "security:alert",
+        "gaze:update",
+        "question:asked",
+        "answer:received",
+        "chat:message"
+      ],
+      "events_emitted": [
+        "join",
+        "leave",
+        "pong",
+        "chat:message"
+      ],
+      "reconnection": "Exponential backoff with visual indicator"
+    },
+
+    "webrtc_integration": {
+      "library": "mediasoup-client 3.x",
+      "setup": [
+        "Create device from router RTP capabilities",
+        "Create send/recv transports",
+        "Produce video/audio tracks",
+        "Consume remote streams",
+        "Handle ICE connection state changes",
+        "Display local and remote video"
+      ],
+      "signaling": "HTTP endpoints from video-service API"
+    },
+
+    "real_time_features": {
+      "automatic_updates": [
+        "Session status changes",
+        "New security events",
+        "Gaze data stream (10 Hz throttled on client)",
+        "AI analysis completion",
+        "Participant connection status"
+      ],
+      "optimizations": [
+        "Debounce rapid updates",
+        "Virtualize long lists",
+        "Lazy load video recordings",
+        "Progressive heatmap rendering"
+      ]
+    },
+
+    "estimated_files": 15,
+    "estimated_loc": 2500
+  },
+
+  "testing_strategy": {
+    "unit_tests": [
+      "Component rendering tests",
+      "State management tests",
+      "Utility function tests",
+      "API client tests with mocks"
+    ],
+    "integration_tests": [
+      "Authentication flow (login -> dashboard)",
+      "Session creation flow",
+      "WebSocket connection and events",
+      "WebRTC peer connection"
+    ],
+    "e2e_tests": [
+      "Complete interview session flow",
+      "Real-time event handling",
+      "Security alert display",
+      "Report generation and export"
+    ],
+    "tools": ["Vitest", "React Testing Library", "Playwright", "MSW (mocking)"]
+  },
+
+  "performance_targets": {
+    "initial_load": "< 2s (Lighthouse score > 90)",
+    "time_to_interactive": "< 3s",
+    "websocket_latency": "< 50ms",
+    "video_streaming_latency": "< 1s",
+    "gaze_heatmap_fps": "30 FPS smooth rendering",
+    "bundle_size": "< 500 KB gzipped"
+  },
+
+  "accessibility": {
+    "wcag_level": "AA",
+    "features": [
+      "Keyboard navigation",
+      "Screen reader support (ARIA labels)",
+      "Color contrast ratios > 4.5:1",
+      "Focus indicators",
+      "Alt text for images and icons"
+    ]
+  },
+
+  "deployment": {
+    "build_command": "npm run build",
+    "output_directory": "dist/",
+    "environment_variables": [
+      "VITE_API_URL",
+      "VITE_WS_URL",
+      "VITE_OAUTH_GOOGLE_CLIENT_ID",
+      "VITE_OAUTH_MICROSOFT_CLIENT_ID"
+    ],
+    "cdn": "CloudFlare, AWS CloudFront, or Vercel",
+    "caching_strategy": "Cache assets with content hash, API calls with stale-while-revalidate"
+  },
+
+  "total_estimated_deliverables": {
+    "files": 27,
+    "lines_of_code": 4000,
+    "components": 16,
+    "pages": 7,
+    "hooks": 4,
+    "tests": "50+"
+  },
+
+  "integration_checklist": [
+    "✅ API client configured (from Agent 13)",
+    "✅ Authentication store (from Agent 13)",
+    "✅ Protected routes (from Agent 13)",
+    "✅ shadcn/ui components (from Agent 13)",
+    "🔄 WebSocket connection hook",
+    "🔄 WebRTC integration",
+    "🔄 Real-time event handlers",
+    "🔄 Security dashboard",
+    "🔄 Gaze visualization",
+    "🔄 AI results display",
+    "🔄 Video player",
+    "🔄 Session management UI"
+  ],
+
+  "next_steps": [
+    "Implement remaining components based on this specification",
+    "Connect to backend APIs (Agents 5-8)",
+    "Integrate WebSocket client with Agent 8",
+    "Integrate WebRTC with Agent 12",
+    "Test complete user flows",
+    "Deploy to staging environment"
+  ]
+}

@@ -1,0 +1,94 @@
+{
+  "questions": [
+    {
+      "id": "q_test_001",
+      "text": "Explain the concept of closures in JavaScript and provide a practical example.",
+      "difficulty": "medium",
+      "category": "technical",
+      "expectedDuration": 300,
+      "tags": ["javascript", "fundamentals", "scope"]
+    },
+    {
+      "id": "q_test_002",
+      "text": "What is the difference between SQL and NoSQL databases? When would you use each?",
+      "difficulty": "easy",
+      "category": "technical",
+      "expectedDuration": 240,
+      "tags": ["databases", "architecture"]
+    },
+    {
+      "id": "q_test_003",
+      "text": "Describe your experience with implementing CI/CD pipelines.",
+      "difficulty": "medium",
+      "category": "experience",
+      "expectedDuration": 360,
+      "tags": ["devops", "experience", "process"]
+    },
+    {
+      "id": "q_test_004",
+      "text": "How would you optimize a slow database query?",
+      "difficulty": "hard",
+      "category": "technical",
+      "expectedDuration": 420,
+      "tags": ["databases", "performance", "optimization"]
+    },
+    {
+      "id": "q_test_005",
+      "text": "Explain the SOLID principles and give an example of each.",
+      "difficulty": "hard",
+      "category": "technical",
+      "expectedDuration": 600,
+      "tags": ["architecture", "design-patterns", "oop"]
+    },
+    {
+      "id": "q_test_006",
+      "text": "Tell me about a challenging project you worked on and how you overcame obstacles.",
+      "difficulty": "easy",
+      "category": "behavioral",
+      "expectedDuration": 300,
+      "tags": ["behavioral", "problem-solving"]
+    },
+    {
+      "id": "q_test_007",
+      "text": "What is your experience with microservices architecture?",
+      "difficulty": "medium",
+      "category": "experience",
+      "expectedDuration": 360,
+      "tags": ["architecture", "microservices", "experience"]
+    },
+    {
+      "id": "q_test_008",
+      "text": "How do you handle code reviews and feedback from peers?",
+      "difficulty": "easy",
+      "category": "behavioral",
+      "expectedDuration": 180,
+      "tags": ["behavioral", "teamwork", "communication"]
+    },
+    {
+      "id": "q_test_009",
+      "text": "Implement a function to detect cycles in a linked list.",
+      "difficulty": "hard",
+      "category": "coding",
+      "expectedDuration": 900,
+      "tags": ["algorithms", "data-structures", "coding"]
+    },
+    {
+      "id": "q_test_010",
+      "text": "Describe the authentication flow in a modern web application.",
+      "difficulty": "medium",
+      "category": "technical",
+      "expectedDuration": 420,
+      "tags": ["security", "authentication", "web"]
+    }
+  ],
+  "sampleAnswers": {
+    "ai_generated": [
+      "Certainly! I'd be happy to explain this concept in detail.\n\nFirst, let's break down the key components:\n\n1. The fundamental principle involves understanding the core concepts\n2. This approach ensures optimal performance and scalability\n3. Best practices suggest implementing robust error handling\n\nIn summary, the most effective solution combines theoretical knowledge with practical implementation.",
+      "To answer your question comprehensively:\n\n**Key Points:**\n- First important consideration\n- Second critical aspect\n- Third essential element\n\n**Implementation:**\nThe implementation should follow industry standards and best practices to ensure maintainability and performance optimization.\n\n**Conclusion:**\nThis methodology provides a robust framework for addressing the requirements effectively."
+    ],
+    "human_like": [
+      "Um, so from what I remember... I think it's like when you need to handle async stuff? I used it in my last project actually. We had this API thing and basically you chain promises with .then() and .catch() for errors. Oh and there's async/await now which is way easier to read tbh.",
+      "Hmm good question. So in my experience, the main thing is you gotta understand the basics first right? Like I remember when I first learned this, it was confusing but once it clicked... yeah. Basically what you do is - sorry let me think - you start by setting up the environment and then you implement the core logic. Does that make sense?"
+    ]
+  }
+}

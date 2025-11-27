@@ -1,0 +1,204 @@
+{
+  "verified_date": "2025-11-24",
+  "technologies": {
+    "databases": {
+      "postgresql": {
+        "version": "18.1",
+        "major_version": "18",
+        "released": "2025-11-13",
+        "notes": "Latest major version with new I/O subsystem (3× performance improvement), virtual generated columns, uuidv7() function",
+        "source": "https://www.postgresql.org/about/news/postgresql-181-177-1611-1515-1420-and-1323-released-3171/"
+      },
+      "redis": {
+        "version": "8.4",
+        "released": "2025-11-04",
+        "notes": "General Availability release of Redis Open Source",
+        "source": "https://redis.io/downloads/"
+      },
+      "timescaledb": {
+        "compatible_with": "PostgreSQL 16-18",
+        "latest_version": "2.x",
+        "notes": "TimescaleDB extension for PostgreSQL time-series data"
+      },
+      "pgvector": {
+        "compatible_with": "PostgreSQL 11-18",
+        "latest_version": "0.7.x",
+        "notes": "Vector similarity search extension for PostgreSQL"
+      }
+    },
+    "backend": {
+      "nodejs": {
+        "lts_versions": ["22.20.0", "24.11.0"],
+        "recommended": "24.11.0",
+        "released": "2025-10",
+        "notes": "Node.js 24 (Krypton) entered LTS October 2025, supported until April 2028",
+        "source": "https://nodejs.org/en/blog/release/v24.11.0"
+      },
+      "python": {
+        "version": "3.14.0",
+        "released": "2025-10-07",
+        "notes": "Latest stable with REPL improvements, free-threaded mode, faster startup, Zstandard compression",
+        "source": "https://www.python.org/downloads/"
+      },
+      "fastapi": {
+        "version": "0.121.3",
+        "released": "2025-11-19",
+        "requires_python": ">=3.8",
+        "notes": "Supports Python 3.8-3.14, Pydantic v2 support",
+        "source": "https://pypi.org/project/fastapi/"
+      },
+      "fastify": {
+        "version": "5.x",
+        "requires_nodejs": ">=20",
+        "notes": "Fastify v5 GA released, requires Node.js 20+, v4 supported until June 30, 2025",
+        "source": "https://fastify.dev/docs/latest/Reference/LTS/"
+      }
+    },
+    "frontend": {
+      "react": {
+        "version": "19.2.0",
+        "released": "2025-10-01",
+        "notes": "Latest with useEffectEvent API, improved ESLint support, React Compiler 1.0 available",
+        "source": "https://react.dev/blog/2025/10/01/react-19-2"
+      },
+      "typescript": {
+        "version": "5.9.3",
+        "major_version": "5.9",
+        "released": "2025-08-01",
+        "notes": "Stable version with deferred imports, improved default project setup, stable node20 module resolution",
+        "source": "https://devblogs.microsoft.com/typescript/announcing-typescript-5-9/"
+      },
+      "vite": {
+        "version": "6.x",
+        "notes": "Latest build tool for React applications"
+      },
+      "tailwindcss": {
+        "version": "4.x",
+        "notes": "Latest CSS framework"
+      }
+    },
+    "browser": {
+      "chromium": {
+        "stable_version": "142.0.7444.175",
+        "dev_version": "144.0.7543.0",
+        "released": "2025-11-17",
+        "notes": "Chrome stable 142, Chromium dev at 144. For forking, use stable branch",
+        "source": "https://chromereleases.googleblog.com/2025/11/stable-channel-update-for-desktop_17.html"
+      }
+    },
+    "video_processing": {
+      "mediasoup": {
+        "version": "3.19.11",
+        "mediasoup_client": "3.18.1",
+        "released": "2025-11",
+        "notes": "WebRTC SFU with simulcast, SVC, congestion control, DataChannels",
+        "source": "https://mediasoup.org/"
+      },
+      "ffmpeg": {
+        "version": "7.x",
+        "notes": "Video encoding/decoding with hardware acceleration support"
+      }
+    },
+    "ml_ai": {
+      "pytorch": {
+        "version": "2.5.x",
+        "notes": "Latest PyTorch for ML model training and inference"
+      },
+      "mediapipe": {
+        "version": "0.10.x",
+        "notes": "Google's ML framework for face mesh and eye tracking"
+      },
+      "sentence_transformers": {
+        "version": "3.x",
+        "notes": "For generating text embeddings"
+      },
+      "xgboost": {
+        "version": "2.x",
+        "notes": "Gradient boosting for AI detection classification"
+      },
+      "openai": {
+        "api_version": "2024-11-01",
+        "models": {
+          "gpt4_turbo": "gpt-4-turbo-2024-04-09",
+          "whisper": "whisper-1"
+        }
+      },
+      "anthropic": {
+        "api_version": "2024-10-22",
+        "models": {
+          "claude": "claude-3-5-sonnet-20241022"
+        }
+      }
+    },
+    "infrastructure": {
+      "docker": {
+        "version": "27.x",
+        "notes": "Latest Docker Engine"
+      },
+      "kubernetes": {
+        "version": "1.31",
+        "notes": "Latest Kubernetes stable"
+      },
+      "rabbitmq": {
+        "version": "4.x",
+        "notes": "Message queue for async job processing"
+      }
+    },
+    "orm_tools": {
+      "prisma": {
+        "version": "6.x",
+        "notes": "Node.js ORM for PostgreSQL"
+      },
+      "sqlalchemy": {
+        "version": "2.x",
+        "notes": "Python ORM for PostgreSQL"
+      },
+      "alembic": {
+        "version": "1.x",
+        "notes": "Database migration tool for SQLAlchemy"
+      }
+    }
+  },
+  "sources": [
+    {
+      "name": "PostgreSQL Release Notes",
+      "url": "https://www.postgresql.org/docs/release/"
+    },
+    {
+      "name": "Redis Downloads",
+      "url": "https://redis.io/downloads/"
+    },
+    {
+      "name": "Node.js Releases",
+      "url": "https://nodejs.org/en/about/previous-releases"
+    },
+    {
+      "name": "Python Downloads",
+      "url": "https://www.python.org/downloads/"
+    },
+    {
+      "name": "React Versions",
+      "url": "https://react.dev/versions"
+    },
+    {
+      "name": "FastAPI PyPI",
+      "url": "https://pypi.org/project/fastapi/"
+    },
+    {
+      "name": "Fastify LTS",
+      "url": "https://fastify.dev/docs/latest/Reference/LTS/"
+    },
+    {
+      "name": "TypeScript Releases",
+      "url": "https://github.com/microsoft/typescript/releases"
+    },
+    {
+      "name": "Chrome Releases",
+      "url": "https://chromereleases.googleblog.com/"
+    },
+    {
+      "name": "mediasoup",
+      "url": "https://mediasoup.org/"
+    }
+  ]
+}

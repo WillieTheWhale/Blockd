@@ -1,0 +1,336 @@
+name: Security Scanning
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # Daily at 2 AM UTC
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+
+jobs:
+  dependency-check:
+    name: Dependency Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+
+      - name: Run npm audit (Frontend)
+        continue-on-error: true
+        run: |
+          cd frontend/interviewer-app
+          npm audit --audit-level=moderate --json > ../../npm-audit-frontend.json || true
+
+      - name: Run npm audit (Node.js services)
+        continue-on-error: true
+        run: |
+          for service in api-gateway auth-service session-service websocket-service video-service; do
+            echo "Scanning $service..."
+            cd backend/$service
+            npm audit --audit-level=moderate --json > ../../npm-audit-$service.json || true
+            cd ../..
+          done
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Run pip-audit (Python services)
+        continue-on-error: true
+        run: |
+          for service in ai-detection eye-tracking response-timing; do
+            echo "Scanning $service..."
+            cd backend/$service
+            pip-audit -r requirements.txt --format json > ../../pip-audit-$service.json || true
+            cd ../..
+          done
+
+      - name: Run Snyk scan
+        uses: snyk/actions/node@master
+        continue-on-error: true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          command: test
+          args: --all-projects --severity-threshold=high
+
+      - name: Check for critical vulnerabilities
+        run: |
+          echo "Checking for critical vulnerabilities..."
+
+          CRITICAL_FOUND=0
+
+          # Check npm audit results
+          for file in npm-audit-*.json; do
+            if [ -f "$file" ]; then
+              CRITICAL=$(jq '.metadata.vulnerabilities.critical // 0' $file)
+              HIGH=$(jq '.metadata.vulnerabilities.high // 0' $file)
+
+              if [ "$CRITICAL" -gt 0 ] || [ "$HIGH" -gt 0 ]; then
+                echo "WARNING: Found $CRITICAL critical and $HIGH high vulnerabilities in $file"
+                CRITICAL_FOUND=1
+              fi
+            fi
+          done
+
+          # Check pip-audit results
+          for file in pip-audit-*.json; do
+            if [ -f "$file" ]; then
+              COUNT=$(jq 'length' $file)
+              if [ "$COUNT" -gt 0 ]; then
+                echo "WARNING: Found $COUNT vulnerabilities in $file"
+                CRITICAL_FOUND=1
+              fi
+            fi
+          done
+
+          if [ $CRITICAL_FOUND -eq 1 ]; then
+            echo "ERROR: Critical or high severity vulnerabilities found!"
+            echo "Please review and fix vulnerabilities before merging."
+            exit 1
+          fi
+
+          echo "No critical vulnerabilities found."
+
+      - name: Upload audit reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-audit-reports
+          path: |
+            npm-audit-*.json
+            pip-audit-*.json
+
+  code-scanning:
+    name: Code Security Scan
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+
+    strategy:
+      matrix:
+        language: ['javascript', 'python']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-extended,security-and-quality
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
+
+  sonarqube-scan:
+    name: SonarQube Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Shallow clones should be disabled for better analysis
+
+      - name: SonarQube Scan
+        uses: sonarsource/sonarqube-scan-action@master
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        with:
+          args: >
+            -Dsonar.projectKey=blockd
+            -Dsonar.sources=.
+            -Dsonar.exclusions=**/node_modules/**,**/tests/**,**/*.test.ts,**/*.spec.ts
+            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
+            -Dsonar.python.coverage.reportPaths=coverage.xml
+
+      - name: SonarQube Quality Gate check
+        uses: sonarsource/sonarqube-quality-gate-action@master
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  container-scanning:
+    name: Container Security Scan
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - api-gateway
+          - auth-service
+          - session-service
+          - websocket-service
+          - ai-detection
+          - eye-tracking
+          - response-timing
+          - video-service
+          - frontend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image for scanning
+        run: |
+          if [ "${{ matrix.service }}" == "frontend" ]; then
+            docker build -t blockd-${{ matrix.service }}:scan frontend/interviewer-app
+          else
+            docker build -t blockd-${{ matrix.service }}:scan backend/${{ matrix.service }}
+          fi
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: blockd-${{ matrix.service }}:scan
+          format: 'sarif'
+          output: 'trivy-results-${{ matrix.service }}.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+
+      - name: Upload Trivy results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results-${{ matrix.service }}.sarif'
+          category: trivy-${{ matrix.service }}
+
+      - name: Run Trivy in table format
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: blockd-${{ matrix.service }}:scan
+          format: 'table'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Check for critical vulnerabilities
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: blockd-${{ matrix.service }}:scan
+          format: 'json'
+          output: 'trivy-report-${{ matrix.service }}.json'
+          exit-code: '1'
+          severity: 'CRITICAL'
+
+  secrets-scanning:
+    name: Secrets Scanning
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run TruffleHog
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+
+  license-compliance:
+    name: License Compliance Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install license-checker
+        run: npm install -g license-checker
+
+      - name: Check licenses (Frontend)
+        run: |
+          cd frontend/interviewer-app
+          npm ci
+          license-checker --production --onlyAllow 'MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;0BSD' --json > ../../licenses-frontend.json || true
+
+      - name: Check licenses (Backend services)
+        run: |
+          for service in api-gateway auth-service session-service websocket-service video-service; do
+            echo "Checking licenses for $service..."
+            cd backend/$service
+            npm ci
+            license-checker --production --onlyAllow 'MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;0BSD' --json > ../../licenses-$service.json || true
+            cd ../..
+          done
+
+      - name: Upload license reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: license-reports
+          path: licenses-*.json
+
+  security-report:
+    name: Generate Security Report
+    runs-on: ubuntu-latest
+    needs: [dependency-check, code-scanning, container-scanning, secrets-scanning]
+    if: always()
+
+    steps:
+      - name: Create security summary
+        run: |
+          echo "# Security Scan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Dependency Check: ${{ needs.dependency-check.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Code Scanning: ${{ needs.code-scanning.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Container Scanning: ${{ needs.container-scanning.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Secrets Scanning: ${{ needs.secrets-scanning.result }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Send Slack notification if vulnerabilities found
+        if: needs.dependency-check.result == 'failure' || needs.code-scanning.result == 'failure' || needs.container-scanning.result == 'failure' || needs.secrets-scanning.result == 'failure'
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "Security vulnerabilities detected",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": ":warning: *Security Vulnerabilities Detected*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref_name }}\n*Commit:* ${{ github.sha }}\n*View Results:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

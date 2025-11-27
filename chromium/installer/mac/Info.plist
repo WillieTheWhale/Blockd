@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>Blockd Browser</string>
+	<key>CFBundleExecutable</key>
+	<string>Blockd Browser</string>
+	<key>CFBundleIconFile</key>
+	<string>app.icns</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.blockd.browser</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Blockd Browser</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0.0</string>
+	<key>CFBundleSignature</key>
+	<string>BLKD</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>11.0</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSSupportsAutomaticGraphicsSwitching</key>
+	<true/>
+
+	<!-- Hardened Runtime -->
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<true/>
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+
+	<!-- Camera and Microphone access for interview sessions -->
+	<key>NSCameraUsageDescription</key>
+	<string>Blockd Browser requires camera access for video monitoring during interview sessions.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Blockd Browser requires microphone access for audio recording during interview sessions.</string>
+
+	<!-- Screen recording permission -->
+	<key>NSScreenCaptureDescription</key>
+	<string>Blockd Browser requires screen capture permissions to detect screen recording attempts.</string>
+
+	<!-- URL schemes -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>Blockd Browser</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>blockd</string>
+				<string>http</string>
+				<string>https</string>
+			</array>
+		</dict>
+	</array>
+
+	<!-- Document types -->
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>html</string>
+				<string>htm</string>
+			</array>
+			<key>CFBundleTypeName</key>
+			<string>HTML Document</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+		</dict>
+	</array>
+
+	<!-- Sparkle auto-update framework -->
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://update.blockd.com/macos/appcast.xml</string>
+	<key>SUAllowsAutomaticUpdates</key>
+	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
+	<key>SUPublicEDKey</key>
+	<string>INSERT_SPARKLE_PUBLIC_KEY_HERE</string>
+
+</dict>
+</plist>

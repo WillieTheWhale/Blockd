@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<!--
+Copyright 2025 The Blockd Authors. All rights reserved.
+Use of this source code is governed by a BSD-style license that can be
+found in the LICENSE file.
+-->
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Eye Tracking Calibration</title>
+  <link rel="stylesheet" href="calibration.css">
+</head>
+<body>
+  <div id="calibration-overlay" class="hidden">
+    <!-- Instructions overlay -->
+    <div id="instructions" class="instructions">
+      <h1>Eye Tracking Calibration</h1>
+      <p>Please look at each red dot as it appears and keep your eyes on it until it moves.</p>
+      <p>Keep your head still and maintain a comfortable distance from the screen.</p>
+      <button id="start-button" class="btn-primary">Start Calibration</button>
+    </div>
+
+    <!-- Calibration point -->
+    <div id="calibration-point" class="calibration-point hidden"></div>
+
+    <!-- Progress indicator -->
+    <div id="progress" class="progress hidden">
+      <span id="progress-text">Point 1 of 9</span>
+      <div class="progress-bar">
+        <div id="progress-fill" class="progress-fill"></div>
+      </div>
+    </div>
+
+    <!-- Completion message -->
+    <div id="completion" class="completion hidden">
+      <h2>Calibration Complete!</h2>
+      <p id="completion-message">Eye tracking is now calibrated.</p>
+      <div class="stats">
+        <div class="stat">
+          <span class="stat-label">Accuracy:</span>
+          <span id="accuracy-value" class="stat-value">--</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Confidence:</span>
+          <span id="confidence-value" class="stat-value">--</span>
+        </div>
+      </div>
+      <button id="continue-button" class="btn-primary">Continue</button>
+      <button id="recalibrate-button" class="btn-secondary">Recalibrate</button>
+    </div>
+  </div>
+
+  <script src="calibration.js"></script>
+</body>
+</html>

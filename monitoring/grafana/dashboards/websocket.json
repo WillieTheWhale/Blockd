@@ -1,0 +1,13 @@
+{
+  "dashboard": {
+    "title": "WebSocket Service Metrics",
+    "tags": ["blockd", "websocket", "realtime"],
+    "panels": [
+      {"id": 1, "title": "Active Connections", "type": "stat", "targets": [{"expr": "websocket_active_connections"}]},
+      {"id": 2, "title": "Messages per Second", "type": "graph", "targets": [{"expr": "rate(websocket_messages_total[5m])"}]},
+      {"id": 3, "title": "Connection Errors", "type": "graph", "targets": [{"expr": "rate(websocket_connection_errors_total[5m])"}]},
+      {"id": 4, "title": "Average Message Latency", "type": "graph", "targets": [{"expr": "histogram_quantile(0.95, rate(websocket_message_duration_seconds_bucket[5m]))"}]}
+    ],
+    "refresh": "10s"
+  }
+}

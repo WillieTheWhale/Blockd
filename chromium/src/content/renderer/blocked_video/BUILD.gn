@@ -1,0 +1,49 @@
+# Copyright 2025 The Blockd Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# Video capture module for Blocked renderer process.
+
+import("//build/config/features.gni")
+
+source_set("blocked_video") {
+  sources = [
+    "camera_manager.cc",
+    "camera_manager.h",
+    "frame_processor.cc",
+    "frame_processor.h",
+    "video_capturer.cc",
+    "video_capturer.h",
+  ]
+
+  deps = [
+    "//base",
+    "//content/renderer/blocked_ipc",
+    "//mojo/public/cpp/bindings",
+    "//third_party/blink/public:blink",
+  ]
+
+  # Allow access from content/renderer.
+  visibility = [
+    "//content/renderer:renderer",
+  ]
+}
+
+# Unit tests
+source_set("blocked_video_unittests") {
+  testonly = true
+
+  sources = [
+    "camera_manager_unittest.cc",
+    "video_capturer_unittest.cc",
+  ]
+
+  deps = [
+    ":blocked_video",
+    "//base",
+    "//base/test:test_support",
+    "//content/test:test_support",
+    "//testing/gmock",
+    "//testing/gtest",
+  ]
+}

@@ -1,0 +1,76 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: eye-tracking
+  namespace: blockd
+  labels:
+    app: eye-tracking
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8001
+      targetPort: 8001
+      name: http
+  selector:
+    app: eye-tracking
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eye-tracking
+  namespace: blockd
+  labels:
+    app: eye-tracking
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: eye-tracking
+  template:
+    metadata:
+      labels:
+        app: eye-tracking
+    spec:
+      containers:
+        - name: eye-tracking
+          image: blockd/eye-tracking:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8001
+              name: http
+          env:
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: blockd-secrets
+                  key: database_url
+            - name: RABBITMQ_URL
+              valueFrom:
+                secretKeyRef:
+                  name: blockd-secrets
+                  key: rabbitmq_url
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3

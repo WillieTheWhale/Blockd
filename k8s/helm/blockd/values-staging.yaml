@@ -1,0 +1,118 @@
+# Staging environment values for blockd
+# Override values.yaml for staging deployments
+
+global:
+  imageRegistry: "registry.staging.blockd.com"
+  imagePullSecrets:
+    - name: registry-credentials
+
+namespace: blockd-staging
+
+# Use specific tags for staging
+images:
+  apiGateway:
+    tag: staging-latest
+    pullPolicy: Always
+  authService:
+    tag: staging-latest
+    pullPolicy: Always
+  sessionService:
+    tag: staging-latest
+    pullPolicy: Always
+  aiDetection:
+    tag: staging-latest
+    pullPolicy: Always
+  eyeTracking:
+    tag: staging-latest
+    pullPolicy: Always
+  responseTiming:
+    tag: staging-latest
+    pullPolicy: Always
+  videoService:
+    tag: staging-latest
+    pullPolicy: Always
+  frontend:
+    tag: staging-latest
+    pullPolicy: Always
+
+# Reduced resources for staging
+apiGateway:
+  replicas: 2
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+
+authService:
+  replicas: 1
+
+sessionService:
+  replicas: 1
+
+aiDetection:
+  replicas: 2
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+
+eyeTracking:
+  replicas: 1
+
+responseTiming:
+  replicas: 1
+
+videoService:
+  replicas: 1
+
+frontend:
+  replicas: 2
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+
+# Smaller persistence for staging
+postgresql:
+  persistence:
+    size: 10Gi
+
+redis:
+  replicas: 1
+  persistence:
+    size: 2Gi
+
+rabbitmq:
+  replicas: 1
+  persistence:
+    size: 5Gi
+
+# Staging ingress
+ingress:
+  hosts:
+    - host: staging.blockd.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: frontend
+          port: 80
+    - host: api.staging.blockd.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: api-gateway
+          port: 3000
+  tls:
+    - secretName: blockd-staging-tls-cert
+      hosts:
+        - staging.blockd.com
+        - api.staging.blockd.com
+
+# ConfigMap for staging
+configMap:
+  s3Bucket: blockd-videos-staging
+  logLevel: debug
+
+# Secrets should be provided via external secret manager
+secrets:
+  create: false

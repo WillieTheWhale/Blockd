@@ -1,0 +1,1732 @@
+\documentclass[11pt,letterpaper]{article}
+
+% Packages
+\usepackage[utf8]{inputenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{tocloft}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{microtype}
+\usepackage{float}
+
+% Hyperref setup
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,
+    urlcolor=cyan,
+    pdftitle={Blockd Platform Architecture},
+    pdfauthor={Blockd Development Team},
+}
+
+% Code listing setup
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,
+    breaklines=true,
+    captionpos=b,
+    keepspaces=true,
+    numbers=left,
+    numbersep=5pt,
+    showspaces=false,
+    showstringspaces=false,
+    showtabs=false,
+    tabsize=2
+}
+\lstset{style=mystyle}
+
+% Header and footer
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{Blockd Platform Architecture}
+\lhead{Version 1.0.0}
+\cfoot{\thepage}
+
+% Title page
+\title{
+    \Huge\textbf{Blockd Interview Security Platform}\\
+    \vspace{0.5cm}
+    \Large Complete System Architecture \& Deployment Guide\\
+    \vspace{1cm}
+    \includegraphics[width=0.3\textwidth]{placeholder_logo}\\[1cm]
+}
+\author{Blockd Development Team}
+\date{November 2025\\Version 1.0.0}
+
+\begin{document}
+
+\maketitle
+\newpage
+
+% Table of Contents
+\tableofcontents
+\newpage
+
+% List of Tables and Figures
+\listoftables
+\listoffigures
+\newpage
+
+%----------------------------------------------------------------------------------------
+% EXECUTIVE SUMMARY
+%----------------------------------------------------------------------------------------
+
+\section{Executive Summary}
+
+\subsection{Project Overview}
+
+Blockd is an enterprise-grade interview security and AI-powered anti-cheating platform designed to ensure the integrity of technical interviews conducted remotely. The platform combines advanced security monitoring, artificial intelligence-based answer detection, real-time eye tracking, and comprehensive session management to provide a robust solution for organizations conducting thousands of concurrent interviews.
+
+\subsection{Key Capabilities}
+
+\begin{itemize}[noitemsep]
+    \item \textbf{Custom Chromium Browser}: Native browser fork with embedded security monitoring that cannot be bypassed
+    \item \textbf{AI-Powered Detection}: Multi-LLM comparison (GPT-4, Claude, Gemini) with XGBoost ensemble classification
+    \item \textbf{Eye Tracking}: Real-time gaze analysis at 30 FPS with MediaPipe FaceMesh and off-screen detection
+    \item \textbf{Security Monitoring}: Process detection, VM detection, window tracking, and clipboard monitoring
+    \item \textbf{Real-time Video}: WebRTC streaming with mediasoup SFU supporting 100+ concurrent streams
+    \item \textbf{Comprehensive Reporting}: Automated risk scoring, detailed analytics, and PDF report generation
+\end{itemize}
+
+\subsection{Technology Highlights}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{lX}
+\toprule
+\textbf{Category} & \textbf{Technologies} \\
+\midrule
+Frontend & React 19.2.0, TypeScript 5.9.3, Vite 6.x, Tailwind CSS 4.x \\
+Backend & Node.js 24.11.0, Python 3.14.0, Fastify 5.x, FastAPI 0.121.3 \\
+Databases & PostgreSQL 18.1, Redis 8.4, TimescaleDB 2.x, RabbitMQ 4.x \\
+ML/AI & PyTorch 2.5.x, MediaPipe 0.10.x, OpenAI GPT-4, Claude 3.5, Gemini 1.5 \\
+Browser & Chromium 142.0.7444.175 (custom fork) \\
+Infrastructure & Docker 27.x, Kubernetes 1.31, Terraform, Helm 3.x \\
+\bottomrule
+\end{tabularx}
+\caption{Core Technology Stack}
+\end{table}
+
+\subsection{Implementation Metrics}
+
+\begin{itemize}[noitemsep]
+    \item \textbf{Total Files}: 674+ production files
+    \item \textbf{Lines of Code}: 91,000+ lines
+    \item \textbf{Microservices}: 8 backend services fully implemented
+    \item \textbf{Development Phases}: 6 phases, 20 specialized agents
+    \item \textbf{Test Coverage}: 68+ test scenarios, E2E, integration, and load tests
+    \item \textbf{Documentation}: 16+ comprehensive specification documents
+\end{itemize}
+
+%----------------------------------------------------------------------------------------
+% SYSTEM ARCHITECTURE
+%----------------------------------------------------------------------------------------
+
+\section{System Architecture}
+
+\subsection{High-Level Architecture}
+
+The Blockd platform employs a microservices architecture with three primary layers:
+
+\begin{enumerate}
+    \item \textbf{Interviewee Layer}: Custom Chromium browser with embedded security and eye tracking
+    \item \textbf{Backend Layer}: 8 microservices handling authentication, sessions, AI analysis, and video
+    \item \textbf{Interviewer Layer}: React web application for real-time monitoring and session management
+\end{enumerate}
+
+\subsection{Component Diagram}
+
+\begin{figure}[H]
+\centering
+\begin{verbatim}
+┌─────────────────────────────────────────────────────────────┐
+│               INTERVIEWEE EXPERIENCE                        │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │      Blocked Chromium Browser (Desktop Native)        │  │
+│  │  • Security Monitoring    • Eye Tracking              │  │
+│  │  • Video Capture          • System Telemetry          │  │
+│  │  • Fullscreen Lock        • Process Detection         │  │
+│  └───────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+                        │
+                        │ WebSocket + Protocol Buffers
+                        ▼
+┌─────────────────────────────────────────────────────────────┐
+│                  BACKEND MICROSERVICES                       │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐        │
+│  │ API Gateway │  │   Video     │  │     AI      │        │
+│  │  (Fastify)  │  │  Service    │  │  Detection  │        │
+│  └─────────────┘  └─────────────┘  └─────────────┘        │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐        │
+│  │     Eye     │  │  Response   │  │    Auth     │        │
+│  │  Tracking   │  │   Timing    │  │  Service    │        │
+│  └─────────────┘  └─────────────┘  └─────────────┘        │
+└─────────────────────────────────────────────────────────────┘
+                        │
+                        │ HTTPS + WebSocket
+                        ▼
+┌─────────────────────────────────────────────────────────────┐
+│                  INTERVIEWER EXPERIENCE                      │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │        React Web App (Browser-based)                  │  │
+│  │  • Real-time Video       • Security Dashboard         │  │
+│  │  • Session Management    • AI Detection Results       │  │
+│  │  • Gaze Heatmaps         • Comprehensive Reports      │  │
+│  └───────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+\end{verbatim}
+\caption{Blockd Platform Architecture}
+\end{figure}
+
+\subsection{Data Flow Architecture}
+
+\begin{figure}[H]
+\centering
+\begin{verbatim}
+Interview Question Asked
+         │
+         ├─► AI Detection Service
+         │   ├─► Generate AI answers (GPT-4, Claude, Gemini)
+         │   ├─► Compute embeddings (pgvector)
+         │   └─► Cache in Redis (24h TTL)
+         │
+Interviewee Responds (Audio/Text)
+         │
+         ├─► Speech-to-Text (Whisper API)
+         ├─► Response Timing Analysis
+         ├─► AI Similarity Scoring
+         │   ├─► Semantic similarity (cosine, 384-dim vectors)
+         │   ├─► N-gram overlap (Jaccard index)
+         │   ├─► Perplexity scoring (GPT-2)
+         │   ├─► Stylometric analysis
+         │   └─► XGBoost ensemble → Risk Score (0.0-1.0)
+         │
+Continuous Monitoring (During Session)
+         │
+         ├─► Eye Tracking (30 FPS)
+         │   ├─► MediaPipe FaceMesh (468 facial landmarks)
+         │   ├─► Gaze vector computation
+         │   ├─► Kalman filtering (smooth tracking)
+         │   ├─► Off-screen detection
+         │   └─► Pattern recognition (reading, drift)
+         │
+         ├─► Security Telemetry (every 5 seconds)
+         │   ├─► Process enumeration (detect OBS, VMware, etc.)
+         │   ├─► Window focus tracking
+         │   ├─► Screen recording detection
+         │   ├─► VM detection (CPUID, registry, SMBIOS)
+         │   ├─► Clipboard monitoring
+         │   └─► System metrics (CPU, memory)
+         │
+         └─► Store in TimescaleDB
+                     │ (30-day retention, 7-day compression)
+                     ▼
+         Generate Risk Score & Comprehensive Report (PDF)
+\end{verbatim}
+\caption{Blockd Data Flow}
+\end{figure}
+
+%----------------------------------------------------------------------------------------
+% TECHNOLOGY STACK
+%----------------------------------------------------------------------------------------
+
+\section{Technology Stack}
+
+\subsection{Frontend Technologies}
+
+\subsubsection{Interviewer Web Application}
+
+The interviewer-facing application is a modern single-page application built with cutting-edge web technologies.
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{lX}
+\toprule
+\textbf{Technology} & \textbf{Purpose \& Version} \\
+\midrule
+React & v19.2.0 - UI framework with concurrent features \\
+TypeScript & v5.9.3 - Type-safe development \\
+Vite & v6.x - Fast build tool with HMR \\
+Tailwind CSS & v4.x - Utility-first CSS framework \\
+shadcn/ui & Latest - Pre-built accessible components \\
+Zustand & v5.x - Lightweight state management \\
+TanStack Query & v5.x - Server state management \\
+React Router & v7.x - Client-side routing \\
+Socket.io Client & v4.x - WebSocket real-time communication \\
+mediasoup-client & v3.x - WebRTC video streaming \\
+React Hook Form & Latest - Form state management \\
+Zod & Latest - Runtime type validation \\
+\bottomrule
+\end{tabularx}
+\caption{Frontend Technology Stack}
+\end{table}
+
+\subsubsection{Interviewee Chromium Browser}
+
+A complete fork of Chromium with custom security and monitoring capabilities.
+
+\begin{itemize}[noitemsep]
+    \item \textbf{Base Version}: Chromium 142.0.7444.175 (Stable, November 2025)
+    \item \textbf{Build System}: GN + Ninja build system
+    \item \textbf{Languages}: C++ (browser core), JavaScript/TypeScript (UI), Objective-C++ (macOS)
+    \item \textbf{Build Requirements}: 100+ GB disk, 16+ GB RAM, 8+ CPU cores
+    \item \textbf{Build Time}: 2-8 hours initial, 10-60 minutes incremental
+\end{itemize}
+
+Key modifications to Chromium source:
+
+\begin{lstlisting}[language=C++, caption=Chromium Modifications]
+// Browser Process
+chrome/browser/blocked/blocked_security/     // Security monitoring
+chrome/browser/blocked/blocked_telemetry/    // System telemetry
+chrome/browser/blocked/blocked_ipc/          // Backend communication
+chrome/browser/blocked/blocked_video/        // Video capture
+chrome/browser/ui/blocked/                   // UI restrictions
+
+// Renderer Process
+content/renderer/blocked_eye_tracking/       // Eye tracking module
+content/renderer/blocked_video/              // Video frame processing
+content/renderer/blocked_ipc/                // Renderer-to-browser IPC
+
+// Third-party Integration
+third_party/mediapipe/                       // MediaPipe FaceMesh
+\end{lstlisting}
+
+\subsection{Backend Technologies}
+
+\subsubsection{Microservices Stack}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{lXX}
+\toprule
+\textbf{Service} & \textbf{Technology} & \textbf{Purpose} \\
+\midrule
+API Gateway & Fastify 5.x, Node.js 24.11.0 & Request routing, rate limiting, JWT auth \\
+Auth Service & Node.js 24.11.0, bcrypt & Authentication, MFA, OAuth 2.0 \\
+Session Service & Node.js 24.11.0, Prisma & Session lifecycle, state machine \\
+WebSocket Service & Socket.io 4.x, Redis adapter & Real-time bidirectional communication \\
+AI Detection & Python 3.14.0, PyTorch 2.5.x & Multi-LLM comparison, XGBoost classification \\
+Eye Tracking & Python 3.14.0, MediaPipe 0.10.x & Gaze analysis, LSTM anomaly detection \\
+Response Timing & Python 3.14.0, Whisper & Speech-to-text, timing anomaly detection \\
+Video Service & Python 3.14.0, mediasoup 3.19.11 & WebRTC SFU, FFmpeg recording \\
+\bottomrule
+\end{tabularx}
+\caption{Microservices Technology Stack}
+\end{table}
+
+\subsubsection{Database Layer}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{lXl}
+\toprule
+\textbf{Database} & \textbf{Purpose} & \textbf{Version} \\
+\midrule
+PostgreSQL & Primary relational data (users, sessions) & 18.1 \\
+TimescaleDB & Time-series data (gaze, telemetry, events) & 2.x \\
+pgvector & Vector embeddings for AI similarity & 0.7.x \\
+Redis Cluster & Caching, sessions, rate limiting & 8.4 \\
+RabbitMQ & Message queue, async job processing & 4.x \\
+\bottomrule
+\end{tabularx}
+\caption{Database Technologies}
+\end{table}
+
+Database schema highlights:
+
+\begin{itemize}[noitemsep]
+    \item \textbf{11 core tables}: users, organizations, sessions, questions, answers, etc.
+    \item \textbf{31 indexes}: Optimized for query performance
+    \item \textbf{2 hypertables}: gaze\_events, browser\_telemetry (TimescaleDB)
+    \item \textbf{Retention policies}: 30-day default, 7-day compression
+    \item \textbf{Replication}: 1 primary + 2 read replicas
+\end{itemize}
+
+\subsection{Infrastructure Technologies}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{lX}
+\toprule
+\textbf{Technology} & \textbf{Purpose} \\
+\midrule
+Docker & Containerization (8 multi-stage Dockerfiles) \\
+Kubernetes & Orchestration (v1.31, 15+ manifests) \\
+Helm & Package management (charts for dev/staging/prod) \\
+Terraform & Infrastructure as Code (4 modules: cluster, database, storage, monitoring) \\
+GitHub Actions & CI/CD pipelines (5 workflows: test, build, deploy-staging, deploy-prod, security) \\
+Prometheus & Metrics collection (16 production alerts) \\
+Grafana & Visualization (6 pre-built dashboards) \\
+External Secrets Operator & Secrets management (AWS Secrets Manager integration) \\
+\bottomrule
+\end{tabularx}
+\caption{Infrastructure Technologies}
+\end{table}
+
+%----------------------------------------------------------------------------------------
+% COMPONENT SPECIFICATIONS
+%----------------------------------------------------------------------------------------
+
+\section{Component Specifications}
+
+\subsection{Database Layer (Agents 1-4)}
+
+\subsubsection{PostgreSQL Schema}
+
+The database schema consists of 11 core tables supporting the complete interview workflow:
+
+\begin{lstlisting}[language=SQL, caption=Core Tables]
+-- Users and Organizations
+CREATE TABLE organizations (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE users (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  email VARCHAR(255) UNIQUE NOT NULL,
+  password_hash VARCHAR(255),  -- bcrypt (12 rounds)
+  full_name VARCHAR(255) NOT NULL,
+  role user_role NOT NULL,     -- admin, interviewer, interviewee, viewer
+  organization_id UUID REFERENCES organizations(id),
+  mfa_enabled BOOLEAN DEFAULT FALSE,
+  mfa_secret VARCHAR(32),      -- Base32-encoded TOTP secret
+  email_verified BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Sessions and Interviews
+CREATE TABLE interview_sessions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  organization_id UUID REFERENCES organizations(id),
+  interviewer_id UUID REFERENCES users(id),
+  interviewee_id UUID REFERENCES users(id),
+  status session_status NOT NULL,
+  scheduled_start TIMESTAMP,
+  actual_start TIMESTAMP,
+  actual_end TIMESTAMP,
+  session_token VARCHAR(255) UNIQUE,
+  video_recording_url TEXT,
+  risk_score DECIMAL(3,2),     -- 0.00 to 1.00
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Security Events
+CREATE TABLE security_events (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  session_id UUID REFERENCES interview_sessions(id),
+  event_type security_event_type NOT NULL,
+  severity event_severity NOT NULL,
+  description TEXT,
+  metadata JSONB,
+  timestamp TIMESTAMP DEFAULT NOW()
+);
+
+-- AI Answer Cache
+CREATE TABLE ai_answer_cache (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  question_hash VARCHAR(64) NOT NULL,
+  model_name VARCHAR(50) NOT NULL,
+  answer_text TEXT NOT NULL,
+  embedding vector(384),       -- pgvector
+  perplexity_score FLOAT,
+  generated_at TIMESTAMP DEFAULT NOW(),
+  access_count INTEGER DEFAULT 0,
+  last_accessed TIMESTAMP,
+  UNIQUE(question_hash, model_name)
+);
+
+-- TimescaleDB Hypertables
+CREATE TABLE gaze_events (
+  session_id UUID NOT NULL,
+  timestamp TIMESTAMP NOT NULL,
+  gaze_x FLOAT,                -- Normalized 0-1
+  gaze_y FLOAT,                -- Normalized 0-1
+  is_off_screen BOOLEAN,
+  off_screen_direction VARCHAR(20),
+  confidence FLOAT
+);
+
+SELECT create_hypertable('gaze_events', 'timestamp');
+SELECT add_retention_policy('gaze_events', INTERVAL '30 days');
+SELECT add_compression_policy('gaze_events', INTERVAL '7 days');
+\end{lstlisting}
+
+\subsubsection{Redis Configuration}
+
+Redis cluster configuration for high availability:
+
+\begin{itemize}[noitemsep]
+    \item \textbf{Topology}: 6 nodes (3 primaries + 3 replicas)
+    \item \textbf{Memory}: 64 GB total (21.3 GB per primary)
+    \item \textbf{Persistence}: AOF with fsync every second
+    \item \textbf{Eviction}: allkeys-lru for cache management
+    \item \textbf{Use Cases}:
+    \begin{itemize}
+        \item Session tokens (1h TTL)
+        \item Rate limiting counters
+        \item AI answer cache (24h TTL)
+        \item Real-time session data
+        \item WebSocket connection state
+    \end{itemize}
+\end{itemize}
+
+\subsubsection{RabbitMQ Topology}
+
+Message queue architecture for asynchronous processing:
+
+\begin{lstlisting}[caption=RabbitMQ Exchanges and Queues]
+Exchanges:
+1. video_processing (topic) - Video encoding and upload
+2. ai_detection (direct) - AI analysis requests
+3. security_events (fanout) - Real-time security alerts
+4. gaze_analysis (direct) - Eye tracking pattern analysis
+5. dlx (dead letter exchange) - Failed message handling
+
+Queues (20 total):
+- video_processing.encode, video_processing.upload
+- ai_detection.similarity, ai_detection.perplexity
+- gaze_analysis.pattern, gaze_analysis.anomaly
+- security_events.high_priority, security_events.normal
+- [12 more specialized queues...]
+
+Workers:
+- Celery workers (Python) for task execution
+- 10-50 workers per queue (auto-scaling)
+- Max retries: 3, Retry delay: exponential backoff
+\end{lstlisting}
+
+\subsection{Backend Microservices (Agents 5-12)}
+
+\subsubsection{API Gateway (Agent 5)}
+
+The API Gateway serves as the single entry point for all client requests, handling authentication, rate limiting, and request routing.
+
+\begin{lstlisting}[language=JavaScript, caption=API Gateway Architecture]
+// Fastify 5.x with TypeScript
+import Fastify from 'fastify';
+import { fastifyJWT } from '@fastify/jwt';
+
+const app = Fastify({ logger: true });
+
+// JWT Authentication
+app.register(fastifyJWT, {
+  secret: { public: publicKey, private: privateKey },
+  sign: { algorithm: 'RS256', expiresIn: '1h' }
+});
+
+// Rate Limiting (Redis-backed)
+app.register(rateLimit, {
+  max: 100,              // 100 requests
+  timeWindow: '1 minute', // per minute
+  redis: redisClient
+});
+
+// Routes (30+ endpoints)
+app.register(authRoutes, { prefix: '/api/v1/auth' });
+app.register(sessionRoutes, { prefix: '/api/v1/sessions' });
+app.register(analysisRoutes, { prefix: '/api/v1/analysis' });
+app.register(browserRoutes, { prefix: '/api/v1/browser' });
+
+// Error Handling
+app.setErrorHandler((error, request, reply) => {
+  logger.error({ error, request });
+  reply.status(500).send({ error: 'Internal Server Error' });
+});
+\end{lstlisting}
+
+Key endpoints:
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{llX}
+\toprule
+\textbf{Method} & \textbf{Endpoint} & \textbf{Description} \\
+\midrule
+POST & /api/v1/auth/register & User registration \\
+POST & /api/v1/auth/login & Authentication with JWT \\
+POST & /api/v1/auth/refresh & Refresh access token \\
+POST & /api/v1/sessions & Create interview session \\
+GET & /api/v1/sessions/:id & Get session details \\
+POST & /api/v1/sessions/:id/start & Start session \\
+POST & /api/v1/sessions/:id/end & End session \\
+POST & /api/v1/analysis/answer & Analyze answer with AI \\
+POST & /api/v1/browser/security/event & Report security event \\
+POST & /api/v1/browser/telemetry/batch & Batch upload telemetry \\
+\bottomrule
+\end{tabularx}
+\caption{Key API Endpoints}
+\end{table}
+
+\subsubsection{Authentication Service (Agent 6)}
+
+Handles user authentication with multiple methods and MFA support.
+
+Features:
+\begin{itemize}[noitemsep]
+    \item \textbf{JWT Tokens}: RS256 algorithm, 1h access token, 7d refresh token
+    \item \textbf{MFA}: TOTP (Time-based One-Time Password) with QR code generation
+    \item \textbf{OAuth 2.0}: Google and Microsoft SSO integration
+    \item \textbf{Password Security}: bcrypt with 12 rounds, minimum 12 characters
+    \item \textbf{Session Management}: Redis-backed with automatic expiration
+    \item \textbf{Role-Based Access Control}: admin, interviewer, interviewee, viewer
+\end{itemize}
+
+\subsubsection{AI Detection Service (Agent 9)}
+
+The AI Detection Service is the core intellectual property of the platform, implementing sophisticated analysis to detect AI-generated answers.
+
+\begin{lstlisting}[language=Python, caption=AI Detection Pipeline]
+class AIDetectionService:
+    """Multi-LLM comparison with XGBoost ensemble classification"""
+
+    def __init__(self):
+        self.llm_clients = {
+            'gpt-4': OpenAIClient(),
+            'claude-3.5-sonnet': AnthropicClient(),
+            'gemini-1.5-pro': GoogleClient()
+        }
+        self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+        self.xgboost_model = XGBClassifier.load('ai_detector_v2.model')
+
+    async def analyze_answer(self, question: str, answer: str) -> AnalysisResult:
+        # 1. Generate AI answers from all LLMs (with caching)
+        ai_answers = await self.generate_ai_answers(question)
+
+        # 2. Compute embeddings (384-dimensional vectors)
+        human_embedding = self.embedding_model.encode(answer)
+        ai_embeddings = {
+            model: self.embedding_model.encode(ai_ans)
+            for model, ai_ans in ai_answers.items()
+        }
+
+        # 3. Calculate semantic similarity (cosine)
+        similarities = {
+            model: cosine_similarity(human_embedding, ai_emb)
+            for model, ai_emb in ai_embeddings.items()
+        }
+
+        # 4. Calculate perplexity score using GPT-2
+        perplexity = self.calculate_perplexity(answer)
+
+        # 5. N-gram overlap (Jaccard index)
+        ngram_scores = self.calculate_ngram_overlap(answer, ai_answers)
+
+        # 6. Stylometric analysis
+        style_features = self.extract_style_features(answer)
+
+        # 7. XGBoost ensemble prediction
+        features = self.combine_features(
+            similarities, perplexity, ngram_scores, style_features
+        )
+        risk_score = self.xgboost_model.predict_proba(features)[0][1]
+
+        # 8. Generate flags
+        flags = self.generate_flags(similarities, perplexity, risk_score)
+
+        return AnalysisResult(
+            risk_score=risk_score,
+            risk_level=self.categorize_risk(risk_score),
+            similarities=similarities,
+            perplexity_score=perplexity,
+            flags=flags
+        )
+\end{lstlisting}
+
+AI Detection Risk Categorization:
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{llX}
+\toprule
+\textbf{Risk Level} & \textbf{Score Range} & \textbf{Interpretation} \\
+\midrule
+Minimal & 0.00 - 0.49 & Likely human-generated \\
+Low & 0.50 - 0.69 & Probably human, minor similarities \\
+Medium & 0.70 - 0.84 & Investigate further, notable AI patterns \\
+High & 0.85 - 1.00 & Likely AI-generated, strong evidence \\
+\bottomrule
+\end{tabularx}
+\caption{AI Detection Risk Levels}
+\end{table}
+
+\subsubsection{Eye Tracking Service (Agent 10)}
+
+Real-time gaze analysis using computer vision and machine learning.
+
+Architecture:
+\begin{itemize}[noitemsep]
+    \item \textbf{Face Detection}: MediaPipe FaceMesh with 468 facial landmarks
+    \item \textbf{Gaze Estimation}: Custom CNN based on ResNet-18 architecture
+    \item \textbf{Kalman Filtering}: Smooth tracking with noise reduction
+    \item \textbf{LSTM Autoencoder}: Anomaly detection for suspicious patterns
+    \item \textbf{Performance}: 30 FPS, <50ms latency, <15\% CPU usage
+\end{itemize}
+
+Gaze analysis pipeline:
+
+\begin{lstlisting}[language=Python, caption=Eye Tracking Pipeline]
+class GazeAnalysisService:
+    """30 FPS real-time gaze tracking and analysis"""
+
+    def process_frame(self, frame: np.ndarray) -> GazeData:
+        # 1. Detect face with MediaPipe (468 landmarks)
+        landmarks = self.facemesh.process(frame)
+
+        # 2. Extract eye/iris landmarks
+        left_eye = landmarks[LEFT_EYE_INDICES]
+        right_eye = landmarks[RIGHT_EYE_INDICES]
+
+        # 3. Estimate gaze vector (3D)
+        gaze_vector = self.gaze_estimator.predict(left_eye, right_eye)
+
+        # 4. Apply Kalman filter for smoothing
+        filtered_gaze = self.kalman_filter.update(gaze_vector)
+
+        # 5. Apply calibration matrix (3x3 transform)
+        calibrated_gaze = self.calibration_matrix @ filtered_gaze
+
+        # 6. Convert to screen coordinates (0-1 normalized)
+        screen_x, screen_y = self.to_screen_coords(calibrated_gaze)
+
+        # 7. Detect off-screen gaze
+        is_off_screen, direction = self.detect_off_screen(
+            screen_x, screen_y
+        )
+
+        # 8. Pattern analysis with LSTM
+        pattern_score = self.lstm_anomaly_detector.score(gaze_sequence)
+
+        return GazeData(
+            x=screen_x,
+            y=screen_y,
+            is_off_screen=is_off_screen,
+            direction=direction,
+            confidence=landmarks.confidence,
+            anomaly_score=pattern_score
+        )
+\end{lstlisting}
+
+\subsubsection{Video Service (Agent 12)}
+
+WebRTC-based video streaming with mediasoup SFU (Selective Forwarding Unit).
+
+\begin{itemize}[noitemsep]
+    \item \textbf{Technology}: mediasoup 3.19.11 (WebRTC SFU)
+    \item \textbf{Capacity}: 100+ concurrent streams
+    \item \textbf{Resolution}: Adaptive (240p - 720p)
+    \item \textbf{Frame Rate}: 30 FPS default
+    \item \textbf{Recording}: FFmpeg with hardware acceleration (NVENC, QuickSync)
+    \item \textbf{Storage}: S3-compatible (AWS S3, MinIO, Cloudflare R2)
+    \item \textbf{Latency}: <1 second end-to-end
+\end{itemize}
+
+\subsection{Frontend Application (Agents 13-15)}
+
+\subsubsection{Architecture Overview}
+
+The interviewer web application is a modern React SPA with the following structure:
+
+\begin{lstlisting}[caption=Frontend Directory Structure]
+frontend/interviewer-app/
+├── src/
+│   ├── components/          # UI components (shadcn/ui + custom)
+│   │   ├── ui/             # 20+ shadcn/ui primitives
+│   │   ├── VideoPlayer.tsx # WebRTC video display
+│   │   ├── SecurityEventsDashboard.tsx
+│   │   ├── GazeHeatmap.tsx
+│   │   ├── AIDetectionResults.tsx
+│   │   └── RealtimeChat.tsx
+│   ├── pages/              # Route pages
+│   │   ├── LoginPage.tsx
+│   │   ├── DashboardPage.tsx
+│   │   ├── SessionsPage.tsx
+│   │   ├── SessionDetailPage.tsx
+│   │   └── SettingsPage.tsx
+│   ├── hooks/              # Custom React hooks
+│   │   ├── useAuth.ts
+│   │   ├── useWebSocket.ts
+│   │   ├── useWebRTC.ts
+│   │   └── useSession.ts
+│   ├── stores/             # Zustand state management
+│   │   ├── auth-store.ts
+│   │   ├── session-store.ts
+│   │   └── realtime-store.ts
+│   └── lib/                # Utilities
+│       ├── api-client.ts
+│       ├── validations.ts
+│       └── utils.ts
+├── package.json
+├── vite.config.ts
+└── tsconfig.json
+\end{lstlisting}
+
+\subsubsection{Key Features}
+
+\textbf{Authentication \& Session Management (Agent 14):}
+\begin{itemize}[noitemsep]
+    \item Login with email/password or OAuth (Google, Microsoft)
+    \item MFA support with TOTP
+    \item Session creation with dynamic questions editor
+    \item Session list with filters, search, and pagination
+    \item Settings page with profile, security, and preferences
+\end{itemize}
+
+\textbf{Real-time Features (Agent 15):}
+\begin{itemize}[noitemsep]
+    \item WebSocket connection for real-time events
+    \item WebRTC video player with controls
+    \item Security events dashboard with live updates
+    \item Gaze heatmap with canvas rendering
+    \item AI detection results visualization
+    \item Real-time chat with typing indicators
+\end{itemize}
+
+\subsection{Chromium Browser (Agents 16-18)}
+
+\subsubsection{Browser Process Security (Agent 16)}
+
+The browser process implements comprehensive security monitoring that runs with elevated privileges.
+
+\begin{lstlisting}[language=C++, caption=Security Monitoring Service]
+// chrome/browser/blocked/blocked_security/blocked_security_service.h
+class BlockedSecurityService : public KeyedService {
+ public:
+  explicit BlockedSecurityService();
+  ~BlockedSecurityService() override;
+
+  void StartMonitoring();
+  void StopMonitoring();
+
+  // Observer pattern for event notification
+  void AddObserver(SecurityEventObserver* observer);
+  void RemoveObserver(SecurityEventObserver* observer);
+
+ private:
+  void OnMonitoringTick();
+  void CheckProcesses();
+  void CheckVirtualMachine();
+  void CheckWindowFocus();
+  void CheckClipboard();
+
+  // Platform-specific monitors (Windows/macOS/Linux)
+  std::unique_ptr<PlatformSecurityMonitor> platform_monitor_;
+
+  // Risk scoring
+  float CalculateRiskScore() const;
+
+  // Event buffer (circular, 100 events max)
+  std::deque<SecurityEvent> recent_events_;
+
+  // Observers
+  base::ObserverList<SecurityEventObserver> observers_;
+
+  // Monitoring interval (5 seconds)
+  base::RepeatingTimer monitoring_timer_;
+
+  base::WeakPtrFactory<BlockedSecurityService> weak_factory_{this};
+};
+\end{lstlisting}
+
+Platform-specific detection capabilities:
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{lXXX}
+\toprule
+\textbf{Detection} & \textbf{Windows} & \textbf{macOS} & \textbf{Linux} \\
+\midrule
+Screen Recorders & OBS, Camtasia, Bandicam & QuickTime, ScreenFlow, OBS & OBS, SimpleScreenRecorder, Kazam \\
+VMs & VMware, VirtualBox, Hyper-V & Parallels, VMware Fusion, VirtualBox & QEMU/KVM, VirtualBox, VMware \\
+Remote Access & TeamViewer, AnyDesk & TeamViewer, AnyDesk & TeamViewer, AnyDesk \\
+Method & Win32 API, CPUID, Registry & IOKit, sysctl, NSRunningApp & /proc, DMI, kernel modules \\
+\bottomrule
+\end{tabularx}
+\caption{Platform-Specific Security Detection}
+\end{table}
+
+\subsubsection{Renderer Process Eye Tracking (Agent 17)}
+
+Eye tracking runs in the sandboxed renderer process, sending data to the browser process via Mojo IPC.
+
+\begin{lstlisting}[language=C++, caption=Eye Tracking Pipeline]
+// content/renderer/blocked_eye_tracking/eye_tracker.h
+class EyeTracker {
+ public:
+  EyeTracker();
+  ~EyeTracker();
+
+  // Start tracking at 30 FPS
+  void Start();
+  void Stop();
+
+  // Run calibration (9-point grid, 18 seconds)
+  void Calibrate(CalibrationCallback callback);
+
+ private:
+  // Processing pipeline (runs on background thread)
+  void ProcessFrame(const VideoFrame& frame);
+
+  // MediaPipe FaceMesh integration
+  std::unique_ptr<FaceDetector> face_detector_;
+
+  // Gaze estimation with Kalman filtering
+  std::unique_ptr<GazeEstimator> gaze_estimator_;
+
+  // Background processing thread
+  std::unique_ptr<base::Thread> worker_thread_;
+
+  // Mojo IPC to browser process
+  mojo::Remote<mojom::EyeTrackingHost> host_;
+
+  // Calibration state (3x3 transformation matrix)
+  Eigen::Matrix3f calibration_matrix_;
+
+  // Performance: 30 FPS target
+  static constexpr int kTargetFps = 30;
+  static constexpr int kFrameIntervalMs = 1000 / kTargetFps;
+};
+\end{lstlisting}
+
+Calibration process:
+
+\begin{enumerate}
+    \item Display 9 calibration points in 3x3 grid
+    \item User looks at each point for 2 seconds
+    \item Collect 60 gaze samples per point (30 FPS × 2 seconds)
+    \item Calculate 3x3 transformation matrix using least squares
+    \item Validate accuracy (target: >90\%)
+    \item Store calibration in local state
+    \item Apply to all future gaze estimates
+\end{enumerate}
+
+\subsubsection{Platform Distribution (Agent 18)}
+
+Complete installer and auto-update infrastructure for all platforms.
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{lXXl}
+\toprule
+\textbf{Platform} & \textbf{Installer} & \textbf{Auto-Update} & \textbf{Signing} \\
+\midrule
+Windows & NSIS (.exe) & Google Omaha & Authenticode \\
+macOS & DMG + App Bundle & Sparkle Framework & Developer ID + Notarization \\
+Linux & DEB, RPM, AppImage & Custom HTTP & GPG \\
+\bottomrule
+\end{tabularx}
+\caption{Platform Distribution}
+\end{table}
+
+%----------------------------------------------------------------------------------------
+% TESTING & CI/CD
+%----------------------------------------------------------------------------------------
+
+\section{Testing \& CI/CD}
+
+\subsection{Testing Infrastructure (Agent 19)}
+
+\subsubsection{Test Coverage}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{lXll}
+\toprule
+\textbf{Test Type} & \textbf{Tool} & \textbf{Files} & \textbf{Tests} \\
+\midrule
+E2E Tests & Playwright & 6 spec files & 43 scenarios \\
+API Tests & Newman/Postman & 4 collections & 22 tests \\
+Load Tests & k6 & 3 scenarios & 3 scripts \\
+\textbf{Total} & & \textbf{13 files} & \textbf{68+ tests} \\
+\bottomrule
+\end{tabularx}
+\caption{Test Coverage Summary}
+\end{table}
+
+\subsubsection{E2E Test Scenarios}
+
+Playwright tests covering critical user journeys:
+
+\begin{lstlisting}[caption=E2E Test Categories]
+1. interview-flow.spec.ts
+   - Complete interview lifecycle (create, join, conduct, end)
+
+2. auth.spec.ts
+   - Login with email/password
+   - Login with MFA
+   - OAuth flows (Google, Microsoft)
+   - Registration with email verification
+
+3. realtime.spec.ts
+   - WebSocket connection and reconnection
+   - Real-time security event updates
+   - Gaze data streaming
+   - Chat messaging
+
+4. security.spec.ts
+   - Process detection simulation
+   - VM detection scenarios
+   - Window focus tracking
+   - Alert generation
+
+5. ai-detection.spec.ts
+   - Submit human answer
+   - Submit AI-generated answer
+   - Risk score validation
+   - Flag generation
+
+6. video.spec.ts
+   - WebRTC connection establishment
+   - Video quality adaptation
+   - Recording start/stop
+   - Multiple concurrent streams
+\end{lstlisting}
+
+\subsubsection{Load Testing}
+
+k6 scenarios for performance validation:
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{lXll}
+\toprule
+\textbf{Scenario} & \textbf{Configuration} & \textbf{Target} & \textbf{Duration} \\
+\midrule
+Normal Load & 100 VUs, steady state & 500 req/min & 10 minutes \\
+Peak Load & 500 VUs, steady state & 2000 req/min & 5 minutes \\
+Stress Test & 0→1000 VUs ramp & Find breaking point & 10 minutes \\
+\bottomrule
+\end{tabularx}
+\caption{Load Testing Scenarios}
+\end{table}
+
+\subsection{CI/CD Automation (Agent 20)}
+
+\subsubsection{GitHub Actions Workflows}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{lX}
+\toprule
+\textbf{Workflow} & \textbf{Stages} \\
+\midrule
+test.yml & Lint → Unit Tests (matrix: 9 services) → Integration Tests → E2E Tests \\
+build.yml & Docker Build (matrix: 9 services) → Trivy Scan → Push to Registry \\
+deploy-staging.yml & Deploy with Helm → Smoke Tests → Newman API Tests \\
+deploy-production.yml & Create Green → Smoke Tests → Switch Traffic → Monitor 10min → Cleanup Blue \\
+security.yml & Dependency Scan → Code Scan (CodeQL, SonarQube) → Container Scan \\
+\bottomrule
+\end{tabularx}
+\caption{CI/CD Workflows}
+\end{table}
+
+\subsubsection{Deployment Strategy}
+
+\textbf{Staging Deployment}:
+\begin{itemize}[noitemsep]
+    \item Trigger: Automatic on push to \texttt{develop} branch
+    \item Strategy: Rolling update (max unavailable: 25\%)
+    \item Testing: Automated smoke tests + API integration tests
+    \item Rollback: Automatic on test failure
+\end{itemize}
+
+\textbf{Production Deployment}:
+\begin{itemize}[noitemsep]
+    \item Trigger: Manual approval + push to \texttt{main} branch
+    \item Strategy: Blue-green deployment (zero downtime)
+    \item Process:
+    \begin{enumerate}
+        \item Deploy green environment (parallel to blue)
+        \item Run comprehensive smoke tests
+        \item Switch traffic from blue to green
+        \item Monitor for 10 minutes (CPU, memory, errors, latency)
+        \item Automatic rollback if health checks fail
+        \item Cleanup blue environment after 24 hours
+    \end{enumerate}
+\end{itemize}
+
+\subsubsection{Monitoring \& Alerting}
+
+\textbf{Prometheus Alerts (16 total)}:
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{lXl}
+\toprule
+\textbf{Alert} & \textbf{Condition} & \textbf{Severity} \\
+\midrule
+HighErrorRate & Error rate > 1\% for 5 minutes & Critical \\
+HighLatency & p95 latency > 500ms for 5 minutes & Warning \\
+ServiceDown & Service unavailable for 1 minute & Critical \\
+DatabasePoolExhausted & Available connections < 10 & Critical \\
+RedisMemoryHigh & Memory usage > 80\% & Warning \\
+PodCPUHigh & CPU usage > 80\% for 10 minutes & Warning \\
+DiskSpaceLow & Disk usage > 85\% & Warning \\
+\bottomrule
+\end{tabularx}
+\caption{Key Prometheus Alerts}
+\end{table}
+
+%----------------------------------------------------------------------------------------
+% DEPLOYMENT GUIDE
+%----------------------------------------------------------------------------------------
+
+\section{Deployment Guide}
+
+\subsection{Prerequisites}
+
+\begin{enumerate}
+    \item \textbf{Kubernetes Cluster}
+    \begin{itemize}
+        \item AWS EKS, Google GKE, or Azure AKS recommended
+        \item Minimum: 3 nodes (c6i.2xlarge or equivalent)
+        \item Kubernetes version: 1.31+
+    \end{itemize}
+
+    \item \textbf{Domain \& DNS}
+    \begin{itemize}
+        \item Domain name (e.g., blockd.com)
+        \item DNS management (Route 53, CloudFlare, etc.)
+        \item SSL/TLS certificates (Let's Encrypt via cert-manager)
+    \end{itemize}
+
+    \item \textbf{External Services}
+    \begin{itemize}
+        \item AWS S3 or compatible object storage
+        \item LLM API keys (OpenAI, Anthropic, Google)
+        \item SMTP server for email notifications
+        \item OAuth credentials (Google, Microsoft)
+    \end{itemize}
+
+    \item \textbf{Code Signing Certificates}
+    \begin{itemize}
+        \item Windows: EV Code Signing Certificate
+        \item macOS: Apple Developer ID Certificate
+        \item Linux: GPG key for package signing
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Infrastructure Provisioning}
+
+\subsubsection{Terraform Setup}
+
+\begin{lstlisting}[language=bash, caption=Provision Infrastructure with Terraform]
+cd infrastructure/terraform
+
+# Initialize Terraform
+terraform init
+
+# Create production infrastructure
+terraform plan -var-file=environments/production/terraform.tfvars
+terraform apply -var-file=environments/production/terraform.tfvars
+
+# Outputs:
+# - EKS cluster endpoint
+# - RDS PostgreSQL endpoint
+# - ElastiCache Redis endpoint
+# - S3 bucket names
+\end{lstlisting}
+
+Terraform modules provision:
+\begin{itemize}[noitemsep]
+    \item EKS cluster with auto-scaling node groups
+    \item RDS PostgreSQL 18 with Multi-AZ replication
+    \item ElastiCache Redis 8.4 cluster (6 nodes)
+    \item Amazon MQ RabbitMQ 4.x cluster
+    \item S3 buckets with lifecycle policies
+    \item CloudFront CDN distribution
+    \item VPC with public/private subnets
+    \item KMS keys for encryption
+\end{itemize}
+
+\subsection{Database Setup}
+
+\begin{lstlisting}[language=bash, caption=Database Migration]
+# Connect to PostgreSQL
+export PGHOST=<rds-endpoint>
+export PGDATABASE=blockd
+export PGUSER=postgres
+export PGPASSWORD=<password>
+
+# Run Alembic migrations
+cd database
+alembic upgrade head
+
+# Verify tables
+psql -c "\dt"
+
+# Create TimescaleDB hypertables
+psql -f create_hypertables.sql
+
+# Seed initial data (optional)
+psql -f seed_data.sql
+\end{lstlisting}
+
+\subsection{Kubernetes Deployment}
+
+\subsubsection{Install Dependencies}
+
+\begin{lstlisting}[language=bash, caption=Install Kubernetes Dependencies]
+# Install cert-manager for TLS certificates
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
+
+# Install External Secrets Operator
+kubectl apply -f k8s/external-secrets/external-secrets-operator.yaml
+
+# Install Prometheus + Grafana
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm install monitoring prometheus-community/kube-prometheus-stack \
+  -n monitoring --create-namespace
+
+# Install Ingress NGINX
+helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+helm install ingress-nginx ingress-nginx/ingress-nginx \
+  -n ingress-nginx --create-namespace
+\end{lstlisting}
+
+\subsubsection{Deploy Blockd Platform}
+
+\begin{lstlisting}[language=bash, caption=Deploy with Helm]
+# Create namespace
+kubectl create namespace production
+
+# Create secrets in AWS Secrets Manager
+# (Database credentials, API keys, JWT keys, etc.)
+
+# Configure External Secrets
+kubectl apply -f k8s/external-secrets/ -n production
+
+# Deploy Blockd platform
+helm install blockd k8s/helm/blockd \
+  -n production \
+  -f k8s/helm/blockd/values-production.yaml
+
+# Verify deployment
+kubectl get pods -n production
+kubectl get ingress -n production
+
+# Check logs
+kubectl logs -f deployment/api-gateway -n production
+\end{lstlisting}
+
+Helm chart deploys:
+\begin{itemize}[noitemsep]
+    \item 9 microservice deployments with HPA
+    \item 9 Kubernetes services
+    \item Ingress with TLS termination
+    \item ConfigMaps and Secrets
+    \item PersistentVolumeClaims for PostgreSQL
+    \item NetworkPolicies for security
+\end{itemize}
+
+\subsection{Chromium Browser Build}
+
+\begin{lstlisting}[language=bash, caption=Build Blocked Browser]
+cd chromium
+
+# Setup build environment (100+ GB disk, 16+ GB RAM)
+./setup.sh
+
+# This will:
+# - Install depot_tools
+# - Download Chromium source (~30 GB)
+# - Install dependencies
+# - Configure environment
+
+# Apply Blocked modifications
+./patches/apply-patches.sh
+
+# Build browser (2-8 hours depending on CPU)
+./build.sh --release
+
+# Output:
+# - Windows: out/Blocked/chrome.exe
+# - macOS: out/Blocked/Chromium.app
+# - Linux: out/Blocked/chrome
+
+# Create installers (Agent 18 scripts)
+cd installer/windows
+./build_installer.bat  # Windows NSIS installer
+
+cd ../mac
+./create_dmg.sh        # macOS DMG
+
+cd ../linux
+./build_appimage.sh    # Linux AppImage
+\end{lstlisting}
+
+\subsection{Post-Deployment Verification}
+
+\begin{lstlisting}[language=bash, caption=Verification Checklist]
+# Check all pods are running
+kubectl get pods -n production
+
+# Check ingress has external IP
+kubectl get ingress -n production
+
+# Test API Gateway
+curl https://api.blockd.com/api/v1/health
+
+# Test authentication
+curl -X POST https://api.blockd.com/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"test@example.com","password":"password123"}'
+
+# Run smoke tests
+cd tests
+npm run test:api -- --env production
+
+# Check monitoring
+kubectl port-forward -n monitoring svc/monitoring-grafana 3000:80
+# Open http://localhost:3000
+
+# Check logs for errors
+kubectl logs -f deployment/api-gateway -n production | grep ERROR
+\end{lstlisting}
+
+%----------------------------------------------------------------------------------------
+% SECURITY ARCHITECTURE
+%----------------------------------------------------------------------------------------
+
+\section{Security Architecture}
+
+\subsection{Threat Model}
+
+\subsubsection{Threats Mitigated}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{lXX}
+\toprule
+\textbf{Threat} & \textbf{Detection Method} & \textbf{Mitigation} \\
+\midrule
+AI Assistance & Multi-LLM similarity, perplexity, n-gram & Real-time alert, risk score \\
+Second Monitor & Eye tracking, off-screen detection & Log events, pattern analysis \\
+Virtual Machine & CPUID, registry, SMBIOS checks & Block session start \\
+Screen Recording & Process enumeration, window detection & Terminate process or session \\
+Window Switching & Window focus monitoring & Log all focus changes \\
+Clipboard Use & Clipboard monitoring & Log paste events \\
+Remote Access & Process detection (TeamViewer, etc.) & Block session \\
+\bottomrule
+\end{tabularx}
+\caption{Threat Detection and Mitigation}
+\end{table}
+
+\subsection{Authentication Security}
+
+\begin{itemize}[noitemsep]
+    \item \textbf{Password Hashing}: bcrypt with 12 rounds (cost factor)
+    \item \textbf{JWT Tokens}: RS256 algorithm, 1-hour expiration
+    \item \textbf{Refresh Tokens}: 7-day expiration with rotation
+    \item \textbf{MFA}: TOTP with 30-second time step, 6-digit codes
+    \item \textbf{OAuth 2.0}: Secure delegation with state parameter
+    \item \textbf{Rate Limiting}: 100 requests/minute per IP (public), 500/minute (authenticated)
+    \item \textbf{Session Security}: HttpOnly cookies, SameSite=Strict
+\end{itemize}
+
+\subsection{Data Security}
+
+\begin{itemize}[noitemsep]
+    \item \textbf{Encryption at Rest}: AES-256 for databases and S3
+    \item \textbf{Encryption in Transit}: TLS 1.3 for all HTTPS traffic
+    \item \textbf{PII Protection}: Database-level encryption, access logging
+    \item \textbf{Video Retention}: Automatic deletion after 90 days
+    \item \textbf{GDPR Compliance}: Data export and deletion workflows
+    \item \textbf{Audit Logging}: All authentication events, session lifecycle, security events
+\end{itemize}
+
+\subsection{Network Security}
+
+\begin{itemize}[noitemsep]
+    \item \textbf{Network Policies}: Kubernetes NetworkPolicies restrict pod-to-pod traffic
+    \item \textbf{Ingress Security}: TLS termination, rate limiting, WAF
+    \item \textbf{Service Mesh}: Optional Istio for mTLS between services
+    \item \textbf{Secrets Management}: External Secrets Operator with AWS Secrets Manager
+    \item \textbf{IRSA}: IAM Roles for Service Accounts (pod-level IAM)
+\end{itemize}
+
+%----------------------------------------------------------------------------------------
+% MONITORING & OPERATIONS
+%----------------------------------------------------------------------------------------
+
+\section{Monitoring \& Operations}
+
+\subsection{Metrics Collection}
+
+\textbf{Prometheus Configuration}:
+\begin{itemize}[noitemsep]
+    \item Scrape interval: 15 seconds
+    \item Retention: 15 days
+    \item Storage: 50 GB persistent volume
+    \item Targets: All pods with \texttt{prometheus.io/scrape: "true"} annotation
+\end{itemize}
+
+\textbf{Key Metrics}:
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{lX}
+\toprule
+\textbf{Category} & \textbf{Metrics} \\
+\midrule
+HTTP & Request rate, latency (p50, p95, p99), error rate, status codes \\
+Database & Connection pool usage, query time, active connections \\
+Redis & Hit rate, memory usage, eviction rate, command latency \\
+WebSocket & Active connections, messages/second, connection errors \\
+Video & Active streams, bitrate, packet loss, encoding time \\
+AI Detection & Analysis time, cache hit rate, LLM API latency \\
+Eye Tracking & Frame rate, processing latency, off-screen events \\
+\bottomrule
+\end{tabularx}
+\caption{Monitored Metrics}
+\end{table}
+
+\subsection{Grafana Dashboards}
+
+Six pre-built dashboards for comprehensive visualization:
+
+\begin{enumerate}
+    \item \textbf{API Gateway}: Request rate, latency, error rate by endpoint
+    \item \textbf{Database}: Connection pool, query time, replication lag
+    \item \textbf{Redis}: Memory usage, hit rate, command distribution
+    \item \textbf{WebSocket}: Connections over time, message throughput, errors
+    \item \textbf{AI Detection}: Analysis time, cache hit rate, risk score distribution
+    \item \textbf{Video Streaming}: Active streams, bitrate, quality metrics
+\end{enumerate}
+
+\subsection{Incident Response}
+
+\subsubsection{Severity Levels}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{llXl}
+\toprule
+\textbf{SEV} & \textbf{Description} & \textbf{Examples} & \textbf{Response} \\
+\midrule
+SEV1 & Critical outage & Platform down, data breach & 15 min \\
+SEV2 & Major impact & Service degraded, 20\% error rate & 1 hour \\
+SEV3 & Minor impact & Non-critical feature broken & 4 hours \\
+SEV4 & Low impact & Visual bug, minor inconvenience & 24 hours \\
+\bottomrule
+\end{tabularx}
+\caption{Incident Severity Levels}
+\end{table}
+
+\subsubsection{Rollback Procedure}
+
+\begin{lstlisting}[language=bash, caption=Emergency Rollback]
+# Rollback to previous Helm release
+helm rollback blockd -n production
+
+# Or rollback specific deployment
+kubectl rollout undo deployment/api-gateway -n production
+
+# Verify rollback
+kubectl rollout status deployment/api-gateway -n production
+
+# Check logs
+kubectl logs -f deployment/api-gateway -n production
+\end{lstlisting}
+
+%----------------------------------------------------------------------------------------
+% PERFORMANCE BENCHMARKS
+%----------------------------------------------------------------------------------------
+
+\section{Performance Benchmarks}
+
+\subsection{Target Metrics}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{lXl}
+\toprule
+\textbf{Metric} & \textbf{Target} & \textbf{Measurement} \\
+\midrule
+API Response Time (p95) & <200ms & Prometheus \\
+WebSocket Message Latency & <50ms & Custom instrumentation \\
+Video Stream Latency & <1s & WebRTC stats \\
+AI Detection Time & <5s & FastAPI middleware \\
+Eye Tracking FPS & 30 FPS & Renderer metrics \\
+Database Query Time (p95) & <100ms & pg\_stat\_statements \\
+Page Load Time (p75) & <2s & Lighthouse CI \\
+\bottomrule
+\end{tabularx}
+\caption{Performance Targets}
+\end{table}
+
+\subsection{Capacity Planning}
+
+\textbf{Baseline Configuration}:
+\begin{itemize}[noitemsep]
+    \item Supports 1000 concurrent sessions
+    \item 100 active interviews simultaneously
+    \item 10,000 registered users
+    \item 1 TB video storage per month
+\end{itemize}
+
+\textbf{Scaling Strategy}:
+\begin{itemize}[noitemsep]
+    \item \textbf{Horizontal}: HPA scales pods based on CPU (>70\%) and memory (>80\%)
+    \item \textbf{Vertical}: Increase pod resources for stateful services
+    \item \textbf{Database}: Add read replicas for high query load
+    \item \textbf{Redis}: Add nodes to cluster for more memory
+    \item \textbf{Storage}: Auto-scaling S3 with lifecycle policies
+\end{itemize}
+
+%----------------------------------------------------------------------------------------
+% APPENDICES
+%----------------------------------------------------------------------------------------
+
+\appendix
+
+\section{API Reference}
+
+\subsection{Authentication Endpoints}
+
+\subsubsection{POST /api/v1/auth/register}
+
+Register a new user account.
+
+\textbf{Request Body}:
+\begin{lstlisting}[language=json]
+{
+  "email": "interviewer@company.com",
+  "password": "SecurePass123!",
+  "full_name": "Jane Doe",
+  "role": "interviewer",
+  "organization_id": "uuid"
+}
+\end{lstlisting}
+
+\textbf{Response} (201 Created):
+\begin{lstlisting}[language=json]
+{
+  "user_id": "uuid",
+  "email": "interviewer@company.com",
+  "access_token": "eyJhbGc...",
+  "refresh_token": "refresh_token_here",
+  "expires_in": 3600
+}
+\end{lstlisting}
+
+\subsubsection{POST /api/v1/auth/login}
+
+Authenticate user and obtain JWT tokens.
+
+\textbf{Request Body}:
+\begin{lstlisting}[language=json]
+{
+  "email": "interviewer@company.com",
+  "password": "SecurePass123!",
+  "mfa_code": "123456"  // Optional, required if MFA enabled
+}
+\end{lstlisting}
+
+\textbf{Response} (200 OK):
+\begin{lstlisting}[language=json]
+{
+  "user_id": "uuid",
+  "access_token": "eyJhbGc...",
+  "refresh_token": "refresh_token_here",
+  "expires_in": 3600
+}
+\end{lstlisting}
+
+\subsection{Session Management Endpoints}
+
+\subsubsection{POST /api/v1/sessions}
+
+Create a new interview session.
+
+\textbf{Request Body}:
+\begin{lstlisting}[language=json]
+{
+  "interviewee_id": "uuid",
+  "scheduled_start": "2025-11-25T10:00:00Z",
+  "questions": [
+    {
+      "question_text": "Explain the difference between TCP and UDP",
+      "expected_duration_seconds": 180,
+      "difficulty": "medium"
+    }
+  ]
+}
+\end{lstlisting}
+
+\textbf{Response} (201 Created):
+\begin{lstlisting}[language=json]
+{
+  "session_id": "uuid",
+  "session_token": "token_for_interviewee",
+  "status": "scheduled",
+  "join_url": "https://blocked.com/join/token"
+}
+\end{lstlisting}
+
+\section{Configuration Reference}
+
+\subsection{Environment Variables}
+
+\begin{longtable}{p{0.3\textwidth}p{0.6\textwidth}}
+\toprule
+\textbf{Variable} & \textbf{Description} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Variable} & \textbf{Description} \\
+\midrule
+\endhead
+\texttt{NODE\_ENV} & Environment: development, staging, production \\
+\texttt{API\_PORT} & API Gateway port (default: 8000) \\
+\texttt{DATABASE\_URL} & PostgreSQL connection string \\
+\texttt{REDIS\_URL} & Redis connection string \\
+\texttt{RABBITMQ\_URL} & RabbitMQ connection string \\
+\texttt{JWT\_PRIVATE\_KEY} & RS256 private key for signing JWTs \\
+\texttt{JWT\_PUBLIC\_KEY} & RS256 public key for verifying JWTs \\
+\texttt{OPENAI\_API\_KEY} & OpenAI API key for GPT-4 \\
+\texttt{ANTHROPIC\_API\_KEY} & Anthropic API key for Claude \\
+\texttt{GOOGLE\_AI\_API\_KEY} & Google API key for Gemini \\
+\texttt{AWS\_ACCESS\_KEY\_ID} & AWS credentials for S3 \\
+\texttt{AWS\_SECRET\_ACCESS\_KEY} & AWS secret key \\
+\texttt{S3\_BUCKET\_NAME} & S3 bucket for video storage \\
+\bottomrule
+\end{longtable}
+
+\section{Troubleshooting}
+
+\subsection{Common Issues}
+
+\subsubsection{API Gateway Returns 502 Bad Gateway}
+
+\textbf{Symptoms}: API requests fail with 502 status code
+
+\textbf{Possible Causes}:
+\begin{itemize}
+    \item Backend service is down
+    \item Database connection pool exhausted
+    \item Network policy blocking traffic
+\end{itemize}
+
+\textbf{Solutions}:
+\begin{lstlisting}[language=bash]
+# Check pod status
+kubectl get pods -n production
+
+# Check logs
+kubectl logs -f deployment/api-gateway -n production
+
+# Check database connections
+kubectl exec -it deployment/api-gateway -n production -- \
+  psql $DATABASE_URL -c "SELECT count(*) FROM pg_stat_activity;"
+
+# Restart deployment if needed
+kubectl rollout restart deployment/api-gateway -n production
+\end{lstlisting}
+
+\subsubsection{Eye Tracking Not Working}
+
+\textbf{Symptoms}: No gaze data received from browser
+
+\textbf{Possible Causes}:
+\begin{itemize}
+    \item Camera permission denied
+    \item MediaPipe models not loaded
+    \item Calibration not performed
+\end{itemize}
+
+\textbf{Solutions}:
+\begin{enumerate}
+    \item Check browser console for errors
+    \item Verify camera permission granted
+    \item Run calibration process (9-point grid)
+    \item Check MediaPipe model files are present
+\end{enumerate}
+
+%----------------------------------------------------------------------------------------
+% GLOSSARY
+%----------------------------------------------------------------------------------------
+
+\section{Glossary}
+
+\begin{description}
+    \item[API Gateway] Centralized entry point for all client requests, handles routing and authentication
+    \item[Chromium Fork] Custom version of Chromium browser with embedded security features
+    \item[HPA] Horizontal Pod Autoscaler - Kubernetes feature for auto-scaling pods
+    \item[JWT] JSON Web Token - Token-based authentication mechanism
+    \item[MediaPipe] Google's framework for building multimodal ML pipelines
+    \item[mediasoup] WebRTC Selective Forwarding Unit (SFU) for video streaming
+    \item[Mojo] Chromium's IPC system for communication between processes
+    \item[pgvector] PostgreSQL extension for storing and querying vector embeddings
+    \item[SFU] Selective Forwarding Unit - Video routing architecture
+    \item[TimescaleDB] PostgreSQL extension optimized for time-series data
+    \item[TOTP] Time-based One-Time Password - MFA authentication method
+    \item[WebRTC] Web Real-Time Communication - Peer-to-peer communication protocol
+    \item[XGBoost] Gradient boosting framework used for AI detection classification
+\end{description}
+
+%----------------------------------------------------------------------------------------
+% REFERENCES
+%----------------------------------------------------------------------------------------
+
+\section{References}
+
+\begin{enumerate}
+    \item Chromium Development Documentation: \url{https://www.chromium.org/developers/}
+    \item MediaPipe Documentation: \url{https://developers.google.com/mediapipe}
+    \item PostgreSQL 18 Documentation: \url{https://www.postgresql.org/docs/18/}
+    \item TimescaleDB Documentation: \url{https://docs.timescale.com/}
+    \item Kubernetes Documentation: \url{https://kubernetes.io/docs/}
+    \item Fastify Documentation: \url{https://www.fastify.io/}
+    \item React 19 Documentation: \url{https://react.dev/}
+    \item mediasoup Documentation: \url{https://mediasoup.org/documentation/}
+\end{enumerate}
+
+%----------------------------------------------------------------------------------------
+% VERSION HISTORY
+%----------------------------------------------------------------------------------------
+
+\section{Version History}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{llX}
+\toprule
+\textbf{Version} & \textbf{Date} & \textbf{Changes} \\
+\midrule
+1.0.0 & 2025-11-24 & Initial release - Complete system documentation \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+%----------------------------------------------------------------------------------------
+
+\end{document}

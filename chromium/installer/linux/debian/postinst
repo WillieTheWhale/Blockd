@@ -1,0 +1,40 @@
+#!/bin/bash
+# Post-installation script for Blockd Browser
+# Copyright 2025 The Blockd Authors. All rights reserved.
+
+set -e
+
+case "$1" in
+    configure)
+        # Update desktop database
+        if command -v update-desktop-database >/dev/null 2>&1; then
+            update-desktop-database -q
+        fi
+
+        # Update icon cache
+        if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+            gtk-update-icon-cache -q -f /usr/share/icons/hicolor || true
+        fi
+
+        # Set SUID sandbox permissions (required for Chrome sandbox)
+        chmod 4755 /opt/blockd-browser/chrome-sandbox || true
+
+        # Create symlink for libffmpeg if needed
+        if [ ! -f /opt/blockd-browser/libffmpeg.so ]; then
+            ln -sf /opt/blockd-browser/libffmpeg.so.* /opt/blockd-browser/libffmpeg.so || true
+        fi
+
+        echo "Blockd Browser installed successfully!"
+        echo "Launch from Applications menu or run 'blockd-browser' from terminal"
+        ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+        ;;
+
+    *)
+        echo "postinst called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

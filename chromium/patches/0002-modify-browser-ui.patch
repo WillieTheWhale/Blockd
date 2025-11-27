@@ -1,0 +1,84 @@
+From: Blocked Browser Team <dev@blockd.com>
+Date: Mon, 24 Nov 2025 12:30:00 +0000
+Subject: [PATCH 2/3] Modify browser UI for session lockdown
+
+Add restrictions during active interview sessions:
+- Block new tab creation
+- Block new window creation
+- Enforce fullscreen mode
+- Filter keyboard shortcuts
+- Restrict navigation
+
+diff --git a/chrome/browser/ui/browser.cc b/chrome/browser/ui/browser.cc
+index 3456789..cdefghi 100644
+--- a/chrome/browser/ui/browser.cc
++++ b/chrome/browser/ui/browser.cc
+@@ -50,6 +50,10 @@
+ #include "chrome/browser/ui/tabs/tab_strip_model.h"
+ #include "chrome/browser/ui/tabs/tab_strip_model_delegate.h"
+
++#ifdef BLOCKED_BROWSER
++#include "chrome/browser/ui/blocked/blocked_browser_controller.h"
++#endif
++
+ namespace {
+
+ bool ShouldOpenNewTab(const NavigateParams& params) {
+@@ -200,6 +204,13 @@ Browser::~Browser() {
+
+ void Browser::AddTab(std::unique_ptr<content::WebContents> contents,
+                      int add_types) {
++#ifdef BLOCKED_BROWSER
++  if (blocked::BlockedBrowserController::Get() &&
++      blocked::BlockedBrowserController::Get()->ShouldBlockNewTab()) {
++    LOG(WARNING) << "Blocked: New tab creation blocked during session";
++    return;
++  }
++#endif
++
+   TabStripModel* tab_strip_model = this->tab_strip_model();
+   int index = tab_strip_model->count();
+
+@@ -300,6 +311,13 @@ Browser* Browser::Create(const CreateParams& params) {
++#ifdef BLOCKED_BROWSER
++  if (blocked::BlockedBrowserController::Get() &&
++      blocked::BlockedBrowserController::Get()->ShouldBlockNewWindow()) {
++    LOG(WARNING) << "Blocked: New window creation blocked during session";
++    return nullptr;
++  }
++#endif
++
+   Browser* browser = new Browser(params);
+   browser->Init();
+   return browser;
+
+diff --git a/chrome/browser/ui/exclusive_access/fullscreen_controller.cc b/chrome/browser/ui/exclusive_access/fullscreen_controller.cc
+index 4567890..defghij 100644
+--- a/chrome/browser/ui/exclusive_access/fullscreen_controller.cc
++++ b/chrome/browser/ui/exclusive_access/fullscreen_controller.cc
+@@ -20,6 +20,10 @@
+ #include "content/public/browser/web_contents.h"
+ #include "ui/base/ui_base_features.h"
+
++#ifdef BLOCKED_BROWSER
++#include "chrome/browser/ui/blocked/blocked_browser_controller.h"
++#endif
++
+ namespace {
+
+ const char kFullscreenExitBubbleReason[] = "fullscreen_exit_bubble";
+@@ -100,6 +104,14 @@ void FullscreenController::ExitFullscreen() {
+   if (!IsFullscreen())
+     return;
+
++#ifdef BLOCKED_BROWSER
++  if (blocked::BlockedBrowserController::Get() &&
++      blocked::BlockedBrowserController::Get()->ShouldBlockFullscreenExit()) {
++    LOG(WARNING) << "Blocked: Fullscreen exit blocked during session";
++    return;
++  }
++#endif
++
+   ToggleFullscreen(FULLSCREEN_TYPE_BROWSER);
+ }
+
