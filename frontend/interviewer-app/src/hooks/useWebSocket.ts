@@ -18,6 +18,7 @@ export type WebSocketEventType =
   | 'question:asked'
   | 'answer:received'
   | 'chat:message'
+  | 'chat:typing'
 
 /**
  * WebSocket event handler type

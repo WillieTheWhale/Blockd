@@ -1,10 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import * as mediasoupClient from 'mediasoup-client'
-import { Device } from 'mediasoup-client'
-import type { Transport, Producer, Consumer } from 'mediasoup-client/lib/types'
-import { API_URL } from '@/lib/constants'
+import { Device, types as mediasoupTypes } from 'mediasoup-client'
 import { apiRequest } from '@/lib/api-client'
-import type { VideoStreamStats, WebRTCConfig } from '@/types'
+import type { VideoStreamStats } from '@/types'
+
+// Type aliases from mediasoup-client
+type Transport = mediasoupTypes.Transport
+type Producer = mediasoupTypes.Producer
+type Consumer = mediasoupTypes.Consumer
 
 /**
  * WebRTC connection state
