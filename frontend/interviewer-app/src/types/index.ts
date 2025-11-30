@@ -25,6 +25,7 @@ export interface LoginCredentials {
   email: string
   password: string
   mfaCode?: string
+  rememberMe?: boolean
 }
 
 export interface RegisterData {

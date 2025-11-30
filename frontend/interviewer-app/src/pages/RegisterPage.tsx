@@ -20,7 +20,7 @@ export function RegisterPage() {
   const navigate = useNavigate()
   const { register: registerUser, isLoading } = useAuthStore()
   const [showSuccess, setShowSuccess] = useState(false)
-  const [passwordStrength, setPasswordStrength] = useState({ strength: 0, label: 'weak' as const, color: 'bg-red-500' })
+  const [passwordStrength, setPasswordStrength] = useState<{ strength: number; label: 'weak' | 'fair' | 'good' | 'strong'; color: string }>({ strength: 0, label: 'weak', color: 'bg-red-500' })
 
   const {
     register,

@@ -328,6 +328,11 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
           await initializeDevice()
         }
 
+        // Ensure device is initialized (for TypeScript)
+        if (!deviceRef.current) {
+          throw new Error('Device initialization failed')
+        }
+
         // Create receive transport if not exists
         let transport = recvTransportRef.current
         if (!transport) {
