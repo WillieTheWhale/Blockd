@@ -65,8 +65,8 @@ services:
   # API Gateway (Node.js)
   api-gateway:
     build:
-      context: ./backend/api-gateway
-      dockerfile: Dockerfile
+      context: ./backend
+      dockerfile: api-gateway/Dockerfile
     container_name: blockd-api-gateway
     environment:
       NODE_ENV: development
@@ -96,8 +96,8 @@ services:
   # Auth Service (Node.js)
   auth-service:
     build:
-      context: ./backend/auth-service
-      dockerfile: Dockerfile
+      context: ./backend
+      dockerfile: auth-service/Dockerfile
     container_name: blockd-auth-service
     environment:
       NODE_ENV: development
@@ -124,8 +124,8 @@ services:
   # Session Service (Node.js)
   session-service:
     build:
-      context: ./backend/session-service
-      dockerfile: Dockerfile
+      context: ./backend
+      dockerfile: session-service/Dockerfile
     container_name: blockd-session-service
     environment:
       NODE_ENV: development
