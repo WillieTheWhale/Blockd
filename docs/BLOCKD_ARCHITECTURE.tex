@@ -131,7 +131,7 @@ Infrastructure & Docker 27.x, Kubernetes 1.31, Terraform, Helm 3.x \\
     \item \textbf{Total Files}: 674+ production files
     \item \textbf{Lines of Code}: 91,000+ lines
     \item \textbf{Microservices}: 8 backend services fully implemented
-    \item \textbf{Development Phases}: 6 phases, 20 specialized agents
+    \item \textbf{Development Phases}: 6 phases
     \item \textbf{Test Coverage}: 68+ test scenarios, E2E, integration, and load tests
     \item \textbf{Documentation}: 16+ comprehensive specification documents
 \end{itemize}
@@ -389,7 +389,7 @@ External Secrets Operator & Secrets management (AWS Secrets Manager integration)
 
 \section{Component Specifications}
 
-\subsection{Database Layer (Agents 1-4)}
+\subsection{Database Layer}
 
 \subsubsection{PostgreSQL Schema}
 
@@ -519,9 +519,9 @@ Workers:
 - Max retries: 3, Retry delay: exponential backoff
 \end{lstlisting}
 
-\subsection{Backend Microservices (Agents 5-12)}
+\subsection{Backend Microservices}
 
-\subsubsection{API Gateway (Agent 5)}
+\subsubsection{API Gateway}
 
 The API Gateway serves as the single entry point for all client requests, handling authentication, rate limiting, and request routing.
 
@@ -582,7 +582,7 @@ POST & /api/v1/browser/telemetry/batch & Batch upload telemetry \\
 \caption{Key API Endpoints}
 \end{table}
 
-\subsubsection{Authentication Service (Agent 6)}
+\subsubsection{Authentication Service}
 
 Handles user authentication with multiple methods and MFA support.
 
@@ -596,7 +596,7 @@ Features:
     \item \textbf{Role-Based Access Control}: admin, interviewer, interviewee, viewer
 \end{itemize}
 
-\subsubsection{AI Detection Service (Agent 9)}
+\subsubsection{AI Detection Service}
 
 The AI Detection Service is the core intellectual property of the platform, implementing sophisticated analysis to detect AI-generated answers.
 
@@ -674,7 +674,7 @@ High & 0.85 - 1.00 & Likely AI-generated, strong evidence \\
 \caption{AI Detection Risk Levels}
 \end{table}
 
-\subsubsection{Eye Tracking Service (Agent 10)}
+\subsubsection{Eye Tracking Service}
 
 Real-time gaze analysis using computer vision and machine learning.
 
@@ -731,7 +731,7 @@ class GazeAnalysisService:
         )
 \end{lstlisting}
 
-\subsubsection{Video Service (Agent 12)}
+\subsubsection{Video Service}
 
 WebRTC-based video streaming with mediasoup SFU (Selective Forwarding Unit).
 
@@ -745,7 +745,7 @@ WebRTC-based video streaming with mediasoup SFU (Selective Forwarding Unit).
     \item \textbf{Latency}: <1 second end-to-end
 \end{itemize}
 
-\subsection{Frontend Application (Agents 13-15)}
+\subsection{Frontend Application}
 
 \subsubsection{Architecture Overview}
 
@@ -787,7 +787,7 @@ frontend/interviewer-app/
 
 \subsubsection{Key Features}
 
-\textbf{Authentication \& Session Management (Agent 14):}
+\textbf{Authentication \& Session Management:}
 \begin{itemize}[noitemsep]
     \item Login with email/password or OAuth (Google, Microsoft)
     \item MFA support with TOTP
@@ -796,7 +796,7 @@ frontend/interviewer-app/
     \item Settings page with profile, security, and preferences
 \end{itemize}
 
-\textbf{Real-time Features (Agent 15):}
+\textbf{Real-time Features:}
 \begin{itemize}[noitemsep]
     \item WebSocket connection for real-time events
     \item WebRTC video player with controls
@@ -806,9 +806,9 @@ frontend/interviewer-app/
     \item Real-time chat with typing indicators
 \end{itemize}
 
-\subsection{Chromium Browser (Agents 16-18)}
+\subsection{Chromium Browser}
 
-\subsubsection{Browser Process Security (Agent 16)}
+\subsubsection{Browser Process Security}
 
 The browser process implements comprehensive security monitoring that runs with elevated privileges.
 
@@ -870,7 +870,7 @@ Method & Win32 API, CPUID, Registry & IOKit, sysctl, NSRunningApp & /proc, DMI, 
 \caption{Platform-Specific Security Detection}
 \end{table}
 
-\subsubsection{Renderer Process Eye Tracking (Agent 17)}
+\subsubsection{Renderer Process Eye Tracking}
 
 Eye tracking runs in the sandboxed renderer process, sending data to the browser process via Mojo IPC.
 
@@ -925,7 +925,7 @@ Calibration process:
     \item Apply to all future gaze estimates
 \end{enumerate}
 
-\subsubsection{Platform Distribution (Agent 18)}
+\subsubsection{Platform Distribution}
 
 Complete installer and auto-update infrastructure for all platforms.
 
@@ -949,7 +949,7 @@ Linux & DEB, RPM, AppImage & Custom HTTP & GPG \\
 
 \section{Testing \& CI/CD}
 
-\subsection{Testing Infrastructure (Agent 19)}
+\subsection{Testing Infrastructure}
 
 \subsubsection{Test Coverage}
 
@@ -1025,7 +1025,7 @@ Stress Test & 0→1000 VUs ramp & Find breaking point & 10 minutes \\
 \caption{Load Testing Scenarios}
 \end{table}
 
-\subsection{CI/CD Automation (Agent 20)}
+\subsection{CI/CD Automation}
 
 \subsubsection{GitHub Actions Workflows}
 
@@ -1271,7 +1271,7 @@ cd chromium
 # - macOS: out/Blocked/Chromium.app
 # - Linux: out/Blocked/chrome
 
-# Create installers (Agent 18 scripts)
+# Create installers
 cd installer/windows
 ./build_installer.bat  # Windows NSIS installer
 
