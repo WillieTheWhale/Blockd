@@ -18,12 +18,6 @@ RUN npm ci && \
 # Copy source code
 COPY src/ ./src/
 
-# Copy prisma schema if exists
-COPY prisma/ ./prisma/ 2>/dev/null || true
-
-# Generate Prisma client if schema exists
-RUN npx prisma generate 2>/dev/null || true
-
 # Build TypeScript
 RUN npm run build
 
@@ -44,10 +38,6 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev && \
     npm cache clean --force
-
-# Copy prisma schema and generate client
-COPY prisma/ ./prisma/ 2>/dev/null || true
-RUN npx prisma generate 2>/dev/null || true
 
 # Copy built application from builder
 COPY --from=builder --chown=nodejs:nodejs /app/dist ./dist
