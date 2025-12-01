@@ -16,6 +16,8 @@ const config: ForgeConfig = {
     asar: true,
     appBundleId: 'com.blockd.interviewee',
     appCategoryType: 'public.app-category.productivity',
+    // Copy icon.png to resources for runtime access
+    extraResource: ['./resources/icon.png'],
     protocols: [
       {
         name: 'Blockd Protocol',

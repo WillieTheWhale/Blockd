@@ -3,11 +3,28 @@
  * Electron main process entry point
  */
 
-import { app, BrowserWindow, ipcMain, session, desktopCapturer } from 'electron';
+import { app, BrowserWindow, ipcMain, session, desktopCapturer, nativeImage } from 'electron';
 import path from 'path';
 import { setupIpcHandlers } from './ipc-handlers';
 import { SecurityMonitor } from './security-monitor';
 import { SessionManager } from './session-manager';
+
+/**
+ * Get the path to the application icon
+ * Works in both development and production
+ */
+function getIconPath(): string {
+  // In production, resources are in the app root
+  // In development, they're relative to the source
+  const isDev = process.env.NODE_ENV === 'development' || MAIN_WINDOW_VITE_DEV_SERVER_URL;
+
+  if (isDev) {
+    return path.join(__dirname, '../../resources/icon.png');
+  }
+
+  // Production: resources are in the app's resources folder
+  return path.join(process.resourcesPath, 'icon.png');
+}
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (require('electron-squirrel-startup')) {
@@ -25,13 +42,16 @@ declare const MAIN_WINDOW_VITE_NAME: string;
 
 const createWindow = (): void => {
   // Create the browser window.
+  // Get the application icon
+  const iconPath = getIconPath();
+
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 1024,
     minHeight: 768,
     title: 'Blockd Interviewee',
-    icon: path.join(__dirname, '../../resources/icon.png'),
+    icon: iconPath,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       // Security settings
