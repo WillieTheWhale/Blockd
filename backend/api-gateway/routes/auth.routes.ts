@@ -4,8 +4,8 @@
  */
 
 import { FastifyInstance } from 'fastify';
-import { authenticate, strictRateLimiter } from '../middleware/auth.middleware.js';
-import { publicRateLimiter } from '../middleware/rate-limit.middleware.js';
+import { authenticate } from '../middleware/auth.middleware.js';
+import { publicRateLimiter, strictRateLimiter } from '../middleware/rate-limit.middleware.js';
 import { validateBody } from '../middleware/validation.middleware.js';
 import {
   registerRequestSchema,
@@ -25,7 +25,7 @@ import { generateTokenPair, verifyRefreshToken, revokeRefreshToken, revokeAllRef
 import { sendSuccess, sendCreated } from '../lib/response.js';
 import { BadRequestError, UnauthorizedError, NotFoundError } from '../lib/errors.js';
 import prisma from '../lib/prisma.js';
-import { hash, compare } from 'crypto';
+import crypto from 'crypto';
 import { promisify } from 'util';
 
 const scrypt = promisify((password: string, salt: string, keylen: number, callback: (err: Error | null, derivedKey?: Buffer) => void) => {

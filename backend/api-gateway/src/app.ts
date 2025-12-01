@@ -211,7 +211,7 @@ export async function gracefulShutdown(app: FastifyInstance, signal: string): Pr
     app.log.info('Graceful shutdown completed');
     process.exit(0);
   } catch (error) {
-    app.log.error('Error during graceful shutdown:', error);
+    app.log.error({ err: error }, 'Error during graceful shutdown');
     process.exit(1);
   }
 }

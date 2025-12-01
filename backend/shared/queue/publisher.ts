@@ -3,7 +3,8 @@
  * Handles message publishing to RabbitMQ exchanges with connection pooling and retry logic
  */
 
-import amqp, { Connection, Channel, Options } from 'amqplib';
+import amqp from 'amqplib';
+import type { Options, Connection, ConfirmChannel } from 'amqplib';
 
 interface RabbitMQConfig {
   hosts: string[];
@@ -38,8 +39,9 @@ interface EnrichedMessage {
  */
 export class RabbitMQPublisher {
   private config: RabbitMQConfig;
-  private connection: Connection | null = null;
-  private channel: Channel | null = null;
+  // Using 'any' due to amqplib types not matching actual implementation
+  private connection: any = null;
+  private channel: ConfirmChannel | null = null;
   private isConnected: boolean = false;
   private connectionAttempts: number = 5;
   private retryDelay: number = 2000;
@@ -74,7 +76,7 @@ export class RabbitMQPublisher {
 
         this.connection = await amqp.connect(url, socketOptions);
 
-        this.connection.on('error', (err) => {
+        this.connection.on('error', (err: Error) => {
           console.error('RabbitMQ connection error:', err);
           this.isConnected = false;
         });
@@ -84,18 +86,16 @@ export class RabbitMQPublisher {
           this.isConnected = false;
         });
 
-        this.channel = await this.connection.createChannel();
+        // Create a confirm channel for publisher confirms
+        this.channel = await this.connection.createConfirmChannel();
 
-        this.channel.on('error', (err) => {
+        this.channel.on('error', (err: Error) => {
           console.error('RabbitMQ channel error:', err);
         });
 
         this.channel.on('close', () => {
           console.warn('RabbitMQ channel closed');
         });
-
-        // Enable publisher confirms
-        await this.channel.confirmSelect();
 
         this.isConnected = true;
         console.log(`Connected to RabbitMQ at ${host}:${this.config.port}/${this.config.vhost}`);
@@ -187,25 +187,24 @@ export class RabbitMQPublisher {
       };
 
       // Use promise-based confirm
-      return await new Promise<boolean>((resolve, reject) => {
-        this.channel!.publish(
-          exchange,
-          routingKey,
-          content,
-          publishOptions,
-          (err, ok) => {
-            if (err) {
-              console.error(`Failed to publish message to ${exchange}:`, err);
-              reject(err);
-            } else {
-              console.debug(
-                `Published message to ${exchange} with routing_key ${routingKey}`
-              );
-              resolve(true);
-            }
-          }
+      const published = this.channel!.publish(
+        exchange,
+        routingKey,
+        content,
+        publishOptions
+      );
+
+      if (published) {
+        // Wait for confirmation
+        await this.channel!.waitForConfirms();
+        console.debug(
+          `Published message to ${exchange} with routing_key ${routingKey}`
         );
-      });
+        return true;
+      } else {
+        console.error(`Failed to publish message to ${exchange}: channel buffer full`);
+        return false;
+      }
     } catch (error) {
       console.error('Error publishing message:', error);
       return false;

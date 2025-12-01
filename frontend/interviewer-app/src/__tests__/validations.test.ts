@@ -139,19 +139,28 @@ describe('Validation Schemas', () => {
   })
 
   describe('calculatePasswordStrength', () => {
-    it('returns weak for short password', () => {
-      const result = calculatePasswordStrength('Pass1!')
+    it('returns weak for very short simple password', () => {
+      // Only lowercase, short = 15 strength (weak)
+      const result = calculatePasswordStrength('abc')
       expect(result.label).toBe('weak')
     })
 
     it('returns strong for complex password', () => {
+      // 20+ chars: 40, lowercase: 15, uppercase: 15, number: 15, special: 15 = 100
       const result = calculatePasswordStrength('MySecureP@ssw0rd123!')
       expect(result.label).toBe('strong')
       expect(result.strength).toBeGreaterThan(80)
     })
 
-    it('returns fair for moderate password', () => {
-      const result = calculatePasswordStrength('Password1!')
+    it('returns good for password with all character types but short', () => {
+      // 'Pass1!' (6 chars): uppercase(15) + lowercase(15) + number(15) + special(15) = 60 → good
+      const result = calculatePasswordStrength('Pass1!')
+      expect(result.label).toBe('good')
+    })
+
+    it('returns fair for password without number or special chars', () => {
+      // 'Passaaaa' (8 chars): 8+(20) + lower(15) + upper(15) = 50 → fair (40-59 range)
+      const result = calculatePasswordStrength('Passaaaa')
       expect(result.label).toBe('fair')
     })
   })

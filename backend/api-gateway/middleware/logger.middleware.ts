@@ -3,6 +3,7 @@
  */
 
 import { FastifyRequest, FastifyReply } from 'fastify';
+import { IncomingMessage } from 'http';
 import config from '../src/config.js';
 
 /**
@@ -63,7 +64,7 @@ export const requestLoggingOptions = {
 /**
  * Custom request ID generator
  */
-export function genReqId(request: FastifyRequest): string {
+export function genReqId(request: IncomingMessage): string {
   const existingId = request.headers['x-request-id'] as string;
   if (existingId) {
     return existingId;

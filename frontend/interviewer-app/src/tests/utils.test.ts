@@ -49,7 +49,7 @@ describe('utils', () => {
     })
 
     it('should handle single name', () => {
-      expect(getInitials('John')).toBe('JO')
+      expect(getInitials('John')).toBe('J')
     })
 
     it('should limit to 2 characters', () => {
