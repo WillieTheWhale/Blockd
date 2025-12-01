@@ -1,5 +1,5 @@
 # Stage 1: Build
-FROM python:3.14.0-slim AS builder
+FROM python:3.12-slim AS builder
 
 # Set working directory
 WORKDIR /app
@@ -10,7 +10,6 @@ RUN apt-get update && \
     gcc \
     g++ \
     make \
-    libgl1-mesa-glx \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
@@ -21,17 +20,16 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir --user -r requirements.txt
 
 # Stage 2: Production
-FROM python:3.14.0-slim
+FROM python:3.12-slim
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PATH=/home/appuser/.local/bin:$PATH
 
-# Install runtime dependencies for OpenCV and MediaPipe
+# Install runtime dependencies for OpenCV headless and MediaPipe
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    libgl1-mesa-glx \
     libglib2.0-0 \
     libgomp1 \
     && rm -rf /var/lib/apt/lists/*
@@ -47,7 +45,9 @@ COPY --from=builder --chown=appuser:appuser /root/.local /home/appuser/.local
 
 # Copy application code
 COPY --chown=appuser:appuser src/ ./src/
-COPY --chown=appuser:appuser models/ ./models/
+
+# Create models directory (may be empty initially)
+RUN mkdir -p ./models && chown appuser:appuser ./models
 
 # Switch to non-root user
 USER appuser
@@ -56,7 +56,7 @@ USER appuser
 EXPOSE 8001
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8001/health').read()" || exit 1
 
 # Start application

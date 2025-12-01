@@ -1,9 +1,7 @@
-version: '3.9'
-
 services:
   # Database Services
   postgres:
-    image: postgres:18.1-alpine
+    image: postgres:16-alpine
     container_name: blockd-postgres
     environment:
       POSTGRES_DB: blockd
@@ -15,7 +13,6 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
-      - ./database/init.sh:/docker-entrypoint-initdb.d/02-init.sh
     networks:
       - blockd-network
     healthcheck:
@@ -27,7 +24,7 @@ services:
 
   # Redis Cache
   redis:
-    image: redis:8.4-alpine
+    image: redis:7-alpine
     container_name: blockd-redis
     command: redis-server --appendonly yes --requirepass blockd_redis_dev
     ports:
@@ -37,7 +34,7 @@ services:
     networks:
       - blockd-network
     healthcheck:
-      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      test: ["CMD", "redis-cli", "-a", "blockd_redis_dev", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -45,7 +42,7 @@ services:
 
   # RabbitMQ Message Queue
   rabbitmq:
-    image: rabbitmq:4-management-alpine
+    image: rabbitmq:3-management-alpine
     container_name: blockd-rabbitmq
     environment:
       RABBITMQ_DEFAULT_USER: blockd_mq
@@ -68,8 +65,8 @@ services:
   # API Gateway (Node.js)
   api-gateway:
     build:
-      context: ./backend/api-gateway
-      dockerfile: Dockerfile
+      context: ./backend
+      dockerfile: api-gateway/Dockerfile
     container_name: blockd-api-gateway
     environment:
       NODE_ENV: development
@@ -99,8 +96,8 @@ services:
   # Auth Service (Node.js)
   auth-service:
     build:
-      context: ./backend/auth-service
-      dockerfile: Dockerfile
+      context: ./backend
+      dockerfile: auth-service/Dockerfile
     container_name: blockd-auth-service
     environment:
       NODE_ENV: development
@@ -127,8 +124,8 @@ services:
   # Session Service (Node.js)
   session-service:
     build:
-      context: ./backend/session-service
-      dockerfile: Dockerfile
+      context: ./backend
+      dockerfile: session-service/Dockerfile
     container_name: blockd-session-service
     environment:
       NODE_ENV: development

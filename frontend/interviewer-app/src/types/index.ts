@@ -2,6 +2,10 @@
  * Global TypeScript type definitions
  */
 
+// Re-export types from constants
+export type { SessionStatus, QuestionType, DifficultyLevel, UserRole } from '@/lib/constants'
+
+// Import types for local use
 import type { SessionStatus, QuestionType, DifficultyLevel, UserRole } from '@/lib/constants'
 
 /**
@@ -20,6 +24,8 @@ export interface User {
 export interface LoginCredentials {
   email: string
   password: string
+  mfaCode?: string
+  rememberMe?: boolean
 }
 
 export interface RegisterData {

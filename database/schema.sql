@@ -1,20 +1,14 @@
 -- Blockd Platform Database Schema
--- PostgreSQL 18.1 with TimescaleDB 2.x and pgvector 0.7.x
+-- PostgreSQL 16+ (simplified for standard PostgreSQL without extensions)
 -- Created: 2025-11-24
--- Agent 1: Database Architect
+-- Modified: 2025-11-30 - Simplified for local development
 
 -- ============================================================================
--- EXTENSIONS
+-- EXTENSIONS (only standard PostgreSQL extensions)
 -- ============================================================================
 
 -- Enable UUID generation
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
--- Enable vector similarity search (pgvector 0.7.x)
-CREATE EXTENSION IF NOT EXISTS vector;
-
--- Enable TimescaleDB for time-series data
-CREATE EXTENSION IF NOT EXISTS timescaledb;
 
 -- Enable cryptographic functions
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
@@ -121,14 +115,14 @@ CREATE TABLE questions (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- AI answer cache table (with pgvector embeddings)
+-- AI answer cache table (without vector embeddings for simplicity)
 CREATE TABLE ai_answer_cache (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     question_hash VARCHAR(64) NOT NULL,
     question_text TEXT NOT NULL,
     model_name ai_model_name NOT NULL,
     answer_text TEXT NOT NULL,
-    embedding vector(384), -- 384-dimensional vector for sentence-transformers
+    embedding_json JSONB, -- Store embeddings as JSON array instead of vector type
     perplexity_score DECIMAL(10,6),
     token_count INTEGER,
     metadata JSONB DEFAULT '{}',
@@ -154,9 +148,9 @@ CREATE TABLE answer_analysis (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Gaze events table (TimescaleDB hypertable)
+-- Gaze events table (standard table without TimescaleDB)
 CREATE TABLE gaze_events (
-    id UUID DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     session_id UUID NOT NULL REFERENCES interview_sessions(id) ON DELETE CASCADE,
     timestamp TIMESTAMPTZ NOT NULL,
     gaze_x DECIMAL(10,8), -- normalized 0-1
@@ -169,15 +163,9 @@ CREATE TABLE gaze_events (
     metadata JSONB DEFAULT '{}'
 );
 
--- Convert gaze_events to hypertable (partitioned by time)
-SELECT create_hypertable('gaze_events', 'timestamp',
-    chunk_time_interval => INTERVAL '1 day',
-    if_not_exists => TRUE
-);
-
--- Browser telemetry table (TimescaleDB hypertable)
+-- Browser telemetry table (standard table without TimescaleDB)
 CREATE TABLE browser_telemetry (
-    id UUID DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     session_id UUID NOT NULL REFERENCES interview_sessions(id) ON DELETE CASCADE,
     timestamp TIMESTAMPTZ NOT NULL,
     cpu_percent DECIMAL(5,2),
@@ -187,12 +175,6 @@ CREATE TABLE browser_telemetry (
     browser_tabs_count INTEGER,
     network_requests JSONB DEFAULT '[]',
     metadata JSONB DEFAULT '{}'
-);
-
--- Convert browser_telemetry to hypertable (partitioned by time)
-SELECT create_hypertable('browser_telemetry', 'timestamp',
-    chunk_time_interval => INTERVAL '1 day',
-    if_not_exists => TRUE
 );
 
 -- Session reports table
@@ -223,6 +205,16 @@ CREATE TABLE audit_logs (
     metadata JSONB DEFAULT '{}',
     timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Refresh tokens table (for JWT refresh token management)
+CREATE TABLE refresh_tokens (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash VARCHAR(255) NOT NULL UNIQUE,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    revoked_at TIMESTAMPTZ
 );
 
 -- ============================================================================
@@ -258,21 +250,17 @@ CREATE INDEX idx_questions_session_order ON questions(session_id, question_order
 -- AI answer cache indexes
 CREATE INDEX idx_ai_answer_cache_hash ON ai_answer_cache(question_hash);
 CREATE INDEX idx_ai_answer_cache_model ON ai_answer_cache(model_name);
--- IVFFlat index for vector similarity search (cosine distance)
-CREATE INDEX idx_ai_answer_embedding ON ai_answer_cache
-    USING ivfflat (embedding vector_cosine_ops)
-    WITH (lists = 100);
 
 -- Answer analysis indexes
 CREATE INDEX idx_answer_analysis_question ON answer_analysis(question_id);
 CREATE INDEX idx_answer_analysis_risk_score ON answer_analysis(risk_score DESC);
 CREATE INDEX idx_answer_analysis_ai_generated ON answer_analysis(is_ai_generated);
 
--- Gaze events indexes (TimescaleDB optimized)
+-- Gaze events indexes
 CREATE INDEX idx_gaze_events_session_time ON gaze_events(session_id, timestamp DESC);
 CREATE INDEX idx_gaze_events_off_screen ON gaze_events(session_id, is_off_screen) WHERE is_off_screen = TRUE;
 
--- Browser telemetry indexes (TimescaleDB optimized)
+-- Browser telemetry indexes
 CREATE INDEX idx_browser_telemetry_session_time ON browser_telemetry(session_id, timestamp DESC);
 
 -- Session reports indexes
@@ -285,31 +273,9 @@ CREATE INDEX idx_audit_logs_resource ON audit_logs(resource_type, resource_id);
 CREATE INDEX idx_audit_logs_timestamp ON audit_logs(timestamp DESC);
 CREATE INDEX idx_audit_logs_action ON audit_logs(action);
 
--- ============================================================================
--- TIMESCALEDB CONFIGURATIONS
--- ============================================================================
-
--- Add retention policy to gaze_events (30 days)
-SELECT add_retention_policy('gaze_events', INTERVAL '30 days', if_not_exists => TRUE);
-
--- Add retention policy to browser_telemetry (30 days)
-SELECT add_retention_policy('browser_telemetry', INTERVAL '30 days', if_not_exists => TRUE);
-
--- Add compression policy for gaze_events (compress after 7 days)
-ALTER TABLE gaze_events SET (
-    timescaledb.compress,
-    timescaledb.compress_segmentby = 'session_id',
-    timescaledb.compress_orderby = 'timestamp DESC'
-);
-SELECT add_compression_policy('gaze_events', INTERVAL '7 days', if_not_exists => TRUE);
-
--- Add compression policy for browser_telemetry (compress after 7 days)
-ALTER TABLE browser_telemetry SET (
-    timescaledb.compress,
-    timescaledb.compress_segmentby = 'session_id',
-    timescaledb.compress_orderby = 'timestamp DESC'
-);
-SELECT add_compression_policy('browser_telemetry', INTERVAL '7 days', if_not_exists => TRUE);
+-- Refresh tokens indexes
+CREATE INDEX idx_refresh_tokens_user ON refresh_tokens(user_id);
+CREATE INDEX idx_refresh_tokens_expires ON refresh_tokens(expires_at);
 
 -- ============================================================================
 -- TRIGGERS
@@ -483,46 +449,29 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Function to find similar AI answers using vector similarity
-CREATE OR REPLACE FUNCTION find_similar_ai_answers(
-    p_embedding vector(384),
-    p_limit INTEGER DEFAULT 10,
-    p_threshold DECIMAL DEFAULT 0.8
-)
-RETURNS TABLE (
-    id UUID,
-    question_text TEXT,
-    model_name ai_model_name,
-    answer_text TEXT,
-    similarity_score DECIMAL
-) AS $$
-BEGIN
-    RETURN QUERY
-    SELECT
-        ac.id,
-        ac.question_text,
-        ac.model_name,
-        ac.answer_text,
-        (1 - (ac.embedding <=> p_embedding))::DECIMAL AS similarity_score
-    FROM ai_answer_cache ac
-    WHERE ac.embedding IS NOT NULL
-        AND (1 - (ac.embedding <=> p_embedding)) >= p_threshold
-    ORDER BY ac.embedding <=> p_embedding
-    LIMIT p_limit;
-END;
-$$ LANGUAGE plpgsql;
-
 -- ============================================================================
--- GRANTS (for application user)
+-- SEED DATA (for development)
 -- ============================================================================
 
--- Create application user (uncomment in production)
--- CREATE USER blockd_app WITH PASSWORD 'your_secure_password';
--- GRANT CONNECT ON DATABASE blockd TO blockd_app;
--- GRANT USAGE ON SCHEMA public TO blockd_app;
--- GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO blockd_app;
--- GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO blockd_app;
--- GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO blockd_app;
+-- Insert default organization
+INSERT INTO organizations (id, name, subscription_tier, max_concurrent_sessions, monthly_session_limit)
+VALUES
+    ('00000000-0000-0000-0000-000000000001', 'Blockd Development', 'enterprise', 100, 1000),
+    ('00000000-0000-0000-0000-000000000002', 'Test Organization', 'professional', 10, 100)
+ON CONFLICT DO NOTHING;
+
+-- Insert test admin user (password: Admin123!)
+INSERT INTO users (id, email, password_hash, role, organization_id, first_name, last_name, email_verified)
+VALUES (
+    '00000000-0000-0000-0000-000000000001',
+    'admin@blockd.dev',
+    '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.q5q5q5q5q5q5q5q', -- bcrypt hash for Admin123!
+    'admin',
+    '00000000-0000-0000-0000-000000000001',
+    'Admin',
+    'User',
+    true
+) ON CONFLICT DO NOTHING;
 
 -- ============================================================================
 -- COMMENTS
@@ -533,18 +482,13 @@ COMMENT ON TABLE users IS 'Stores user accounts with authentication and MFA supp
 COMMENT ON TABLE interview_sessions IS 'Tracks all interview sessions with status and metadata';
 COMMENT ON TABLE security_events IS 'Records security-related events during sessions';
 COMMENT ON TABLE questions IS 'Stores interview questions asked during sessions';
-COMMENT ON TABLE ai_answer_cache IS 'Caches AI-generated answers with vector embeddings for similarity search';
+COMMENT ON TABLE ai_answer_cache IS 'Caches AI-generated answers for comparison';
 COMMENT ON TABLE answer_analysis IS 'Stores analysis results for interviewee answers';
-COMMENT ON TABLE gaze_events IS 'TimescaleDB hypertable for eye tracking data';
-COMMENT ON TABLE browser_telemetry IS 'TimescaleDB hypertable for browser telemetry data';
+COMMENT ON TABLE gaze_events IS 'Eye tracking data collected during sessions';
+COMMENT ON TABLE browser_telemetry IS 'Browser telemetry data from interviewee sessions';
 COMMENT ON TABLE session_reports IS 'Stores final session analysis reports';
 COMMENT ON TABLE audit_logs IS 'Tracks all user actions for security and compliance';
-
-COMMENT ON INDEX idx_ai_answer_embedding IS 'IVFFlat index for fast vector similarity search using cosine distance';
-
--- ============================================================================
--- DATABASE STATISTICS
--- ============================================================================
+COMMENT ON TABLE refresh_tokens IS 'Stores JWT refresh tokens for authentication';
 
 -- Analyze tables for query optimization
 ANALYZE;
