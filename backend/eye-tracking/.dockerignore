@@ -13,7 +13,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+# lib/ - NOT excluded, contains application code
 lib64/
 parts/
 sdist/
@@ -46,8 +46,8 @@ htmlcov/
 .mypy_cache/
 .dmypy.json
 
-# Models (will be downloaded or mounted)
-models/
+# Models - NOT excluded, contains application code
+# models/
 *.pth
 *.bin
 *.onnx
