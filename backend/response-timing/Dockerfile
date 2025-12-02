@@ -37,6 +37,10 @@ COPY --from=builder --chown=appuser:appuser /root/.local /home/appuser/.local
 
 # Copy application code
 COPY --chown=appuser:appuser src/ ./src/
+COPY --chown=appuser:appuser api/ ./api/
+COPY --chown=appuser:appuser lib/ ./lib/
+COPY --chown=appuser:appuser services/ ./services/
+COPY --chown=appuser:appuser schemas/ ./schemas/
 
 # Switch to non-root user
 USER appuser
@@ -44,9 +48,9 @@ USER appuser
 # Expose port
 EXPOSE 8002
 
-# Health check
+# Health check - use /api/v1/health as defined in the router
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8002/health').read()" || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8002/api/v1/health').read()" || exit 1
 
 # Start application
 CMD ["python", "-m", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8002"]

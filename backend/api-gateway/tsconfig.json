@@ -15,7 +15,7 @@
     "declarationMap": false,
     "sourceMap": true,
     "outDir": "./dist",
-    "rootDir": "..",
+    "rootDir": ".",
     "removeComments": true,
     "noImplicitAny": false,
     "strictNullChecks": false,
@@ -39,7 +39,8 @@
       "@lib/*": ["lib/*"],
       "@middleware/*": ["middleware/*"],
       "@routes/*": ["routes/*"],
-      "@schemas/*": ["schemas/*"]
+      "@schemas/*": ["schemas/*"],
+      "@shared/*": ["shared/*"]
     }
   },
   "include": [
@@ -48,7 +49,7 @@
     "middleware/**/*",
     "routes/**/*",
     "schemas/**/*",
-    "../shared/**/*"
+    "shared/**/*"
   ],
   "exclude": [
     "node_modules",

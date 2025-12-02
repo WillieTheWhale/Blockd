@@ -46,11 +46,8 @@ COPY api-gateway/package*.json ./
 RUN npm install --omit=dev && \
     npm cache clean --force
 
-# Copy built application from builder
+# Copy built application from builder (includes compiled shared modules in dist/shared/)
 COPY --from=builder --chown=nodejs:nodejs /app/dist ./dist
-
-# Copy shared modules for runtime
-COPY --from=builder --chown=nodejs:nodejs /app/shared ../shared
 
 # Switch to non-root user
 USER nodejs

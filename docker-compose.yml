@@ -235,7 +235,14 @@ services:
     environment:
       PYTHONUNBUFFERED: 1
       DATABASE_URL: postgresql://blockd_user:blockd_password_dev@postgres:5432/blockd
-      RABBITMQ_URL: amqp://blockd_mq:blockd_mq_dev@rabbitmq:5672/blockd
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: blockd_mq
+      RABBITMQ_PASSWORD: blockd_mq_dev
+      RABBITMQ_VHOST: blockd
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: blockd_redis_dev
       S3_BUCKET: ${S3_BUCKET:-blockd-videos-dev}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}

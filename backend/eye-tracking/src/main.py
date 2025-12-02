@@ -98,7 +98,7 @@ async def root():
 
 # Import and include routers
 try:
-    from ..api import stream, analyze, summary, calibration
+    from api import stream, analyze, summary, calibration
 
     app.include_router(stream.router, prefix="/api/v1/gaze", tags=["gaze-stream"])
     app.include_router(analyze.router, prefix="/api/v1/gaze", tags=["gaze-analysis"])

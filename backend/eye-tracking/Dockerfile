@@ -45,9 +45,14 @@ COPY --from=builder --chown=appuser:appuser /root/.local /home/appuser/.local
 
 # Copy application code
 COPY --chown=appuser:appuser src/ ./src/
+COPY --chown=appuser:appuser api/ ./api/
+COPY --chown=appuser:appuser lib/ ./lib/
+COPY --chown=appuser:appuser models/ ./models/
+COPY --chown=appuser:appuser services/ ./services/
+COPY --chown=appuser:appuser schemas/ ./schemas/
 
-# Create models directory (may be empty initially)
-RUN mkdir -p ./models && chown appuser:appuser ./models
+# Create ml_models directory for trained models (may be empty initially)
+RUN mkdir -p ./ml_models && chown appuser:appuser ./ml_models
 
 # Switch to non-root user
 USER appuser

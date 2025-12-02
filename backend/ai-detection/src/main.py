@@ -11,9 +11,9 @@ from fastapi.responses import JSONResponse
 import uvicorn
 
 from .config import get_settings
-from ..models.model_manager import initialize_models, get_model_manager
-from ..api import health, question, answer, cache
-from ..lib.errors import AIDetectionError
+from models.model_manager import initialize_models, get_model_manager
+from api import health, question, answer, cache
+from lib.errors import AIDetectionError
 
 # Configure logging
 logging.basicConfig(
