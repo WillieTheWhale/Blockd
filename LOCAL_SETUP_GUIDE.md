@@ -1,226 +1,140 @@
 # Blockd Local Development Setup Guide
 
-This guide will help you set up the Blockd platform for local development and testing on your machine.
+Complete step-by-step guide to run the Blockd platform locally, including backend services, the interviewer web app, and the Electron interviewee desktop app.
+
+---
+
+## Table of Contents
+
+1. [Prerequisites](#prerequisites)
+2. [Clone the Repository](#part-1-clone-the-repository)
+3. [Quick Start with Docker](#part-2-quick-start-with-docker-recommended)
+4. [Running the Interviewer Frontend](#part-3-running-the-interviewer-frontend)
+5. [Running the Electron Interviewee App](#part-4-running-the-electron-interviewee-app)
+6. [Running Backend Services Locally](#part-5-running-backend-services-locally-without-docker)
+7. [Testing](#part-6-testing)
+8. [Troubleshooting](#part-7-troubleshooting)
+9. [Service Reference](#service-reference)
+
+---
 
 ## Prerequisites
 
-Before starting, ensure you have the following installed:
-
 ### Required Software
-- **Git** (2.40+): For cloning the repository
-- **Docker Desktop** (24+): For running all services in containers
-  - Download: https://www.docker.com/products/docker-desktop/
-  - Ensure Docker Desktop is running before proceeding
-- **Node.js** (20 LTS): For running Node.js services locally (optional if using Docker)
-  - Download: https://nodejs.org/
-- **Python** (3.11+): For running Python services locally (optional if using Docker)
-  - Download: https://www.python.org/downloads/
+
+| Software | Version | Download |
+|----------|---------|----------|
+| Git | 2.40+ | https://git-scm.com/downloads |
+| Docker Desktop | 24+ | https://www.docker.com/products/docker-desktop/ |
+| Node.js | 20 LTS | https://nodejs.org/ |
+| Python | 3.11+ | https://www.python.org/downloads/ |
 
 ### System Requirements
-- **Disk Space**: 20+ GB free (for Docker images, volumes, and code)
-- **RAM**: 8+ GB (16 GB recommended for running all services)
+
+- **Disk Space**: 20+ GB free
+- **RAM**: 8+ GB (16 GB recommended)
 - **CPU**: 4+ cores
+
+### Verify Installation
+
+```bash
+# Verify all tools are installed
+git --version        # Should show 2.40+
+docker --version     # Should show 24+
+docker compose version
+node --version       # Should show v20+
+npm --version        # Should show 10+
+python3 --version    # Should show 3.11+
+```
 
 ---
 
 ## Part 1: Clone the Repository
 
-### Step 1: Open Terminal
-Open your terminal application (Terminal on macOS/Linux, PowerShell or Command Prompt on Windows).
+### Step 1: Clone from GitHub
 
-### Step 2: Navigate to Your Desired Directory
 ```bash
-# Navigate to where you want to clone the repository
-cd /Users/williamkeffer/NerdsInc/Blockd
+# Navigate to your projects directory
+cd ~/projects  # or your preferred location
 
-# Create the directory if it doesn't exist
-mkdir -p /Users/williamkeffer/NerdsInc/Blockd
-cd /Users/williamkeffer/NerdsInc/Blockd
-```
-
-### Step 3: Clone the Repository
-```bash
 # Clone the repository
-git clone http://127.0.0.1:58442/git/WillieTheWhale/Blockd.git Blockd_Code
+git clone https://github.com/WillieTheWhale/Blockd.git
 
-# Navigate into the cloned repository
-cd Blockd_Code
-
-# Checkout the correct branch
-git checkout claude/claude-md-mici38tq4ao8cwez-01LPuX7h3mR4QaD11q7i4EGs
+# Navigate into the project
+cd Blockd
 ```
 
-**Note**: If the clone URL doesn't work (127.0.0.1 is localhost), use the GitHub URL instead:
-```bash
-git clone https://github.com/WillieTheWhale/Blockd.git Blockd_Code
-```
+### Step 2: Verify the Clone
 
-### Step 4: Verify the Clone
 ```bash
-# List the contents to verify the clone was successful
+# List contents - you should see these directories:
 ls -la
 
-# You should see directories like:
-# backend/, frontend/, database/, infrastructure/, k8s/, tests/, docs/
+# Expected output:
+# backend/          - 8 microservices
+# frontend/         - interviewer-app & interviewee-app
+# database/         - PostgreSQL schema and migrations
+# infrastructure/   - Docker configs
+# k8s/              - Kubernetes manifests
+# tests/            - E2E, API, and load tests
+# docker-compose.yml
+# CLAUDE.md
 ```
 
 ---
 
-## Part 2: Environment Setup
+## Part 2: Quick Start with Docker (Recommended)
 
-### Step 5: Create Environment Variables File
+This is the fastest way to get everything running.
 
-The docker-compose.yml uses environment variables. You'll need to set up API keys for AI services.
+### Step 3: Start Docker Desktop
 
-**Option A: Quick Start (Development Only)**
+Make sure Docker Desktop is running on your machine.
 
-For testing without AI features, the docker-compose.yml has default values that will work.
-
-**Option B: Full Setup (With AI Features)**
-
-Create a `.env` file in the root directory:
+### Step 4: Start All Services
 
 ```bash
-# Create .env file
-cat > .env << 'EOF'
-# OpenAI API Key (for AI Detection and Response Timing services)
-OPENAI_API_KEY=your_openai_api_key_here
-
-# Anthropic API Key (for AI Detection service - Claude)
-ANTHROPIC_API_KEY=your_anthropic_api_key_here
-
-# AWS S3 Configuration (optional - for video storage)
-S3_BUCKET=blockd-videos-dev
-AWS_ACCESS_KEY_ID=your_aws_access_key
-AWS_SECRET_ACCESS_KEY=your_aws_secret_key
-EOF
-```
-
-**To get API keys**:
-- OpenAI: https://platform.openai.com/api-keys
-- Anthropic: https://console.anthropic.com/settings/keys
-- AWS (optional): https://console.aws.amazon.com/iam/
-
----
-
-## Part 3: Running Blockd with Docker (Recommended)
-
-This is the easiest way to run all services together.
-
-### Step 6: Verify Docker is Running
-
-```bash
-# Check Docker is running
-docker --version
-docker compose version
-
-# Start Docker Desktop if it's not running
-```
-
-### Step 7: Build and Start All Services
-
-```bash
-# From the root of the Blockd_Code directory
-# This will build all Docker images and start all services
+# From the Blockd root directory
 docker compose up --build
-
-# Or to run in the background (detached mode):
-docker compose up --build -d
 ```
 
-**This command will**:
-1. Build Docker images for all 8 services
-2. Start PostgreSQL database
-3. Start Redis cache
-4. Start RabbitMQ message queue
-5. Start all backend microservices (API Gateway, Auth, Session, AI Detection, Eye Tracking, Response Timing, Video)
-6. Start the frontend React app
-7. Initialize the database with schema and seed data
+**First-time build takes 10-20 minutes.** Wait until you see:
 
-**Expected output**: You'll see logs from all services. Wait for messages like:
-- `postgres ready for connections`
-- `redis ready to accept connections`
-- `api-gateway server listening on 0.0.0.0:3000`
-- `frontend server started on port 80`
+```
+blockd-api-gateway    | Server listening on 0.0.0.0:3000
+blockd-frontend       | Server started on port 80
+```
 
-**First-time build**: The initial build may take 10-20 minutes depending on your internet speed and machine.
+### Step 5: Verify Services Are Running
 
-### Step 8: Verify All Services Are Running
-
-Open a new terminal window and run:
+Open a new terminal:
 
 ```bash
-# Check running containers
+# Check all containers are running
 docker compose ps
 
-# You should see all services in "Up" state:
-# - blockd-postgres
-# - blockd-redis
-# - blockd-rabbitmq
-# - blockd-api-gateway
-# - blockd-auth-service
-# - blockd-session-service
-# - blockd-ai-detection
-# - blockd-eye-tracking
-# - blockd-response-timing
-# - blockd-video-service
-# - blockd-frontend
+# You should see all 11 services with status "Up":
+# blockd-postgres, blockd-redis, blockd-rabbitmq
+# blockd-api-gateway, blockd-auth-service, blockd-session-service
+# blockd-ai-detection, blockd-eye-tracking, blockd-response-timing
+# blockd-video-service, blockd-frontend
 ```
 
-### Step 9: Check Service Health
+### Step 6: Access the Application
+
+Open your browser:
+
+| Service | URL | Description |
+|---------|-----|-------------|
+| **Frontend (Interviewer)** | http://localhost:5173 | Main web application |
+| **API Gateway** | http://localhost:3000 | REST API |
+| **API Documentation** | http://localhost:3000/documentation | Swagger UI |
+| **RabbitMQ Admin** | http://localhost:15672 | Message queue UI (blockd_mq/blockd_mq_dev) |
+
+### Step 7: Create a Test User
 
 ```bash
-# Check database is ready
-docker exec blockd-postgres pg_isready -U blockd_user -d blockd
-
-# Check Redis
-docker exec blockd-redis redis-cli ping
-
-# Check RabbitMQ management UI
-open http://localhost:15672
-# Login: blockd_mq / blockd_mq_dev
-
-# Check API Gateway health
-curl http://localhost:3000/health
-```
-
----
-
-## Part 4: Access the Application
-
-### Step 10: Access Frontend Application
-
-Open your browser and navigate to:
-
-```
-http://localhost:5173
-```
-
-You should see the Blockd Interviewer Application login page.
-
-### Step 11: Access Service Endpoints
-
-The following services are now running:
-
-| Service | URL | Purpose |
-|---------|-----|---------|
-| Frontend | http://localhost:5173 | React interviewer app |
-| API Gateway | http://localhost:3000 | Main API entry point |
-| API Docs | http://localhost:3000/documentation | Swagger API documentation |
-| Auth Service | http://localhost:3001 | Authentication |
-| Session Service | http://localhost:3002 | Session management |
-| AI Detection | http://localhost:8000 | AI answer detection |
-| Eye Tracking | http://localhost:8001 | Eye tracking analysis |
-| Response Timing | http://localhost:8002 | Response timing analysis |
-| Video Service | http://localhost:8003 | Video processing |
-| RabbitMQ Admin | http://localhost:15672 | Message queue management |
-
-### Step 12: Create Test User
-
-You can create a test user via the API:
-
-```bash
-# Register a new user
+# Register a new interviewer user
 curl -X POST http://localhost:3000/api/v1/auth/register \
   -H "Content-Type: application/json" \
   -d '{
@@ -231,130 +145,145 @@ curl -X POST http://localhost:3000/api/v1/auth/register \
   }'
 ```
 
-**Expected response**: You'll receive an access token and user ID.
-
-### Step 13: Login to Frontend
-
-Use the credentials you just created:
-- Email: `test@blockd.com`
-- Password: `TestPassword123!`
+Now login at http://localhost:5173 with these credentials.
 
 ---
 
-## Part 5: Viewing Logs and Debugging
+## Part 3: Running the Interviewer Frontend
 
-### Step 14: View Service Logs
+The interviewer frontend is a React web application for managing interviews and viewing analytics.
 
-```bash
-# View all logs
-docker compose logs -f
+### Option A: Run via Docker (Already done in Part 2)
 
-# View specific service logs
-docker compose logs -f api-gateway
-docker compose logs -f frontend
-docker compose logs -f ai-detection
+If you ran `docker compose up`, the frontend is already running at http://localhost:5173.
 
-# View last 100 lines
-docker compose logs --tail=100 api-gateway
-```
+### Option B: Run Locally (for development)
 
-### Step 15: Common Issues and Solutions
+If you want hot-reload and faster development:
 
-#### Issue: Port Already in Use
-```
-Error: bind: address already in use
-```
-
-**Solution**: Another service is using the port. Either:
-1. Stop the conflicting service
-2. Or modify the port in `docker-compose.yml`
+#### Step 1: Start Backend Services via Docker
 
 ```bash
-# Find what's using port 3000
-lsof -i :3000
-
-# Kill the process
-kill -9 <PID>
+# Start only the infrastructure and backend (not frontend)
+docker compose up postgres redis rabbitmq api-gateway auth-service session-service -d
 ```
 
-#### Issue: Database Connection Failed
-```
-Error: connect ECONNREFUSED 127.0.0.1:5432
-```
+#### Step 2: Configure Environment
 
-**Solution**: Wait for PostgreSQL to be ready
-```bash
-# Check PostgreSQL logs
-docker compose logs postgres
-
-# Restart the services
-docker compose restart api-gateway auth-service session-service
-```
-
-#### Issue: Out of Disk Space
-```
-Error: no space left on device
-```
-
-**Solution**: Clean up Docker resources
-```bash
-# Remove unused Docker images and volumes
-docker system prune -a
-
-# Remove specific volumes (WARNING: deletes data)
-docker volume rm blockd-postgres-data blockd-redis-data
-```
-
----
-
-## Part 6: Running Services Locally (Without Docker)
-
-If you prefer to run services directly on your machine:
-
-### Step 16: Install Dependencies
-
-#### Backend Services (Node.js)
-```bash
-# API Gateway
-cd backend/api-gateway
-npm install
-
-# Auth Service
-cd ../auth-service
-npm install
-
-# Session Service
-cd ../session-service
-npm install
-
-# Repeat for other Node.js services
-```
-
-#### Backend Services (Python)
-```bash
-# AI Detection
-cd backend/ai-detection
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
-
-# Repeat for eye-tracking, response-timing, video-service
-```
-
-#### Frontend
 ```bash
 cd frontend/interviewer-app
+
+# Copy environment template
+cp .env.example .env
+```
+
+Edit `.env`:
+
+```env
+VITE_API_URL=http://localhost:3000
+VITE_WS_URL=ws://localhost:3000
+VITE_APP_NAME=Blockd
+VITE_APP_ENV=development
+VITE_ENABLE_DEBUG=true
+```
+
+#### Step 3: Install Dependencies and Run
+
+```bash
+npm install
+npm run dev
+```
+
+The app will be available at http://localhost:5173 with hot-reload enabled.
+
+---
+
+## Part 4: Running the Electron Interviewee App
+
+The interviewee app is an Electron desktop application that candidates use to join interviews.
+
+### Step 1: Ensure Backend is Running
+
+The backend services must be running first:
+
+```bash
+# From Blockd root directory
+docker compose up -d
+```
+
+### Step 2: Navigate to Interviewee App
+
+```bash
+cd frontend/interviewee-app
+```
+
+### Step 3: Install Dependencies
+
+```bash
 npm install
 ```
 
-### Step 17: Start Infrastructure Services with Docker
+### Step 4: Configure Environment
 
 ```bash
-# Start only database, cache, and message queue
-docker compose up postgres redis rabbitmq -d
+cp .env.example .env
 ```
 
-### Step 18: Run Database Migrations
+Edit `.env`:
+
+```env
+BLOCKD_API_URL=http://localhost:3000
+BLOCKD_WS_URL=http://localhost:3003
+BLOCKD_VIDEO_URL=http://localhost:8003
+NODE_ENV=development
+```
+
+### Step 5: Run the Electron App
+
+```bash
+npm start
+```
+
+This will:
+- Build the TypeScript code
+- Launch the Electron app in development mode
+- Open DevTools automatically for debugging
+
+### Step 6: Using the Interviewee App
+
+1. **Login/Register**: Create an account or sign in
+2. **Select Meeting Platform**: Choose Google Meet, Zoom, or Microsoft Teams
+3. **Enter Meeting URL**: Paste your meeting link
+4. **Grant Permissions**: Allow camera, microphone, and screen access
+5. **Join Interview**: The meeting loads in an embedded browser
+
+### Building the Electron App for Distribution
+
+```bash
+# Build for your current platform (Windows, macOS, or Linux)
+npm run make
+
+# The packaged app will be in the 'out' directory
+ls out/make/
+```
+
+---
+
+## Part 5: Running Backend Services Locally (Without Docker)
+
+For development with full debugging capabilities, you can run services directly.
+
+### Step 1: Start Infrastructure Only
+
+```bash
+# Start databases and message queue
+docker compose up postgres redis rabbitmq -d
+
+# Wait for them to be healthy
+docker compose ps
+```
+
+### Step 2: Initialize Database
 
 ```bash
 cd database
@@ -362,222 +291,294 @@ chmod +x init.sh
 ./init.sh
 ```
 
-### Step 19: Start Services Manually
+### Step 3: Run Node.js Backend Services
 
-Open multiple terminal windows:
+Open separate terminal windows for each service:
 
-**Terminal 1 - API Gateway**:
+**Terminal 1 - API Gateway (Port 3000)**:
 ```bash
 cd backend/api-gateway
 cp .env.example .env
-# Edit .env with your configuration
+npm install
 npm run dev
 ```
 
-**Terminal 2 - Auth Service**:
+**Terminal 2 - Auth Service (Port 3001)**:
 ```bash
 cd backend/auth-service
 cp .env.example .env
+npm install
+npm run keys:generate  # Generate JWT keys
 npm run dev
 ```
 
-**Terminal 3 - Frontend**:
+**Terminal 3 - Session Service (Port 3002)**:
 ```bash
-cd frontend/interviewer-app
+cd backend/session-service
+cp .env.example .env
+npm install
 npm run dev
 ```
 
-**Terminal 4 - AI Detection** (optional):
+**Terminal 4 - WebSocket Service (Port 3003)**:
+```bash
+cd backend/websocket-service
+cp .env.example .env
+npm install
+npm run dev
+```
+
+### Step 4: Run Python Backend Services (Optional)
+
+These are needed for AI features:
+
+**Terminal 5 - AI Detection (Port 8000)**:
 ```bash
 cd backend/ai-detection
+python3 -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+uvicorn src.main:app --reload --port 8000
+```
+
+**Terminal 6 - Eye Tracking (Port 8001)**:
+```bash
+cd backend/eye-tracking
+python3 -m venv venv
 source venv/bin/activate
-uvicorn main:app --reload --port 8000
+pip install -r requirements.txt
+uvicorn src.main:app --reload --port 8001
+```
+
+**Terminal 7 - Response Timing (Port 8002)**:
+```bash
+cd backend/response-timing
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+uvicorn src.main:app --reload --port 8002
+```
+
+**Terminal 8 - Video Service (Port 8003)**:
+```bash
+cd backend/video-service
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+uvicorn src.main:app --reload --port 8003
 ```
 
 ---
 
-## Part 7: Testing the Platform
+## Part 6: Testing
 
-### Step 20: Run Automated Tests
+### Run API Tests
 
 ```bash
-# Install test dependencies
 cd tests
 npm install
-
-# Run API tests
 npm run test:api
+```
 
-# Run E2E tests (requires services running)
+### Run E2E Tests
+
+```bash
+# Ensure all services are running first
 npm run test:e2e
+```
 
-# Run load tests
+### Run Load Tests
+
+```bash
 npm run test:load
 ```
 
-### Step 21: Manual Testing Workflow
-
-1. **Create an interviewer account** (via frontend or API)
-2. **Create an interviewee account**
-3. **Create a session** as interviewer
-4. **Join session** as interviewee (would require Chromium browser in production)
-5. **Monitor real-time events** in interviewer dashboard
-6. **End session** and view report
-
 ---
 
-## Part 8: Stopping and Cleaning Up
+## Part 7: Troubleshooting
 
-### Step 22: Stop All Services
+### Docker Issues
+
+#### Port Already in Use
 
 ```bash
-# Stop all services (preserves data)
-docker compose stop
+# Find what's using the port
+lsof -i :3000
 
-# Stop and remove containers (preserves data in volumes)
-docker compose down
+# Kill the process
+kill -9 <PID>
 
-# Stop and remove everything including volumes (WARNING: deletes all data)
+# Or change the port in docker-compose.yml
+```
+
+#### Out of Disk Space
+
+```bash
+# Clean up Docker resources
+docker system prune -a
+
+# Remove Blockd-specific volumes (WARNING: deletes data)
 docker compose down -v
 ```
 
-### Step 23: Restart Services
+#### Services Won't Start
 
 ```bash
-# Start previously built services
-docker compose up
+# View logs for a specific service
+docker compose logs -f api-gateway
 
-# Or rebuild if you made code changes
+# Restart a specific service
+docker compose restart api-gateway
+
+# Rebuild a specific service
+docker compose up --build api-gateway
+```
+
+### Database Issues
+
+#### Connection Refused
+
+```bash
+# Check if PostgreSQL is running
+docker compose ps postgres
+
+# Check PostgreSQL logs
+docker compose logs postgres
+
+# Restart PostgreSQL
+docker compose restart postgres
+```
+
+#### Reset Database
+
+```bash
+# Stop all services
+docker compose down
+
+# Remove database volume
+docker volume rm blockd-postgres-data
+
+# Start fresh
 docker compose up --build
 ```
 
----
+### Electron App Issues
 
-## Part 9: Development Workflow
+#### App Won't Start
 
-### Step 24: Making Code Changes
-
-**For Dockerized Development**:
-The docker-compose.yml is configured with volume mounts, so code changes are reflected immediately:
-
-```yaml
-volumes:
-  - ./backend/api-gateway:/app
-```
-
-**Hot Reload**: Most services have hot-reload enabled:
-- Node.js services use `tsx watch`
-- Python services use `uvicorn --reload`
-- Frontend uses Vite HMR
-
-**To apply changes**:
-1. Edit code in your IDE
-2. Save the file
-3. Service automatically restarts
-4. Refresh browser (for frontend)
-
-### Step 25: Viewing Database Data
-
-**Option A: Prisma Studio** (for services using Prisma):
 ```bash
-cd backend/api-gateway
-npx prisma studio
-# Opens at http://localhost:5555
+# Clear node_modules and reinstall
+cd frontend/interviewee-app
+rm -rf node_modules
+npm install
+npm start
 ```
 
-**Option B: PostgreSQL CLI**:
-```bash
-docker exec -it blockd-postgres psql -U blockd_user -d blockd
+#### Can't Connect to Backend
 
-# Example queries
-\dt                          # List all tables
-SELECT * FROM users;         # View users
-SELECT * FROM interview_sessions;  # View sessions
-\q                           # Quit
-```
+1. Verify backend is running: `docker compose ps`
+2. Check `.env` file URLs are correct
+3. Ensure firewall isn't blocking localhost
 
-**Option C: Database GUI Tool**:
-- Download TablePlus, DBeaver, or pgAdmin
-- Connect to: `localhost:5432`
-- Database: `blockd`
-- User: `blockd_user`
-- Password: `blockd_password_dev`
+### Frontend Issues
 
-### Step 26: Monitoring Services
+#### Blank Page
 
-**RabbitMQ Management UI**:
-```
-http://localhost:15672
-Login: blockd_mq / blockd_mq_dev
-```
-
-**View Queues and Messages**:
-- Navigate to "Queues" tab
-- See message rates, consumers
-- Manually publish/consume messages for testing
+1. Open browser DevTools (F12)
+2. Check Console for errors
+3. Verify `VITE_API_URL` in `.env` is correct
 
 ---
 
-## Troubleshooting Reference
+## Service Reference
 
-### Quick Diagnostics
+### Service URLs
+
+| Service | Port | URL | Technology |
+|---------|------|-----|------------|
+| Frontend (Interviewer) | 5173 | http://localhost:5173 | React + Vite |
+| API Gateway | 3000 | http://localhost:3000 | Fastify (Node.js) |
+| Auth Service | 3001 | http://localhost:3001 | Node.js |
+| Session Service | 3002 | http://localhost:3002 | Node.js |
+| WebSocket Service | 3003 | http://localhost:3003 | Socket.io |
+| AI Detection | 8000 | http://localhost:8000 | FastAPI (Python) |
+| Eye Tracking | 8001 | http://localhost:8001 | FastAPI (Python) |
+| Response Timing | 8002 | http://localhost:8002 | FastAPI (Python) |
+| Video Service | 8003 | http://localhost:8003 | FastAPI (Python) |
+| PostgreSQL | 5432 | localhost:5432 | PostgreSQL 16 |
+| Redis | 6379 | localhost:6379 | Redis 7 |
+| RabbitMQ | 5672 | localhost:5672 | RabbitMQ 3 |
+| RabbitMQ Admin | 15672 | http://localhost:15672 | Web UI |
+
+### Default Credentials
+
+| Service | Username | Password |
+|---------|----------|----------|
+| PostgreSQL | blockd_user | blockd_password_dev |
+| Redis | (default) | blockd_redis_dev |
+| RabbitMQ | blockd_mq | blockd_mq_dev |
+
+### Quick Commands
 
 ```bash
-# Check Docker is running
-docker ps
+# Start everything
+docker compose up --build
 
-# Check disk space
-docker system df
+# Start in background
+docker compose up -d
 
-# Check service logs
-docker compose logs --tail=50 <service-name>
+# Stop everything
+docker compose down
 
-# Restart a specific service
-docker compose restart <service-name>
+# View logs
+docker compose logs -f
 
-# Rebuild a specific service
-docker compose up --build <service-name>
+# View specific service logs
+docker compose logs -f api-gateway
 
-# Check container resource usage
-docker stats
+# Restart a service
+docker compose restart api-gateway
+
+# Clean up everything
+docker compose down -v
+docker system prune -a
 ```
-
-### Common Error Messages
-
-| Error | Cause | Solution |
-|-------|-------|----------|
-| `ECONNREFUSED` | Service not ready | Wait 30s, check service logs |
-| `Port already in use` | Port conflict | Change port or kill process |
-| `No space left` | Disk full | `docker system prune -a` |
-| `Cannot connect to Docker daemon` | Docker not running | Start Docker Desktop |
-| `Build failed` | Missing dependency | Check Dockerfile, rebuild |
 
 ---
 
 ## Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────┐
-│            Frontend (React + Vite)              │
-│              http://localhost:5173              │
-└────────────────────┬────────────────────────────┘
-                     │ HTTP/WebSocket
-                     ▼
-┌─────────────────────────────────────────────────┐
-│         API Gateway (Fastify)                   │
-│          http://localhost:3000                  │
-└─┬─────────────────┬─────────────────┬───────────┘
+┌─────────────────────────────────────────────────────────────┐
+│              Electron App (Interviewee)                     │
+│                 npm start                                   │
+│               localhost (desktop)                           │
+└────────────────────────┬────────────────────────────────────┘
+                         │ WebSocket + HTTP
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│              React App (Interviewer)                        │
+│                 npm run dev                                 │
+│               localhost:5173                                │
+└────────────────────────┬────────────────────────────────────┘
+                         │ HTTP
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│                  API Gateway                                │
+│               localhost:3000                                │
+└─┬─────────────────┬─────────────────┬───────────────────────┘
   │                 │                 │
   ▼                 ▼                 ▼
-┌──────────┐  ┌──────────┐  ┌──────────────────┐
-│   Auth   │  │ Session  │  │  AI Detection    │
-│  :3001   │  │  :3002   │  │     :8000        │
-└──────────┘  └──────────┘  └──────────────────┘
-       │             │              │
-       └─────────────┴──────────────┘
+┌──────────┐  ┌──────────┐  ┌──────────────────────┐
+│   Auth   │  │ Session  │  │   Python Services    │
+│  :3001   │  │  :3002   │  │  AI:8000 Eye:8001    │
+│          │  │          │  │  Timing:8002 Vid:8003│
+└──────────┘  └──────────┘  └──────────────────────┘
+       │             │                  │
+       └─────────────┴──────────────────┘
                      │
-       ┌─────────────┴─────────────┐
-       ▼             ▼              ▼
+       ┌─────────────┼─────────────┐
+       ▼             ▼             ▼
 ┌──────────┐  ┌──────────┐  ┌──────────┐
 │PostgreSQL│  │  Redis   │  │ RabbitMQ │
 │  :5432   │  │  :6379   │  │  :5672   │
@@ -588,53 +589,11 @@ docker stats
 
 ## Next Steps
 
-1. **Review Documentation**: Check `/docs` folder for detailed component docs
-2. **Explore API**: Visit http://localhost:3000/documentation for Swagger UI
-3. **Run Tests**: Execute test suites to verify everything works
-4. **Read Code**: Start with `backend/api-gateway/src/server.ts`
-5. **Check CLAUDE.md**: Full project documentation in root directory
+1. **Read the full documentation**: See `CLAUDE.md` in the root directory
+2. **Explore the API**: Visit http://localhost:3000/documentation
+3. **Run tests**: Execute `npm run test:e2e` in the tests directory
+4. **Review component docs**: Check the `docs/` folder for detailed specs
 
 ---
 
-## Getting Help
-
-If you encounter issues:
-
-1. **Check logs**: `docker compose logs -f`
-2. **Review this guide**: Ensure you followed all steps
-3. **Check Docker resources**: Ensure enough RAM/disk space
-4. **Restart services**: `docker compose restart`
-5. **Clean rebuild**: `docker compose down && docker compose up --build`
-
----
-
-## Summary of Commands
-
-```bash
-# 1. Clone repository
-git clone <URL> Blockd_Code
-cd Blockd_Code
-
-# 2. Start all services
-docker compose up --build -d
-
-# 3. Check status
-docker compose ps
-
-# 4. View logs
-docker compose logs -f
-
-# 5. Access application
-open http://localhost:5173
-
-# 6. Stop services
-docker compose down
-
-# 7. Clean up everything
-docker compose down -v
-docker system prune -a
-```
-
----
-
-**You're now ready to develop and test Blockd locally!** 🚀
+**You're now ready to develop and test Blockd locally!**
