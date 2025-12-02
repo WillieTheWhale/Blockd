@@ -9,11 +9,11 @@ from datetime import datetime
 import uuid
 import structlog
 
-from ..services.pattern_recognition import PatternRecognitionService, GazePoint
-from ..services.anomaly_detection import AnomalyDetectionService
-from ..lib.visualization import generate_gaze_heatmap, save_heatmap
-from ..src.config import settings
-from ..lib.errors import EyeTrackingError
+from services.pattern_recognition import PatternRecognitionService, GazePoint
+from services.anomaly_detection import AnomalyDetectionService
+from lib.visualization import generate_gaze_heatmap, save_heatmap
+from src.config import settings
+from lib.errors import EyeTrackingError
 
 logger = structlog.get_logger(__name__)
 

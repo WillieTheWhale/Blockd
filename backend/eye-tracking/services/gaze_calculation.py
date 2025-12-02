@@ -7,10 +7,10 @@ import numpy as np
 from typing import Dict, Tuple, Optional
 import structlog
 
-from ..models.gaze_estimator import GazeEstimator
-from ..models.kalman_filter import DualKalmanFilter
-from ..lib.errors import GazeEstimationError
-from ..src.config import settings
+from models.gaze_estimator import GazeEstimator
+from models.kalman_filter import DualKalmanFilter
+from lib.errors import GazeEstimationError
+from src.config import settings
 
 logger = structlog.get_logger(__name__)
 

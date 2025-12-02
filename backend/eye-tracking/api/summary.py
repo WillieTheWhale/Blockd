@@ -10,11 +10,11 @@ from datetime import datetime
 from uuid import UUID
 import structlog
 
-from ..src.database import get_db_session, GazeEvent, GazeSession, GazeSummary
-from ..services.pattern_recognition import GazePoint
-from ..services.summary_generation import SummaryGenerationService
-from ..schemas.summary import SummaryRequest, SummaryResponse
-from ..src.config import settings
+from src.database import get_db_session, GazeEvent, GazeSession, GazeSummary
+from services.pattern_recognition import GazePoint
+from services.summary_generation import SummaryGenerationService
+from schemas.summary import SummaryRequest, SummaryResponse
+from src.config import settings
 
 logger = structlog.get_logger(__name__)
 

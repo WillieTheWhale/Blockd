@@ -3,7 +3,7 @@ Perplexity scoring service
 Lower perplexity indicates more AI-like text
 """
 import logging
-from ..models.model_manager import get_model_manager
+from models.model_manager import get_model_manager
 
 logger = logging.getLogger(__name__)
 

@@ -9,8 +9,8 @@ import torch
 from transformers import GPT2LMHeadModel, GPT2TokenizerFast
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from ..lib.errors import PerplexityError, ModelLoadError
-from ..src.config import get_settings
+from lib.errors import PerplexityError, ModelLoadError
+from src.config import get_settings
 
 logger = logging.getLogger(__name__)
 settings = get_settings()

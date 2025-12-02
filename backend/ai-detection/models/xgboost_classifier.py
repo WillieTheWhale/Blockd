@@ -9,8 +9,8 @@ import numpy as np
 import xgboost as xgb
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
-from ..lib.errors import XGBoostError, ModelLoadError
-from ..src.config import get_settings
+from lib.errors import XGBoostError, ModelLoadError
+from src.config import get_settings
 
 logger = logging.getLogger(__name__)
 settings = get_settings()

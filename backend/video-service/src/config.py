@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     S3_REGION: str = Field(default="us-east-1", env="S3_REGION")
     S3_USE_SSL: bool = Field(default=True, env="S3_USE_SSL")
     SIGNED_URL_EXPIRY: int = Field(default=604800, env="SIGNED_URL_EXPIRY")  # 7 days
+    S3_ENABLED: bool = Field(default=False, env="S3_ENABLED")  # Set to True when S3 is configured
 
     # RabbitMQ Configuration
     RABBITMQ_HOST: str = Field(default="localhost", env="RABBITMQ_HOST")

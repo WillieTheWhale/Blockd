@@ -12,9 +12,9 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..')))
 
 from backend.shared.cache.redis_client import get_async_redis_client, CacheOptions
-from ..src.database import DatabaseManager
-from ..src.config import get_settings
-from ..lib.errors import CacheError, DatabaseError
+from src.database import DatabaseManager
+from src.config import get_settings
+from lib.errors import CacheError, DatabaseError
 
 logger = logging.getLogger(__name__)
 settings = get_settings()

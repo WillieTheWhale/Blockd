@@ -8,10 +8,10 @@ from typing import List, Dict, Tuple, Optional
 from datetime import datetime
 import structlog
 
-from ..models.lstm_anomaly_detector import LSTMAnomalyDetector
-from ..services.pattern_recognition import GazePoint
-from ..src.config import settings
-from ..lib.errors import AnomalyDetectionError, ModelLoadError
+from models.lstm_anomaly_detector import LSTMAnomalyDetector
+from services.pattern_recognition import GazePoint
+from src.config import settings
+from lib.errors import AnomalyDetectionError, ModelLoadError
 
 logger = structlog.get_logger(__name__)
 

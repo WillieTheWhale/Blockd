@@ -9,8 +9,8 @@ from typing import List, Tuple, Optional
 import structlog
 import os
 
-from ..src.config import settings
-from ..lib.errors import HeatmapGenerationError
+from src.config import settings
+from lib.errors import HeatmapGenerationError
 
 logger = structlog.get_logger(__name__)
 

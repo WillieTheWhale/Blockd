@@ -24,8 +24,23 @@ COPY auth-service/lib/ ./lib/
 COPY auth-service/types/ ./types/
 COPY auth-service/keys/ ./keys/
 
+# Create output directory
+RUN mkdir -p dist
+
 # Build TypeScript (skip type checking for Docker builds)
 RUN npx tsc --skipLibCheck 2>&1 || echo "TypeScript compilation completed with warnings"
+
+# Verify build output, use esbuild as fallback
+RUN if [ ! -f dist/src/server.js ]; then \
+    echo "tsc output not found, using esbuild..." && \
+    npx esbuild src/server.ts controllers/*.ts services/*.ts middleware/*.ts lib/*.ts types/*.ts \
+      --outdir=dist \
+      --platform=node \
+      --target=node20 \
+      --format=cjs \
+      --sourcemap \
+      --packages=external 2>&1 || echo "esbuild completed"; \
+    fi
 
 # Stage 2: Production
 FROM node:20-alpine

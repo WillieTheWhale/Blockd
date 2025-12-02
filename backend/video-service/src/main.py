@@ -45,17 +45,25 @@ async def lifespan(app: FastAPI):
 
     # Initialize services
     recording_manager = RecordingManager()
-    storage_service = S3StorageService()
     mq_client = MessageQueueClient()
+
+    # Only initialize S3 if enabled
+    if settings.S3_ENABLED:
+        storage_service = S3StorageService()
+    else:
+        logger.warning("S3 storage is disabled (S3_ENABLED=false) - video uploads will not work")
 
     try:
         # Connect to message queue
         await mq_client.connect()
         logger.info("Connected to RabbitMQ")
 
-        # Initialize S3 bucket
-        await storage_service.ensure_bucket_exists()
-        logger.info(f"S3 bucket '{settings.S3_BUCKET}' ready")
+        # Initialize S3 bucket only if enabled
+        if settings.S3_ENABLED and storage_service:
+            await storage_service.ensure_bucket_exists()
+            logger.info(f"S3 bucket '{settings.S3_BUCKET}' ready")
+        else:
+            logger.info("S3 storage disabled, skipping bucket check")
 
         # Start background cleanup task
         if settings.AUTO_CLEANUP_ENABLED:
@@ -134,12 +142,15 @@ async def health_check():
     except Exception as e:
         health_status["mediasoup"] = f"unhealthy: {str(e)}"
 
-    # Check S3 connection
-    try:
-        await storage_service.check_connection()
-        health_status["s3"] = "healthy"
-    except Exception as e:
-        health_status["s3"] = f"unhealthy: {str(e)}"
+    # Check S3 connection (only if enabled)
+    if settings.S3_ENABLED and storage_service:
+        try:
+            await storage_service.check_connection()
+            health_status["s3"] = "healthy"
+        except Exception as e:
+            health_status["s3"] = f"unhealthy: {str(e)}"
+    else:
+        health_status["s3"] = "disabled"
 
     # Check RabbitMQ connection
     health_status["rabbitmq"] = "healthy" if mq_client and mq_client.is_connected else "unhealthy"

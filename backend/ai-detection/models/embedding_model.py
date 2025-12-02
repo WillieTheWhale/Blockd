@@ -8,8 +8,8 @@ import torch
 from sentence_transformers import SentenceTransformer
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from ..lib.errors import EmbeddingError, ModelLoadError
-from ..src.config import get_settings
+from lib.errors import EmbeddingError, ModelLoadError
+from src.config import get_settings
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -142,7 +142,7 @@ class EmbeddingModel:
         emb1, emb2 = embeddings[0], embeddings[1]
 
         # Cosine similarity (embeddings are already normalized)
-        from ..lib.vector_utils import cosine_similarity
+        from lib.vector_utils import cosine_similarity
         return cosine_similarity(emb1, emb2)
 
 
