@@ -6,10 +6,10 @@ import pytest
 import numpy as np
 from datetime import datetime
 
-from ..services.gaze_calculation import GazeCalculationService
-from ..models.gaze_estimator import GazeEstimator
-from ..models.kalman_filter import GazeKalmanFilter
-from ..lib.errors import GazeEstimationError
+from services.gaze_calculation import GazeCalculationService
+from models.gaze_estimator import GazeEstimator
+from models.kalman_filter import GazeKalmanFilter
+from lib.errors import GazeEstimationError
 
 
 class TestGazeEstimator:

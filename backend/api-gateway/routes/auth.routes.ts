@@ -4,9 +4,9 @@
  */
 
 import { FastifyInstance } from 'fastify';
-import { authenticate, strictRateLimiter } from '../middleware/auth.middleware.js';
-import { publicRateLimiter } from '../middleware/rate-limit.middleware.js';
-import { validateBody } from '../middleware/validation.middleware.js';
+import { authenticate, strictRateLimiter } from '../middleware/auth.middleware';
+import { publicRateLimiter } from '../middleware/rate-limit.middleware';
+import { validateBody } from '../middleware/validation.middleware';
 import {
   registerRequestSchema,
   loginRequestSchema,
@@ -20,11 +20,11 @@ import {
   LogoutRequest,
   MfaSetupRequest,
   MfaVerifyRequest,
-} from '../schemas/auth.schema.js';
-import { generateTokenPair, verifyRefreshToken, revokeRefreshToken, revokeAllRefreshTokens } from '../lib/jwt.js';
-import { sendSuccess, sendCreated } from '../lib/response.js';
-import { BadRequestError, UnauthorizedError, NotFoundError } from '../lib/errors.js';
-import prisma from '../lib/prisma.js';
+} from '../schemas/auth.schema';
+import { generateTokenPair, verifyRefreshToken, revokeRefreshToken, revokeAllRefreshTokens } from '../lib/jwt';
+import { sendSuccess, sendCreated } from '../lib/response';
+import { BadRequestError, UnauthorizedError, NotFoundError } from '../lib/errors';
+import prisma from '../lib/prisma';
 import { hash, compare } from 'crypto';
 import { promisify } from 'util';
 

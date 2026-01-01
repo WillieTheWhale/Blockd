@@ -3,7 +3,7 @@
  */
 
 import { z } from 'zod';
-import { uuidSchema } from './common.schema.js';
+import { uuidSchema } from './common.schema';
 
 // Security event type enum
 export const securityEventTypeSchema = z.enum([

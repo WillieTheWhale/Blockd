@@ -3,9 +3,9 @@
  */
 
 import { FastifyError, FastifyRequest, FastifyReply } from 'fastify';
-import { isAppError, AppError, InternalServerError } from '../lib/errors.js';
-import { sendError } from '../lib/response.js';
-import config from '../src/config.js';
+import { isAppError, AppError, InternalServerError } from '../lib/errors';
+import { sendError } from '../lib/response';
+import config from '../src/config';
 
 /**
  * Global error handler

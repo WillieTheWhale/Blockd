@@ -1,21 +1,20 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "NodeNext",
+    "module": "commonjs",
     "lib": ["ES2022"],
-    "moduleResolution": "NodeNext",
+    "moduleResolution": "node",
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "strict": false,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "isolatedModules": true,
     "declaration": false,
     "declarationMap": false,
     "sourceMap": true,
     "outDir": "./dist",
-    "rootDir": "..",
+    "rootDir": ".",
     "removeComments": true,
     "noImplicitAny": false,
     "strictNullChecks": false,
@@ -47,17 +46,12 @@
     "lib/**/*",
     "middleware/**/*",
     "routes/**/*",
-    "schemas/**/*",
-    "../shared/**/*"
+    "schemas/**/*"
   ],
   "exclude": [
     "node_modules",
     "dist",
     "**/*.test.ts",
     "test/**/*"
-  ],
-  "ts-node": {
-    "esm": true,
-    "experimentalSpecifierResolution": "node"
-  }
+  ]
 }

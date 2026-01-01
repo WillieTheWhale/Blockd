@@ -62,6 +62,29 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # MinIO Object Storage (S3-compatible)
+  minio:
+    image: minio/minio:latest
+    container_name: blockd-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: blockd_minio
+      MINIO_ROOT_PASSWORD: blockd_minio_dev
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Console UI
+    volumes:
+      - minio_data:/data
+    networks:
+      - blockd-network
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
   # API Gateway (Node.js)
   api-gateway:
     build:
@@ -91,6 +114,7 @@ services:
     volumes:
       - ./backend/api-gateway:/app
       - /app/node_modules
+    command: npm run dev
     restart: unless-stopped
 
   # Auth Service (Node.js)
@@ -119,6 +143,7 @@ services:
     volumes:
       - ./backend/auth-service:/app
       - /app/node_modules
+    command: npm run dev
     restart: unless-stopped
 
   # Session Service (Node.js)
@@ -147,6 +172,7 @@ services:
     volumes:
       - ./backend/session-service:/app
       - /app/node_modules
+    command: npm run dev
     restart: unless-stopped
 
   # AI Detection Service (Python)
@@ -236,15 +262,20 @@ services:
       PYTHONUNBUFFERED: 1
       DATABASE_URL: postgresql://blockd_user:blockd_password_dev@postgres:5432/blockd
       RABBITMQ_URL: amqp://blockd_mq:blockd_mq_dev@rabbitmq:5672/blockd
-      S3_BUCKET: ${S3_BUCKET:-blockd-videos-dev}
-      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
-      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: blockd_minio
+      S3_SECRET_KEY: blockd_minio_dev
+      S3_BUCKET: blockd-videos-dev
+      S3_REGION: us-east-1
+      S3_USE_SSL: "false"
     ports:
       - "8003:8003"
     depends_on:
       postgres:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     networks:
       - blockd-network
@@ -282,6 +313,8 @@ volumes:
     name: blockd-redis-data
   rabbitmq_data:
     name: blockd-rabbitmq-data
+  minio_data:
+    name: blockd-minio-data
   ai_models:
     name: blockd-ai-models
   eye_tracking_models:

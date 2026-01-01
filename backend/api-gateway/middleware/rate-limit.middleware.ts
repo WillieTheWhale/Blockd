@@ -4,9 +4,9 @@
  */
 
 import { FastifyRequest, FastifyReply } from 'fastify';
-import { getRedisClient } from '../../shared/cache/redis-client.js';
-import { TooManyRequestsError } from '../lib/errors.js';
-import config from '../src/config.js';
+import { getRedisClient } from '../../shared/cache/redis-client';
+import { TooManyRequestsError } from '../lib/errors';
+import config from '../src/config';
 
 export interface RateLimitOptions {
   max: number;

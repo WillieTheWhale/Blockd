@@ -3,7 +3,7 @@
  */
 
 import { z } from 'zod';
-import { uuidSchema, paginationQuerySchema } from './common.schema.js';
+import { uuidSchema, paginationQuerySchema } from './common.schema';
 
 // Session status enum
 export const sessionStatusSchema = z.enum(['scheduled', 'active', 'ended', 'cancelled']);

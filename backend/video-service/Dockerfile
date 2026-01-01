@@ -18,8 +18,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Create non-root user
 RUN useradd -m -u 1001 -s /bin/bash appuser
 
-# Copy application code
+# Copy application code - all directories needed for imports
 COPY --chown=appuser:appuser src ./src
+COPY --chown=appuser:appuser api ./api
+COPY --chown=appuser:appuser lib ./lib
+COPY --chown=appuser:appuser services ./services
 
 # Create recordings directory
 RUN mkdir -p /tmp/recordings && chown appuser:appuser /tmp/recordings

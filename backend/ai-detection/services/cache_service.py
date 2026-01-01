@@ -1,23 +1,130 @@
 """
 Cache service for AI answers and analysis results
-Uses both Redis and PostgreSQL (pgvector)
+Uses Redis for caching
 """
 import logging
 import json
-from typing import Optional, Dict, List
-import sys
+from typing import Optional, Dict, List, Any
+from dataclasses import dataclass
 import os
 
-# Add parent directory to path to import shared modules
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..')))
+import redis.asyncio as aioredis
+from redis.exceptions import RedisError
 
-from backend.shared.cache.redis_client import get_async_redis_client, CacheOptions
-from ..src.database import DatabaseManager
-from ..src.config import get_settings
-from ..lib.errors import CacheError, DatabaseError
+from src.config import get_settings
+from lib.errors import CacheError
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+
+@dataclass
+class CacheOptions:
+    """Cache operation options"""
+    ttl: Optional[int] = None  # Time to live in seconds
+    prefix: Optional[str] = None  # Key prefix
+
+
+class AsyncRedisClient:
+    """Asynchronous Redis client for ai-detection service"""
+
+    def __init__(self):
+        self.client: Optional[aioredis.Redis] = None
+        self._initialized = False
+
+    async def initialize(self):
+        """Initialize the async client"""
+        if self._initialized:
+            return
+
+        # Parse REDIS_URL if available, otherwise use individual vars
+        redis_url = os.getenv('REDIS_URL', '')
+        if redis_url:
+            self.client = aioredis.from_url(
+                redis_url,
+                decode_responses=True,
+                socket_timeout=10,
+                socket_connect_timeout=10,
+            )
+        else:
+            self.client = aioredis.Redis(
+                host=os.getenv('REDIS_HOST', 'localhost'),
+                port=int(os.getenv('REDIS_PORT', '6379')),
+                password=os.getenv('REDIS_PASSWORD'),
+                db=int(os.getenv('REDIS_DB', '0')),
+                decode_responses=True,
+                socket_timeout=10,
+                socket_connect_timeout=10,
+            )
+
+        await self._test_connection()
+        self._initialized = True
+
+    async def _test_connection(self) -> None:
+        """Test Redis connection"""
+        try:
+            await self.client.ping()
+            logger.info("Connected to Redis server")
+        except RedisError as e:
+            logger.error(f"Failed to connect to Redis: {e}")
+            raise
+
+    def _build_key(self, key: str, prefix: Optional[str] = None) -> str:
+        """Build full key with optional prefix"""
+        return f"{prefix}:{key}" if prefix else key
+
+    async def get(self, key: str, options: Optional[CacheOptions] = None) -> Optional[Any]:
+        """Get value from cache"""
+        if not self._initialized:
+            await self.initialize()
+
+        try:
+            opts = options or CacheOptions()
+            full_key = self._build_key(key, opts.prefix)
+            value = await self.client.get(full_key)
+
+            if value is None:
+                return None
+
+            return json.loads(value)
+        except RedisError as e:
+            logger.error(f"Error getting key {key}: {e}")
+            raise
+
+    async def set(self, key: str, value: Any, options: Optional[CacheOptions] = None) -> None:
+        """Set value in cache"""
+        if not self._initialized:
+            await self.initialize()
+
+        try:
+            opts = options or CacheOptions()
+            full_key = self._build_key(key, opts.prefix)
+            serialized = json.dumps(value)
+
+            if opts.ttl:
+                await self.client.setex(full_key, opts.ttl, serialized)
+            else:
+                await self.client.set(full_key, serialized)
+        except RedisError as e:
+            logger.error(f"Error setting key {key}: {e}")
+            raise
+
+    async def close(self) -> None:
+        """Close Redis connection"""
+        if self.client:
+            await self.client.close()
+
+
+# Singleton instance
+_async_redis_client: Optional[AsyncRedisClient] = None
+
+
+def get_async_redis_client() -> AsyncRedisClient:
+    """Get singleton async Redis client instance"""
+    global _async_redis_client
+    if _async_redis_client is None:
+        _async_redis_client = AsyncRedisClient()
+    return _async_redis_client
 
 
 class CacheService:
@@ -42,7 +149,6 @@ class CacheService:
             Dictionary of model_name -> {answer, embedding, perplexity}
         """
         try:
-            # Try Redis first
             cache_key = f"{self.cache_prefix}:ai_answers:{question_hash}"
             cached_data = await self.redis_client.get(
                 cache_key,
@@ -53,36 +159,8 @@ class CacheService:
                 logger.info(f"Cache hit (Redis) for question hash: {question_hash}")
                 return cached_data
 
-            # Fallback to PostgreSQL
-            with DatabaseManager() as db:
-                cached_answers = db.get_all_ai_answers_for_question(question_hash)
-
-                if not cached_answers:
-                    logger.info(f"Cache miss for question hash: {question_hash}")
-                    return None
-
-                # Build response
-                result = {}
-                for cache_entry in cached_answers:
-                    result[cache_entry.model_name] = {
-                        "answer": cache_entry.answer_text,
-                        "embedding": cache_entry.embedding,
-                        "perplexity": float(cache_entry.perplexity_score) if cache_entry.perplexity_score else None,
-                        "token_count": cache_entry.token_count
-                    }
-
-                # Cache in Redis for next time
-                await self.redis_client.set(
-                    cache_key,
-                    result,
-                    CacheOptions(
-                        ttl=settings.AI_ANSWER_CACHE_TTL,
-                        prefix=None
-                    )
-                )
-
-                logger.info(f"Cache hit (PostgreSQL) for question hash: {question_hash}")
-                return result
+            logger.info(f"Cache miss for question hash: {question_hash}")
+            return None
 
         except Exception as e:
             logger.error(f"Error getting cached AI answers: {e}")
@@ -95,7 +173,7 @@ class CacheService:
         ai_answers: Dict[str, Dict]
     ):
         """
-        Save AI answers to cache (both Redis and PostgreSQL)
+        Save AI answers to cache (Redis)
 
         Args:
             question_hash: Question hash
@@ -103,20 +181,6 @@ class CacheService:
             ai_answers: Dictionary of model_name -> {answer, embedding, perplexity}
         """
         try:
-            # Save to PostgreSQL
-            with DatabaseManager() as db:
-                for model_name, answer_data in ai_answers.items():
-                    db.save_ai_answer_cache(
-                        question_hash=question_hash,
-                        question_text=question_text,
-                        model_name=model_name,
-                        answer_text=answer_data["answer"],
-                        embedding=answer_data["embedding"],
-                        perplexity_score=answer_data.get("perplexity"),
-                        token_count=answer_data.get("token_count")
-                    )
-
-            # Save to Redis
             cache_key = f"{self.cache_prefix}:ai_answers:{question_hash}"
             await self.redis_client.set(
                 cache_key,

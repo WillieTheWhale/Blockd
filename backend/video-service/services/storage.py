@@ -29,9 +29,10 @@ class S3StorageService:
         """Initialize S3 client"""
         self.bucket = settings.S3_BUCKET
 
-        # Configure S3 client
+        # Configure S3 client with path-style addressing for MinIO compatibility
         config = Config(
             signature_version='s3v4',
+            s3={'addressing_style': 'path'},  # Use path-style for MinIO
             retries={'max_attempts': 3, 'mode': 'adaptive'}
         )
 
@@ -48,7 +49,7 @@ class S3StorageService:
 
         self.s3_client = boto3.client('s3', **client_kwargs)
 
-        logger.info(f"S3 storage service initialized (bucket: {self.bucket})")
+        logger.info(f"S3 storage service initialized (bucket: {self.bucket}, endpoint: {settings.S3_ENDPOINT or 'AWS'})")
 
     async def ensure_bucket_exists(self):
         """Ensure S3 bucket exists, create if it doesn't"""
@@ -56,19 +57,37 @@ class S3StorageService:
             self.s3_client.head_bucket(Bucket=self.bucket)
             logger.info(f"Bucket '{self.bucket}' exists")
         except ClientError as e:
-            error_code = e.response['Error']['Code']
-            if error_code == '404':
+            error_code = str(e.response.get('Error', {}).get('Code', ''))
+            http_status = e.response.get('ResponseMetadata', {}).get('HTTPStatusCode', 0)
+
+            logger.info(f"HeadBucket response: error_code={error_code}, http_status={http_status}")
+
+            # Handle various error codes for bucket not existing
+            # 404, NoSuchBucket, 400 (MinIO sometimes returns this when bucket doesn't exist)
+            if error_code in ('404', '400', 'NoSuchBucket', '') or http_status in (404, 400):
                 # Bucket doesn't exist, create it
                 try:
-                    self.s3_client.create_bucket(
-                        Bucket=self.bucket,
-                        CreateBucketConfiguration={'LocationConstraint': settings.S3_REGION}
-                        if settings.S3_REGION != 'us-east-1' else {}
-                    )
+                    # MinIO doesn't need LocationConstraint, only AWS S3 does
+                    if settings.S3_ENDPOINT:
+                        # MinIO or other S3-compatible service
+                        self.s3_client.create_bucket(Bucket=self.bucket)
+                    elif settings.S3_REGION != 'us-east-1':
+                        # AWS S3 with non-default region
+                        self.s3_client.create_bucket(
+                            Bucket=self.bucket,
+                            CreateBucketConfiguration={'LocationConstraint': settings.S3_REGION}
+                        )
+                    else:
+                        # AWS S3 us-east-1
+                        self.s3_client.create_bucket(Bucket=self.bucket)
                     logger.info(f"Created bucket '{self.bucket}'")
                 except ClientError as create_error:
-                    logger.error(f"Failed to create bucket: {create_error}")
-                    raise StorageError(f"Failed to create bucket: {create_error}")
+                    # Bucket may already exist (race condition) - that's OK
+                    if 'BucketAlreadyOwnedByYou' in str(create_error) or 'BucketAlreadyExists' in str(create_error):
+                        logger.info(f"Bucket '{self.bucket}' already exists")
+                    else:
+                        logger.error(f"Failed to create bucket: {create_error}")
+                        raise StorageError(f"Failed to create bucket: {create_error}")
             else:
                 logger.error(f"Error checking bucket: {e}")
                 raise StorageError(f"Error checking bucket: {e}")

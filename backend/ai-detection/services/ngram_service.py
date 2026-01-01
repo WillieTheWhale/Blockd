@@ -4,7 +4,7 @@ Calculates Jaccard similarity for n-grams
 """
 import logging
 from typing import Dict, Set
-from ..lib.text_utils import tokenize, extract_ngrams, calculate_jaccard_similarity
+from lib.text_utils import tokenize, extract_ngrams, calculate_jaccard_similarity
 
 logger = logging.getLogger(__name__)
 

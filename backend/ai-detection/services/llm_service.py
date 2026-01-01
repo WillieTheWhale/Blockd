@@ -10,8 +10,8 @@ from anthropic import AsyncAnthropic
 import google.generativeai as genai
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-from ..lib.errors import LLMServiceError
-from ..src.config import get_settings
+from lib.errors import LLMServiceError
+from src.config import get_settings
 
 logger = logging.getLogger(__name__)
 settings = get_settings()

@@ -63,6 +63,8 @@ class Settings(BaseSettings):
     SIGNED_URL_EXPIRY: int = Field(default=604800, env="SIGNED_URL_EXPIRY")  # 7 days
 
     # RabbitMQ Configuration
+    # Can be set via RABBITMQ_URL or individual vars
+    RABBITMQ_URL: str = Field(default="", env="RABBITMQ_URL")
     RABBITMQ_HOST: str = Field(default="localhost", env="RABBITMQ_HOST")
     RABBITMQ_PORT: int = Field(default=5672, env="RABBITMQ_PORT")
     RABBITMQ_USER: str = Field(default="guest", env="RABBITMQ_USER")
@@ -109,7 +111,11 @@ class Settings(BaseSettings):
 
     @property
     def rabbitmq_url(self) -> str:
-        """Construct RabbitMQ connection URL"""
+        """Return RabbitMQ connection URL (from env var or constructed)"""
+        # If RABBITMQ_URL is set directly, use it
+        if self.RABBITMQ_URL:
+            return self.RABBITMQ_URL
+        # Otherwise construct from individual vars
         return (
             f"amqp://{self.RABBITMQ_USER}:{self.RABBITMQ_PASSWORD}@"
             f"{self.RABBITMQ_HOST}:{self.RABBITMQ_PORT}/{self.RABBITMQ_VHOST}"

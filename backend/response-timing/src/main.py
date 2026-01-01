@@ -136,6 +136,13 @@ async def root():
     }
 
 
+# Health endpoint for Docker healthcheck (simple version)
+@app.get("/health")
+async def health():
+    """Simple health check for Docker/K8s"""
+    return {"status": "healthy"}
+
+
 if __name__ == "__main__":
     import uvicorn
 

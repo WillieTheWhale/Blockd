@@ -3,9 +3,9 @@
  */
 
 import { FastifyInstance } from 'fastify';
-import { optionalAuthenticate } from '../middleware/auth.middleware.js';
-import { publicRateLimiter, authRateLimiter } from '../middleware/rate-limit.middleware.js';
-import { validateBody } from '../middleware/validation.middleware.js';
+import { optionalAuthenticate } from '../middleware/auth.middleware';
+import { publicRateLimiter, authRateLimiter } from '../middleware/rate-limit.middleware';
+import { validateBody } from '../middleware/validation.middleware';
 import {
   validateSessionRequestSchema,
   securityEventRequestSchema,
@@ -13,10 +13,10 @@ import {
   ValidateSessionRequest,
   SecurityEventRequest,
   BatchTelemetryRequest,
-} from '../schemas/browser.schema.js';
-import { sendSuccess } from '../lib/response.js';
-import { NotFoundError } from '../lib/errors.js';
-import prisma from '../lib/prisma.js';
+} from '../schemas/browser.schema';
+import { sendSuccess } from '../lib/response';
+import { NotFoundError } from '../lib/errors';
+import prisma from '../lib/prisma';
 
 export default async function browserRoutes(fastify: FastifyInstance) {
   // Validate session token

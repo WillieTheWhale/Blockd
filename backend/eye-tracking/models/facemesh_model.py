@@ -9,8 +9,8 @@ import mediapipe as mp
 from typing import Optional, Tuple, List, Dict
 import structlog
 
-from ..src.config import settings, EYE_LANDMARKS, HEAD_POSE_LANDMARKS
-from ..lib.errors import FaceMeshError, NoFaceDetectedError, LandmarkExtractionError
+from src.config import settings, EYE_LANDMARKS, HEAD_POSE_LANDMARKS
+from lib.errors import FaceMeshError, NoFaceDetectedError, LandmarkExtractionError
 
 logger = structlog.get_logger(__name__)
 

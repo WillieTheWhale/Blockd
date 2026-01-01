@@ -10,10 +10,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import uvicorn
 
-from .config import get_settings
-from ..models.model_manager import initialize_models, get_model_manager
-from ..api import health, question, answer, cache
-from ..lib.errors import AIDetectionError
+from src.config import get_settings
+from models.model_manager import initialize_models, get_model_manager
+from api import health, question, answer, cache
+from lib.errors import AIDetectionError
 
 # Configure logging
 logging.basicConfig(
@@ -130,6 +130,13 @@ async def root():
         "status": "running",
         "docs": "/docs"
     }
+
+
+# Health endpoint for Docker healthcheck (simple version without dependencies)
+@app.get("/health")
+async def health():
+    """Simple health check for Docker/K8s"""
+    return {"status": "healthy"}
 
 
 # Run with uvicorn

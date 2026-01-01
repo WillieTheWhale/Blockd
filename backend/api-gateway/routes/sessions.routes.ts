@@ -3,9 +3,9 @@
  */
 
 import { FastifyInstance } from 'fastify';
-import { authenticate, requireRole } from '../middleware/auth.middleware.js';
-import { authRateLimiter } from '../middleware/rate-limit.middleware.js';
-import { validateBody, validateParams, validateQuery } from '../middleware/validation.middleware.js';
+import { authenticate, requireRole } from '../middleware/auth.middleware';
+import { authRateLimiter } from '../middleware/rate-limit.middleware';
+import { validateBody, validateParams, validateQuery } from '../middleware/validation.middleware';
 import {
   createSessionRequestSchema,
   startSessionRequestSchema,
@@ -17,11 +17,11 @@ import {
   EndSessionRequest,
   ListSessionsQuery,
   SessionEventsQuery,
-} from '../schemas/session.schema.js';
-import { idParamSchema, IdParam } from '../schemas/common.schema.js';
-import { sendSuccess, sendCreated, sendPaginated } from '../lib/response.js';
-import { NotFoundError, BadRequestError, ForbiddenError } from '../lib/errors.js';
-import prisma from '../lib/prisma.js';
+} from '../schemas/session.schema';
+import { idParamSchema, IdParam } from '../schemas/common.schema';
+import { sendSuccess, sendCreated, sendPaginated } from '../lib/response';
+import { NotFoundError, BadRequestError, ForbiddenError } from '../lib/errors';
+import prisma from '../lib/prisma';
 
 export default async function sessionsRoutes(fastify: FastifyInstance) {
   // Create session

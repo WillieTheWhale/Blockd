@@ -2,7 +2,7 @@
 Tests for text utilities
 """
 import pytest
-from ..lib.text_utils import (
+from lib.text_utils import (
     normalize_text,
     tokenize,
     extract_ngrams,

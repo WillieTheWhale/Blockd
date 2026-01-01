@@ -4,18 +4,18 @@
  */
 
 import { FastifyInstance } from 'fastify';
-import { authenticate } from '../middleware/auth.middleware.js';
-import { authRateLimiter } from '../middleware/rate-limit.middleware.js';
-import { validateBody } from '../middleware/validation.middleware.js';
+import { authenticate } from '../middleware/auth.middleware';
+import { authRateLimiter } from '../middleware/rate-limit.middleware';
+import { validateBody } from '../middleware/validation.middleware';
 import {
   analyzeQuestionRequestSchema,
   analyzeAnswerRequestSchema,
   AnalyzeQuestionRequest,
   AnalyzeAnswerRequest,
-} from '../schemas/analysis.schema.js';
-import { sendSuccess, sendCreated } from '../lib/response.js';
-import { NotFoundError } from '../lib/errors.js';
-import prisma from '../lib/prisma.js';
+} from '../schemas/analysis.schema';
+import { sendSuccess, sendCreated } from '../lib/response';
+import { NotFoundError } from '../lib/errors';
+import prisma from '../lib/prisma';
 
 export default async function analysisRoutes(fastify: FastifyInstance) {
   // Analyze question

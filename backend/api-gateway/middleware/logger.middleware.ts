@@ -3,7 +3,7 @@
  */
 
 import { FastifyRequest, FastifyReply } from 'fastify';
-import config from '../src/config.js';
+import config from '../src/config';
 
 /**
  * Pino logger configuration

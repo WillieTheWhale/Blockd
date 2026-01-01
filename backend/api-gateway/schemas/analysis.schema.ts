@@ -3,7 +3,7 @@
  */
 
 import { z } from 'zod';
-import { uuidSchema } from './common.schema.js';
+import { uuidSchema } from './common.schema';
 
 // Question difficulty enum
 export const questionDifficultySchema = z.enum(['easy', 'medium', 'hard', 'expert']);

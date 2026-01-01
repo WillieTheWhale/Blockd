@@ -5,12 +5,12 @@ Orchestrates all detection components and generates risk scores
 import logging
 import uuid
 from typing import Dict, List, Optional, Tuple
-from ..models.model_manager import get_model_manager
-from ..lib.hash_utils import hash_question
-from ..lib.text_utils import count_words
-from ..src.config import get_settings
-from ..schemas.detection import DetectionFeatures
-from ..schemas.answer import (
+from models.model_manager import get_model_manager
+from lib.hash_utils import hash_question
+from lib.text_utils import count_words
+from src.config import get_settings
+from schemas.detection import DetectionFeatures
+from schemas.answer import (
     AnswerAnalysisRequest,
     AnswerAnalysisResponse,
     SimilarityScores,

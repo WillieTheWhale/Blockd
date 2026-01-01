@@ -9,10 +9,10 @@ from uuid import UUID
 from datetime import datetime
 import structlog
 
-from ..src.database import get_db_session, GazeEvent
-from ..services.pattern_recognition import PatternRecognitionService, GazePoint
-from ..services.anomaly_detection import AnomalyDetectionService
-from ..schemas.analysis import AnalysisBatchRequest, AnalysisResponse
+from src.database import get_db_session, GazeEvent
+from services.pattern_recognition import PatternRecognitionService, GazePoint
+from services.anomaly_detection import AnomalyDetectionService
+from schemas.analysis import AnalysisBatchRequest, AnalysisResponse
 
 logger = structlog.get_logger(__name__)
 

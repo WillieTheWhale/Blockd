@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { createApp } from '../src/app.js';
+import { createApp } from '../src/app';
 import type { FastifyInstance } from 'fastify';
 
 describe('Sessions Tests', () => {

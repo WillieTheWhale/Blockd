@@ -10,12 +10,12 @@ from typing import Dict, Optional
 from datetime import datetime
 import structlog
 
-from ..services.landmark_detection import LandmarkDetectionService
-from ..services.gaze_calculation import GazeCalculationService
-from ..services.pattern_recognition import PatternRecognitionService, GazePoint
-from ..services.anomaly_detection import AnomalyDetectionService
-from ..lib.errors import FrameProcessingError, InvalidFrameError
-from ..src.config import settings
+from services.landmark_detection import LandmarkDetectionService
+from services.gaze_calculation import GazeCalculationService
+from services.pattern_recognition import PatternRecognitionService, GazePoint
+from services.anomaly_detection import AnomalyDetectionService
+from lib.errors import FrameProcessingError, InvalidFrameError
+from src.config import settings
 
 logger = structlog.get_logger(__name__)
 

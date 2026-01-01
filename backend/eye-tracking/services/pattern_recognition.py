@@ -8,10 +8,10 @@ from typing import List, Dict, Tuple, Optional
 from datetime import datetime, timedelta
 import structlog
 
-from ..lib.geometry import calculate_saccade_velocity
-from ..lib.signal_processing import detect_saccades, detect_fixations
-from ..src.config import settings
-from ..lib.errors import PatternRecognitionError
+from lib.geometry import calculate_saccade_velocity
+from lib.signal_processing import detect_saccades, detect_fixations
+from src.config import settings
+from lib.errors import PatternRecognitionError
 
 logger = structlog.get_logger(__name__)
 

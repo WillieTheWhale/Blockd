@@ -4,8 +4,8 @@ Calculates similarity between human answers and AI-generated answers
 """
 import logging
 from typing import List, Dict, Tuple
-from ..models.model_manager import get_model_manager
-from ..lib.vector_utils import cosine_similarity, batch_cosine_similarity
+from models.model_manager import get_model_manager
+from lib.vector_utils import cosine_similarity, batch_cosine_similarity
 
 logger = logging.getLogger(__name__)
 

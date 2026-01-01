@@ -53,9 +53,15 @@ async def lifespan(app: FastAPI):
         await mq_client.connect()
         logger.info("Connected to RabbitMQ")
 
-        # Initialize S3 bucket
-        await storage_service.ensure_bucket_exists()
-        logger.info(f"S3 bucket '{settings.S3_BUCKET}' ready")
+        # Initialize S3 bucket (optional - may not be configured in dev)
+        try:
+            if settings.S3_ACCESS_KEY and settings.S3_SECRET_KEY:
+                await storage_service.ensure_bucket_exists()
+                logger.info(f"S3 bucket '{settings.S3_BUCKET}' ready")
+            else:
+                logger.warning("S3 not configured - video storage will be disabled")
+        except Exception as s3_error:
+            logger.warning(f"S3 initialization failed (non-fatal): {s3_error}")
 
         # Start background cleanup task
         if settings.AUTO_CLEANUP_ENABLED:
@@ -136,8 +142,11 @@ async def health_check():
 
     # Check S3 connection
     try:
-        await storage_service.check_connection()
-        health_status["s3"] = "healthy"
+        if storage_service:
+            await storage_service.check_connection()
+            health_status["s3"] = "healthy"
+        else:
+            health_status["s3"] = "not configured"
     except Exception as e:
         health_status["s3"] = f"unhealthy: {str(e)}"
 

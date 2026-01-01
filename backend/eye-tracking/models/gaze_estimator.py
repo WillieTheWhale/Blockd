@@ -7,8 +7,8 @@ import numpy as np
 from typing import Tuple, Dict, Optional
 import structlog
 
-from ..src.config import settings
-from ..lib.errors import GazeEstimationError, InvalidGazeVectorError
+from src.config import settings
+from lib.errors import GazeEstimationError, InvalidGazeVectorError
 
 logger = structlog.get_logger(__name__)
 
