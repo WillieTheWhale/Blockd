@@ -3,7 +3,7 @@
  */
 
 import { FastifyRequest } from 'fastify';
-import config from '../src/config.js';
+import config from '../src/config';
 
 export interface CorsOptions {
   origin: string | string[] | boolean | ((origin: string, callback: (err: Error | null, allow?: boolean) => void) => void);

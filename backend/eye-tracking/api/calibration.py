@@ -8,9 +8,9 @@ from sqlalchemy.orm import Session
 from uuid import UUID
 import structlog
 
-from ..src.database import get_db_session, GazeSession
-from ..services.gaze_processing import GazeProcessingService
-from ..schemas.gaze import CalibrationRequest, CalibrationResponse
+from src.database import get_db_session, GazeSession
+from services.gaze_processing import GazeProcessingService
+from schemas.gaze import CalibrationRequest, CalibrationResponse
 
 logger = structlog.get_logger(__name__)
 

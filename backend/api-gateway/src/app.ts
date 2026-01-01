@@ -9,19 +9,19 @@ import helmet from '@fastify/helmet';
 import swagger from '@fastify/swagger';
 import swaggerUI from '@fastify/swagger-ui';
 import websocket from '@fastify/websocket';
-import { config, validateConfig } from './config.js';
-import { corsOptions } from '../middleware/cors.middleware.js';
-import { errorHandler, notFoundHandler } from '../middleware/error-handler.middleware.js';
-import { loggerConfig, genReqId } from '../middleware/logger.middleware.js';
+import { config, validateConfig } from './config';
+import { corsOptions } from '../middleware/cors.middleware';
+import { errorHandler, notFoundHandler } from '../middleware/error-handler.middleware';
+import { loggerConfig, genReqId } from '../middleware/logger.middleware';
 
 // Import routes
-import healthRoutes from '../routes/health.routes.js';
-import authRoutes from '../routes/auth.routes.js';
-import sessionsRoutes from '../routes/sessions.routes.js';
-import browserRoutes from '../routes/browser.routes.js';
-import analysisRoutes from '../routes/analysis.routes.js';
-import gazeRoutes from '../routes/gaze.routes.js';
-import reportsRoutes from '../routes/reports.routes.js';
+import healthRoutes from '../routes/health.routes';
+import authRoutes from '../routes/auth.routes';
+import sessionsRoutes from '../routes/sessions.routes';
+import browserRoutes from '../routes/browser.routes';
+import analysisRoutes from '../routes/analysis.routes';
+import gazeRoutes from '../routes/gaze.routes';
+import reportsRoutes from '../routes/reports.routes';
 
 export interface AppOptions extends FastifyServerOptions {
   prefix?: string;

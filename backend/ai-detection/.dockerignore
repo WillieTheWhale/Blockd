@@ -13,7 +13,6 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
 lib64/
 parts/
 sdist/
@@ -46,8 +45,7 @@ htmlcov/
 .mypy_cache/
 .dmypy.json
 
-# Models (will be downloaded or mounted)
-models/
+# Model files (will be downloaded or mounted)
 *.pth
 *.bin
 *.onnx

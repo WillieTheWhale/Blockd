@@ -3,8 +3,8 @@
  * Starts the Fastify API Gateway server
  */
 
-import { createApp, gracefulShutdown } from './app.js';
-import { config } from './config.js';
+import { createApp, gracefulShutdown } from './app';
+import { config } from './config';
 
 /**
  * Start the server

@@ -10,10 +10,10 @@ import json
 import structlog
 from typing import Dict
 
-from ..src.database import get_db_session, GazeEvent
-from ..services.gaze_processing import GazeProcessingService
-from ..schemas.gaze import StreamFrameMessage, StreamGazeMessage, StreamErrorMessage
-from ..lib.errors import FrameProcessingError, NoFaceDetectedError
+from src.database import get_db_session, GazeEvent
+from services.gaze_processing import GazeProcessingService
+from schemas.gaze import StreamFrameMessage, StreamGazeMessage, StreamErrorMessage
+from lib.errors import FrameProcessingError, NoFaceDetectedError
 
 logger = structlog.get_logger(__name__)
 

@@ -2,7 +2,7 @@
 Tests for n-gram overlap service
 """
 import pytest
-from ..services.ngram_service import get_ngram_service
+from services.ngram_service import get_ngram_service
 
 
 class TestNgramService:

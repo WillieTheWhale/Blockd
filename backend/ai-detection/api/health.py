@@ -3,9 +3,9 @@ Health check endpoint
 """
 from datetime import datetime
 from fastapi import APIRouter
-from ..schemas.detection import HealthCheckResponse
-from ..models.model_manager import get_model_manager
-from ..src.config import settings
+from schemas.detection import HealthCheckResponse
+from models.model_manager import get_model_manager
+from src.config import settings
 
 router = APIRouter()
 

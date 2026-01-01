@@ -35,8 +35,12 @@ WORKDIR /app
 # Copy Python dependencies from builder
 COPY --from=builder --chown=appuser:appuser /root/.local /home/appuser/.local
 
-# Copy application code
+# Copy application code - all directories needed for imports
 COPY --chown=appuser:appuser src/ ./src/
+COPY --chown=appuser:appuser api/ ./api/
+COPY --chown=appuser:appuser lib/ ./lib/
+COPY --chown=appuser:appuser schemas/ ./schemas/
+COPY --chown=appuser:appuser services/ ./services/
 
 # Switch to non-root user
 USER appuser

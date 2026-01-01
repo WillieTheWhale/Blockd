@@ -3,9 +3,9 @@
  */
 
 import { FastifyInstance } from 'fastify';
-import { getRedisClient } from '../../shared/cache/redis-client.js';
-import prisma from '../lib/prisma.js';
-import { sendSuccess } from '../lib/response.js';
+import { getRedisClient } from '../../shared/cache/redis-client';
+import prisma from '../lib/prisma';
+import { sendSuccess } from '../lib/response';
 
 export default async function healthRoutes(fastify: FastifyInstance) {
   // Health check endpoint

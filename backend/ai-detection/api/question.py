@@ -5,9 +5,9 @@ Generates AI answers for questions
 import time
 import logging
 from fastapi import APIRouter, HTTPException
-from ..schemas.question import QuestionAnalysisRequest, QuestionAnalysisResponse, AIAnswerData
-from ..services.detection_service import get_detection_service
-from ..lib.errors import AIDetectionError
+from schemas.question import QuestionAnalysisRequest, QuestionAnalysisResponse, AIAnswerData
+from services.detection_service import get_detection_service
+from lib.errors import AIDetectionError
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

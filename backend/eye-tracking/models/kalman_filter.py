@@ -8,8 +8,8 @@ from filterpy.kalman import KalmanFilter
 from typing import Tuple
 import structlog
 
-from ..src.config import settings
-from ..lib.errors import KalmanFilterError
+from src.config import settings
+from lib.errors import KalmanFilterError
 
 logger = structlog.get_logger(__name__)
 

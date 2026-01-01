@@ -4,7 +4,7 @@ Analyzes writing style features
 """
 import logging
 from typing import Dict
-from ..lib.text_utils import (
+from lib.text_utils import (
     calculate_vocabulary_richness,
     calculate_avg_sentence_length,
     calculate_punctuation_density,

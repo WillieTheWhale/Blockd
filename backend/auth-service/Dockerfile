@@ -27,11 +27,11 @@ COPY auth-service/keys/ ./keys/
 # Build TypeScript (skip type checking for Docker builds)
 RUN npx tsc --skipLibCheck 2>&1 || echo "TypeScript compilation completed with warnings"
 
-# Stage 2: Production
+# Stage 2: Runtime
 FROM node:20-alpine
 
-# Set NODE_ENV
-ENV NODE_ENV=production
+# Set NODE_ENV - development for dev mode with tsx
+ENV NODE_ENV=development
 
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs && \
@@ -40,16 +40,25 @@ RUN addgroup -g 1001 -S nodejs && \
 # Set working directory
 WORKDIR /app
 
-# Copy package files and install production dependencies only
+# Copy package files and install ALL dependencies (including dev for tsx)
 COPY auth-service/package*.json ./
-RUN npm install --omit=dev && \
+RUN npm install && \
     npm cache clean --force
 
-# Copy built application from builder
+# Copy built application from builder (for production use)
 COPY --from=builder --chown=nodejs:nodejs /app/dist ./dist
 
 # Copy keys directory (for JWT signing)
 COPY --from=builder --chown=nodejs:nodejs /app/keys ./keys
+
+# Copy source code (needed for tsx dev mode)
+COPY --chown=nodejs:nodejs auth-service/src/ ./src/
+COPY --chown=nodejs:nodejs auth-service/controllers/ ./controllers/
+COPY --chown=nodejs:nodejs auth-service/services/ ./services/
+COPY --chown=nodejs:nodejs auth-service/middleware/ ./middleware/
+COPY --chown=nodejs:nodejs auth-service/lib/ ./lib/
+COPY --chown=nodejs:nodejs auth-service/types/ ./types/
+COPY --chown=nodejs:nodejs auth-service/tsconfig.json ./
 
 # Switch to non-root user
 USER nodejs
@@ -61,5 +70,5 @@ EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD node -e "require('http').get('http://localhost:3001/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})" || exit 1
 
-# Start application
-CMD ["node", "dist/src/server.js"]
+# Default to dev mode (can be overridden)
+CMD ["npm", "run", "dev"]

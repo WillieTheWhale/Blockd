@@ -8,9 +8,9 @@ import numpy as np
 from typing import Optional, Dict
 import structlog
 
-from ..models.facemesh_model import FaceMeshModel
-from ..lib.errors import NoFaceDetectedError, LandmarkExtractionError
-from ..src.config import settings
+from models.facemesh_model import FaceMeshModel
+from lib.errors import NoFaceDetectedError, LandmarkExtractionError
+from src.config import settings
 
 logger = structlog.get_logger(__name__)
 

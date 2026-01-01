@@ -5,11 +5,11 @@ Detects AI-generated content in user answers
 import time
 import logging
 from fastapi import APIRouter, HTTPException
-from ..schemas.answer import AnswerAnalysisRequest, AnswerAnalysisResponse
-from ..services.detection_service import get_detection_service
-from ..lib.hash_utils import hash_question
-from ..lib.errors import AIDetectionError
-from ..src.database import DatabaseManager
+from schemas.answer import AnswerAnalysisRequest, AnswerAnalysisResponse
+from services.detection_service import get_detection_service
+from lib.hash_utils import hash_question
+from lib.errors import AIDetectionError
+from src.database import DatabaseManager
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

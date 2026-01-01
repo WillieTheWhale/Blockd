@@ -19,8 +19,8 @@ except ImportError:
     logger = structlog.get_logger(__name__)
     logger.warning("tensorflow_not_available", message="LSTM anomaly detection will not work")
 
-from ..src.config import settings
-from ..lib.errors import AnomalyDetectionError, ModelLoadError
+from src.config import settings
+from lib.errors import AnomalyDetectionError, ModelLoadError
 
 logger = structlog.get_logger(__name__)
 

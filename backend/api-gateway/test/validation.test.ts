@@ -7,11 +7,11 @@ import {
   registerRequestSchema,
   loginRequestSchema,
   refreshTokenRequestSchema,
-} from '../schemas/auth.schema.js';
+} from '../schemas/auth.schema';
 import {
   createSessionRequestSchema,
   listSessionsQuerySchema,
-} from '../schemas/session.schema.js';
+} from '../schemas/session.schema';
 
 describe('Validation Tests', () => {
   describe('Auth Schemas', () => {

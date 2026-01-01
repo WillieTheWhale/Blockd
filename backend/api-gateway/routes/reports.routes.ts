@@ -3,13 +3,13 @@
  */
 
 import { FastifyInstance } from 'fastify';
-import { authenticate } from '../middleware/auth.middleware.js';
-import { authRateLimiter } from '../middleware/rate-limit.middleware.js';
-import { validateParams } from '../middleware/validation.middleware.js';
-import { idParamSchema, IdParam } from '../schemas/common.schema.js';
-import { sendSuccess } from '../lib/response.js';
-import { NotFoundError } from '../lib/errors.js';
-import prisma from '../lib/prisma.js';
+import { authenticate } from '../middleware/auth.middleware';
+import { authRateLimiter } from '../middleware/rate-limit.middleware';
+import { validateParams } from '../middleware/validation.middleware';
+import { idParamSchema, IdParam } from '../schemas/common.schema';
+import { sendSuccess } from '../lib/response';
+import { NotFoundError } from '../lib/errors';
+import prisma from '../lib/prisma';
 
 export default async function reportsRoutes(fastify: FastifyInstance) {
   // Get session report

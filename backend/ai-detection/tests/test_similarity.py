@@ -2,8 +2,8 @@
 Tests for similarity calculation
 """
 import pytest
-from ..lib.vector_utils import cosine_similarity, batch_cosine_similarity
-from ..services.similarity_service import get_similarity_service
+from lib.vector_utils import cosine_similarity, batch_cosine_similarity
+from services.similarity_service import get_similarity_service
 
 
 class TestVectorUtils:

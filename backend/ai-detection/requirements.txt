@@ -13,6 +13,7 @@ python-multipart>=0.0.6,<1.0.0
 # Database
 psycopg2-binary>=2.9.9,<3.0.0
 sqlalchemy>=2.0.25,<3.0.0
+pgvector>=0.2.0,<1.0.0
 
 # Redis
 redis>=5.0.0,<6.0.0

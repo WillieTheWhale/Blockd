@@ -3,8 +3,8 @@
  */
 
 import { FastifyRequest, FastifyReply } from 'fastify';
-import { verifyAccessToken, JwtPayload } from '../lib/jwt.js';
-import { UnauthorizedError, ForbiddenError } from '../lib/errors.js';
+import { verifyAccessToken, JwtPayload } from '../lib/jwt';
+import { UnauthorizedError, ForbiddenError } from '../lib/errors';
 
 // Extend FastifyRequest to include user property
 declare module 'fastify' {
