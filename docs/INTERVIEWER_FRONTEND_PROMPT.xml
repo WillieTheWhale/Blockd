@@ -1,0 +1,2120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interviewer-frontend-specification>
+  <metadata>
+    <project-name>Blockd Interviewer Frontend</project-name>
+    <version>2.0.0</version>
+    <created>2025-11-26</created>
+    <purpose>Complete specification for building the React interviewer dashboard for the Blockd interview security platform</purpose>
+    <description>
+      This document provides comprehensive specifications for building the interviewer frontend application.
+      The interviewer app is a React web application used by interviewers to create, monitor, and manage
+      interview sessions with real-time security monitoring, AI detection, and video streaming capabilities.
+    </description>
+  </metadata>
+
+  <technology-stack>
+    <core>
+      <framework>React 19.0+</framework>
+      <language>TypeScript 5.7+</language>
+      <build-tool>Vite 6.x</build-tool>
+      <package-manager>npm or pnpm</package-manager>
+    </core>
+
+    <routing>
+      <library>React Router 7.x</library>
+      <features>
+        <feature>Client-side routing</feature>
+        <feature>Protected routes</feature>
+        <feature>Nested layouts</feature>
+        <feature>Route parameters</feature>
+      </features>
+    </routing>
+
+    <state-management>
+      <library>Zustand 5.x</library>
+      <persistence>zustand/middleware (persist)</persistence>
+      <devtools>zustand/middleware (devtools)</devtools>
+    </state-management>
+
+    <data-fetching>
+      <library>TanStack Query 5.x (React Query)</library>
+      <http-client>Axios 1.7+</http-client>
+      <features>
+        <feature>Automatic caching</feature>
+        <feature>Background refetching</feature>
+        <feature>Optimistic updates</feature>
+        <feature>Request deduplication</feature>
+      </features>
+    </data-fetching>
+
+    <real-time>
+      <websocket>Socket.io-client 4.x</websocket>
+      <webrtc>mediasoup-client 3.x</webrtc>
+    </real-time>
+
+    <styling>
+      <framework>Tailwind CSS 4.x</framework>
+      <components>shadcn/ui (Radix UI primitives)</components>
+      <icons>Lucide React</icons>
+      <utilities>
+        <utility>clsx</utility>
+        <utility>tailwind-merge</utility>
+        <utility>class-variance-authority</utility>
+      </utilities>
+    </styling>
+
+    <forms>
+      <library>React Hook Form 7.x</library>
+      <validation>Zod 3.x</validation>
+      <resolver>@hookform/resolvers/zod</resolver>
+    </forms>
+
+    <visualization>
+      <charts>Recharts</charts>
+      <heatmap>heatmap.js</heatmap>
+    </visualization>
+
+    <notifications>
+      <toast>Sonner</toast>
+    </notifications>
+
+    <utilities>
+      <date>date-fns 4.x</date>
+    </utilities>
+
+    <testing>
+      <unit>Vitest 2.x</unit>
+      <component>React Testing Library</component>
+      <e2e>Playwright (optional)</e2e>
+    </testing>
+  </technology-stack>
+
+  <project-structure>
+    <directory name="src">
+      <directory name="components">
+        <description>Reusable React components</description>
+        <directory name="ui">
+          <description>Base UI components from shadcn/ui</description>
+          <files>
+            <file>button.tsx</file>
+            <file>input.tsx</file>
+            <file>label.tsx</file>
+            <file>card.tsx</file>
+            <file>dialog.tsx</file>
+            <file>select.tsx</file>
+            <file>checkbox.tsx</file>
+            <file>dropdown-menu.tsx</file>
+            <file>avatar.tsx</file>
+            <file>badge.tsx</file>
+            <file>skeleton.tsx</file>
+            <file>tabs.tsx</file>
+            <file>table.tsx</file>
+            <file>toast.tsx</file>
+            <file>progress.tsx</file>
+            <file>switch.tsx</file>
+            <file>separator.tsx</file>
+            <file>scroll-area.tsx</file>
+            <file>popover.tsx</file>
+            <file>alert.tsx</file>
+            <file>tooltip.tsx</file>
+          </files>
+        </directory>
+        <directory name="session">
+          <description>Session-specific components</description>
+          <files>
+            <file>VideoPlayer.tsx</file>
+            <file>SecurityEventsDashboard.tsx</file>
+            <file>GazeHeatmap.tsx</file>
+            <file>AIDetectionResults.tsx</file>
+            <file>QuestionTimeline.tsx</file>
+            <file>SessionControls.tsx</file>
+            <file>ParticipantIndicator.tsx</file>
+            <file>ConnectionStatus.tsx</file>
+          </files>
+        </directory>
+        <directory name="dashboard">
+          <description>Dashboard components</description>
+          <files>
+            <file>StatsCard.tsx</file>
+            <file>RecentSessions.tsx</file>
+            <file>RiskAlerts.tsx</file>
+            <file>QuickActions.tsx</file>
+          </files>
+        </directory>
+        <directory name="common">
+          <description>Common shared components</description>
+          <files>
+            <file>ProtectedRoute.tsx</file>
+            <file>LoadingSpinner.tsx</file>
+            <file>ErrorBoundary.tsx</file>
+            <file>Pagination.tsx</file>
+            <file>SearchInput.tsx</file>
+            <file>FilterDropdown.tsx</file>
+            <file>EmptyState.tsx</file>
+            <file>ConfirmDialog.tsx</file>
+          </files>
+        </directory>
+      </directory>
+
+      <directory name="layouts">
+        <description>Page layout components</description>
+        <files>
+          <file>MainLayout.tsx</file>
+          <file>AuthLayout.tsx</file>
+          <file>Sidebar.tsx</file>
+          <file>Header.tsx</file>
+        </files>
+      </directory>
+
+      <directory name="pages">
+        <description>Page components for routing</description>
+        <files>
+          <file>LoginPage.tsx</file>
+          <file>RegisterPage.tsx</file>
+          <file>ForgotPasswordPage.tsx</file>
+          <file>ResetPasswordPage.tsx</file>
+          <file>DashboardPage.tsx</file>
+          <file>SessionsPage.tsx</file>
+          <file>CreateSessionPage.tsx</file>
+          <file>SessionDetailPage.tsx</file>
+          <file>SessionReportPage.tsx</file>
+          <file>SettingsPage.tsx</file>
+          <file>ProfilePage.tsx</file>
+          <file>NotFoundPage.tsx</file>
+        </files>
+      </directory>
+
+      <directory name="hooks">
+        <description>Custom React hooks</description>
+        <files>
+          <file>useAuth.ts</file>
+          <file>useWebSocket.ts</file>
+          <file>useWebRTC.ts</file>
+          <file>useSession.ts</file>
+          <file>useSessions.ts</file>
+          <file>useSecurityEvents.ts</file>
+          <file>useGazeTracking.ts</file>
+          <file>useAIDetection.ts</file>
+          <file>useDebounce.ts</file>
+          <file>useLocalStorage.ts</file>
+        </files>
+      </directory>
+
+      <directory name="stores">
+        <description>Zustand state stores</description>
+        <files>
+          <file>authStore.ts</file>
+          <file>sessionStore.ts</file>
+          <file>realtimeStore.ts</file>
+          <file>uiStore.ts</file>
+        </files>
+      </directory>
+
+      <directory name="lib">
+        <description>Utility functions and API client</description>
+        <files>
+          <file>api.ts</file>
+          <file>axios.ts</file>
+          <file>socket.ts</file>
+          <file>webrtc.ts</file>
+          <file>utils.ts</file>
+          <file>constants.ts</file>
+          <file>validations.ts</file>
+          <file>formatters.ts</file>
+        </files>
+      </directory>
+
+      <directory name="types">
+        <description>TypeScript type definitions</description>
+        <files>
+          <file>auth.ts</file>
+          <file>session.ts</file>
+          <file>security.ts</file>
+          <file>gaze.ts</file>
+          <file>analysis.ts</file>
+          <file>report.ts</file>
+          <file>api.ts</file>
+          <file>websocket.ts</file>
+        </files>
+      </directory>
+
+      <directory name="config">
+        <description>Application configuration</description>
+        <files>
+          <file>env.ts</file>
+          <file>routes.ts</file>
+          <file>queryClient.ts</file>
+        </files>
+      </directory>
+    </directory>
+  </project-structure>
+
+  <pages-specification>
+    <page name="LoginPage">
+      <path>/login</path>
+      <auth-required>false</auth-required>
+      <description>User authentication page with email/password login and OAuth options</description>
+      <features>
+        <feature>Email and password form with validation</feature>
+        <feature>MFA code input (conditional, shown after initial auth if MFA enabled)</feature>
+        <feature>OAuth login buttons (Google, Microsoft)</feature>
+        <feature>Remember me checkbox</feature>
+        <feature>Forgot password link</feature>
+        <feature>Link to registration page</feature>
+        <feature>Error messages for failed authentication</feature>
+        <feature>Loading state during authentication</feature>
+        <feature>Account lockout message (after 5 failed attempts)</feature>
+      </features>
+      <form-fields>
+        <field name="email" type="email" required="true" validation="Valid email format"/>
+        <field name="password" type="password" required="true" validation="Min 8 characters"/>
+        <field name="mfaCode" type="text" required="conditional" validation="6 digits"/>
+        <field name="rememberMe" type="checkbox" required="false"/>
+      </form-fields>
+      <api-integration>
+        <endpoint>POST /api/v1/auth/login</endpoint>
+        <endpoint>POST /api/v1/auth/mfa/verify-login</endpoint>
+      </api-integration>
+    </page>
+
+    <page name="RegisterPage">
+      <path>/register</path>
+      <auth-required>false</auth-required>
+      <description>New user registration with password strength requirements</description>
+      <features>
+        <feature>Registration form with validation</feature>
+        <feature>Password strength indicator (weak/fair/good/strong)</feature>
+        <feature>Password requirements display</feature>
+        <feature>Terms and conditions checkbox</feature>
+        <feature>Link to login page</feature>
+        <feature>Success message with email verification notice</feature>
+      </features>
+      <form-fields>
+        <field name="email" type="email" required="true" validation="Valid email, unique"/>
+        <field name="password" type="password" required="true" validation="Min 12 chars, mixed case, numbers, special chars"/>
+        <field name="confirmPassword" type="password" required="true" validation="Must match password"/>
+        <field name="firstName" type="text" required="true" validation="Max 100 chars"/>
+        <field name="lastName" type="text" required="true" validation="Max 100 chars"/>
+        <field name="acceptTerms" type="checkbox" required="true"/>
+      </form-fields>
+      <api-integration>
+        <endpoint>POST /api/v1/auth/register</endpoint>
+      </api-integration>
+    </page>
+
+    <page name="ForgotPasswordPage">
+      <path>/forgot-password</path>
+      <auth-required>false</auth-required>
+      <description>Request password reset email</description>
+      <features>
+        <feature>Email input form</feature>
+        <feature>Success message (always shown to prevent email enumeration)</feature>
+        <feature>Rate limiting notice (max 3 requests per hour)</feature>
+        <feature>Link back to login</feature>
+      </features>
+      <api-integration>
+        <endpoint>POST /api/v1/auth/password-reset/request</endpoint>
+      </api-integration>
+    </page>
+
+    <page name="ResetPasswordPage">
+      <path>/reset-password</path>
+      <auth-required>false</auth-required>
+      <description>Set new password using reset token</description>
+      <features>
+        <feature>Token validation on page load</feature>
+        <feature>New password form with strength indicator</feature>
+        <feature>Expired token error message</feature>
+        <feature>Success message with login redirect</feature>
+      </features>
+      <api-integration>
+        <endpoint>POST /api/v1/auth/password-reset/confirm</endpoint>
+      </api-integration>
+    </page>
+
+    <page name="DashboardPage">
+      <path>/dashboard</path>
+      <auth-required>true</auth-required>
+      <description>Main interviewer dashboard with overview statistics and quick actions</description>
+      <features>
+        <feature>Statistics cards (total sessions, active sessions, completed today, risk alerts)</feature>
+        <feature>Recent sessions list (last 5 sessions with status badges)</feature>
+        <feature>Quick action buttons (Create Session, View All Sessions)</feature>
+        <feature>Active risk alerts panel (high/critical security events)</feature>
+        <feature>Upcoming scheduled sessions</feature>
+        <feature>Real-time updates via WebSocket</feature>
+      </features>
+      <components>
+        <component>StatsCard - Display key metrics with icons</component>
+        <component>RecentSessions - Table of recent sessions</component>
+        <component>RiskAlerts - List of unresolved security alerts</component>
+        <component>QuickActions - Action buttons grid</component>
+      </components>
+      <api-integration>
+        <endpoint>GET /api/v1/sessions?pageSize=5</endpoint>
+        <endpoint>GET /api/v1/sessions?status=active</endpoint>
+        <websocket>session:state, security:alert</websocket>
+      </api-integration>
+    </page>
+
+    <page name="SessionsPage">
+      <path>/sessions</path>
+      <auth-required>true</auth-required>
+      <description>List all interview sessions with filtering, search, and pagination</description>
+      <features>
+        <feature>Sessions table with sortable columns</feature>
+        <feature>Status filter (scheduled, active, ended, cancelled)</feature>
+        <feature>Date range filter</feature>
+        <feature>Search by interviewee name/email</feature>
+        <feature>Pagination (20 sessions per page)</feature>
+        <feature>Row actions (view, start, end, cancel, delete)</feature>
+        <feature>Create session button</feature>
+        <feature>Bulk actions (cancel multiple, delete multiple)</feature>
+        <feature>Real-time status updates</feature>
+      </features>
+      <table-columns>
+        <column>Status (badge)</column>
+        <column>Interviewee (name, email)</column>
+        <column>Scheduled Start (formatted date)</column>
+        <column>Duration (minutes or -)</column>
+        <column>Risk Score (progress bar with color)</column>
+        <column>Actions (dropdown menu)</column>
+      </table-columns>
+      <api-integration>
+        <endpoint>GET /api/v1/sessions?page={page}&amp;pageSize=20&amp;status={status}</endpoint>
+        <endpoint>POST /api/v1/sessions/{id}/start</endpoint>
+        <endpoint>POST /api/v1/sessions/{id}/end</endpoint>
+        <endpoint>POST /api/v1/sessions/{id}/cancel</endpoint>
+        <endpoint>DELETE /api/v1/sessions/{id}</endpoint>
+      </api-integration>
+    </page>
+
+    <page name="CreateSessionPage">
+      <path>/sessions/create</path>
+      <auth-required>true</auth-required>
+      <description>Create a new interview session with questions</description>
+      <features>
+        <feature>Interviewee details (email, optional name)</feature>
+        <feature>Schedule date/time picker</feature>
+        <feature>Duration selector</feature>
+        <feature>Questions builder (add, remove, reorder)</feature>
+        <feature>Question difficulty selector (easy, medium, hard, expert)</feature>
+        <feature>Question expected duration input</feature>
+        <feature>Save as draft option</feature>
+        <feature>Preview before creation</feature>
+        <feature>Success confirmation with join link</feature>
+      </features>
+      <form-fields>
+        <field name="intervieweeEmail" type="email" required="true"/>
+        <field name="intervieweeName" type="text" required="false"/>
+        <field name="scheduledStart" type="datetime-local" required="true" validation="Must be in future"/>
+        <field name="durationMinutes" type="number" required="true" validation="15-240 minutes"/>
+        <field name="questions" type="array" required="true" validation="At least 1 question">
+          <subfield name="questionText" type="textarea" required="true" validation="Max 5000 chars"/>
+          <subfield name="difficulty" type="select" options="easy,medium,hard,expert"/>
+          <subfield name="expectedDuration" type="number" validation="30-3600 seconds"/>
+        </field>
+      </form-fields>
+      <api-integration>
+        <endpoint>POST /api/v1/sessions</endpoint>
+        <endpoint>POST /api/v1/analysis/question (for each question)</endpoint>
+      </api-integration>
+    </page>
+
+    <page name="SessionDetailPage">
+      <path>/sessions/:id</path>
+      <auth-required>true</auth-required>
+      <description>Live session monitoring view with video, security events, gaze tracking, and AI detection</description>
+      <features>
+        <feature>Video player with WebRTC streaming</feature>
+        <feature>Session information panel (status, duration, participants)</feature>
+        <feature>Session controls (start, end, pause video, mute)</feature>
+        <feature>Security events dashboard with real-time alerts</feature>
+        <feature>Gaze tracking heatmap overlay</feature>
+        <feature>Questions timeline with current question highlighted</feature>
+        <feature>AI detection results for submitted answers</feature>
+        <feature>Real-time chat with interviewee</feature>
+        <feature>Connection quality indicator</feature>
+        <feature>Risk score display with component breakdown</feature>
+        <feature>Sound alerts for critical security events</feature>
+        <feature>Fullscreen mode</feature>
+      </features>
+      <layout>
+        <section name="main" position="left" width="60%">
+          <component>VideoPlayer with gaze overlay</component>
+          <component>SessionControls</component>
+        </section>
+        <section name="sidebar" position="right" width="40%">
+          <tab name="Security">SecurityEventsDashboard</tab>
+          <tab name="Gaze">GazeHeatmap with statistics</tab>
+          <tab name="AI Detection">AIDetectionResults</tab>
+          <tab name="Questions">QuestionTimeline</tab>
+          <tab name="Chat">RealtimeChat</tab>
+        </section>
+      </layout>
+      <api-integration>
+        <endpoint>GET /api/v1/sessions/{id}</endpoint>
+        <endpoint>POST /api/v1/sessions/{id}/start</endpoint>
+        <endpoint>POST /api/v1/sessions/{id}/end</endpoint>
+        <endpoint>GET /api/v1/gaze/summary/{session_id}</endpoint>
+        <websocket>session:join, session:state, session:started, session:ended</websocket>
+        <websocket>gaze:update (10 Hz)</websocket>
+        <websocket>security:alert</websocket>
+        <websocket>answer:received</websocket>
+        <websocket>chat:message</websocket>
+        <websocket>participant:joined, participant:left</websocket>
+      </api-integration>
+    </page>
+
+    <page name="SessionReportPage">
+      <path>/sessions/:id/report</path>
+      <auth-required>true</auth-required>
+      <description>Comprehensive session report with analysis and recommendations</description>
+      <features>
+        <feature>Session summary with risk level badge</feature>
+        <feature>Overall assessment (pass/review_required/fail)</feature>
+        <feature>Risk score breakdown chart (AI, security, gaze, timing)</feature>
+        <feature>Questions and answers with AI detection scores</feature>
+        <feature>Security events timeline</feature>
+        <feature>Gaze tracking statistics and patterns</feature>
+        <feature>Response timing analysis</feature>
+        <feature>Recommendations list</feature>
+        <feature>Export as PDF button</feature>
+        <feature>Share report link (optional)</feature>
+        <feature>Video recording playback link</feature>
+      </features>
+      <api-integration>
+        <endpoint>GET /api/v1/reports/{session_id}</endpoint>
+        <endpoint>GET /api/v1/reports/{session_id}?format=pdf</endpoint>
+      </api-integration>
+    </page>
+
+    <page name="SettingsPage">
+      <path>/settings</path>
+      <auth-required>true</auth-required>
+      <description>User settings and preferences</description>
+      <features>
+        <feature>Profile section (name, email, avatar)</feature>
+        <feature>Password change form</feature>
+        <feature>MFA setup/disable toggle</feature>
+        <feature>Notification preferences</feature>
+        <feature>Theme toggle (light/dark/system)</feature>
+        <feature>Sound alerts toggle</feature>
+        <feature>Default session duration setting</feature>
+        <feature>API keys management (for integrations)</feature>
+        <feature>Active sessions list (for logout all)</feature>
+      </features>
+      <sections>
+        <section name="Profile">
+          <field name="firstName" type="text"/>
+          <field name="lastName" type="text"/>
+          <field name="email" type="email" readonly="true"/>
+          <field name="avatar" type="file"/>
+        </section>
+        <section name="Security">
+          <field name="currentPassword" type="password"/>
+          <field name="newPassword" type="password"/>
+          <field name="confirmPassword" type="password"/>
+          <field name="mfaEnabled" type="toggle"/>
+        </section>
+        <section name="Preferences">
+          <field name="theme" type="select" options="light,dark,system"/>
+          <field name="soundAlerts" type="toggle"/>
+          <field name="emailNotifications" type="toggle"/>
+          <field name="defaultDuration" type="number"/>
+        </section>
+      </sections>
+      <api-integration>
+        <endpoint>GET /api/v1/users/profile</endpoint>
+        <endpoint>PUT /api/v1/users/profile</endpoint>
+        <endpoint>POST /api/v1/auth/mfa/setup</endpoint>
+        <endpoint>POST /api/v1/auth/mfa/verify</endpoint>
+        <endpoint>POST /api/v1/auth/mfa/disable</endpoint>
+      </api-integration>
+    </page>
+  </pages-specification>
+
+  <api-specification>
+    <base-url>
+      <development>http://localhost:3000</development>
+      <production>https://api.blockd.io</production>
+    </base-url>
+
+    <authentication>
+      <type>Bearer Token (JWT)</type>
+      <header>Authorization: Bearer {accessToken}</header>
+      <access-token-expiry>1 hour</access-token-expiry>
+      <refresh-token-expiry>7 days</refresh-token-expiry>
+      <algorithm>RS256</algorithm>
+    </authentication>
+
+    <response-format>
+      <success>
+        <![CDATA[
+{
+  "success": true,
+  "data": { ... },
+  "meta": {
+    "timestamp": "ISO8601",
+    "requestId": "string"
+  }
+}
+        ]]>
+      </success>
+      <error>
+        <![CDATA[
+{
+  "success": false,
+  "error": {
+    "code": "ERROR_CODE",
+    "message": "Human readable message",
+    "statusCode": 400,
+    "details": { ... }
+  },
+  "meta": {
+    "timestamp": "ISO8601",
+    "requestId": "string"
+  }
+}
+        ]]>
+      </error>
+      <paginated>
+        <![CDATA[
+{
+  "success": true,
+  "data": [...],
+  "pagination": {
+    "page": 1,
+    "pageSize": 20,
+    "totalPages": 5,
+    "totalItems": 100,
+    "hasNext": true,
+    "hasPrev": false
+  }
+}
+        ]]>
+      </paginated>
+    </response-format>
+
+    <endpoints>
+      <category name="Authentication">
+        <endpoint>
+          <method>POST</method>
+          <path>/api/v1/auth/register</path>
+          <description>Register new user</description>
+          <auth-required>false</auth-required>
+          <request-body>
+            <![CDATA[
+{
+  "email": "string (required)",
+  "password": "string (required, min 12 chars, mixed case, numbers, special)",
+  "firstName": "string (optional)",
+  "lastName": "string (optional)",
+  "role": "interviewer | interviewee (default: interviewee)",
+  "organizationId": "UUID (optional)"
+}
+            ]]>
+          </request-body>
+          <response-201>
+            <![CDATA[
+{
+  "success": true,
+  "data": {
+    "user": {
+      "id": "UUID",
+      "email": "string",
+      "role": "string",
+      "firstName": "string",
+      "lastName": "string",
+      "mfaEnabled": false,
+      "emailVerified": false
+    },
+    "tokens": {
+      "accessToken": "JWT",
+      "refreshToken": "string",
+      "expiresIn": 3600
+    }
+  }
+}
+            ]]>
+          </response-201>
+          <errors>
+            <error code="400">Weak password or invalid email format</error>
+            <error code="409">Email already exists</error>
+            <error code="422">Validation error</error>
+          </errors>
+        </endpoint>
+
+        <endpoint>
+          <method>POST</method>
+          <path>/api/v1/auth/login</path>
+          <description>Login with email and password</description>
+          <auth-required>false</auth-required>
+          <request-body>
+            <![CDATA[
+{
+  "email": "string (required)",
+  "password": "string (required)",
+  "mfaCode": "string (optional, 6 digits if MFA enabled)"
+}
+            ]]>
+          </request-body>
+          <response-200>
+            <![CDATA[
+{
+  "success": true,
+  "data": {
+    "user": { ... },
+    "tokens": {
+      "accessToken": "JWT",
+      "refreshToken": "string",
+      "expiresIn": 3600
+    }
+  }
+}
+            ]]>
+          </response-200>
+          <response-200-mfa>
+            <![CDATA[
+{
+  "success": true,
+  "data": {
+    "requiresMfa": true,
+    "mfaToken": "temporary_jwt (5 min expiry)"
+  }
+}
+            ]]>
+          </response-200-mfa>
+          <errors>
+            <error code="401">Invalid credentials</error>
+            <error code="429">Account locked (5 failed attempts, 15 min lockout)</error>
+          </errors>
+        </endpoint>
+
+        <endpoint>
+          <method>POST</method>
+          <path>/api/v1/auth/refresh</path>
+          <description>Refresh access token</description>
+          <auth-required>false</auth-required>
+          <request-body>
+            <![CDATA[
+{
+  "refreshToken": "string (required)"
+}
+            ]]>
+          </request-body>
+          <response-200>
+            <![CDATA[
+{
+  "success": true,
+  "data": {
+    "tokens": {
+      "accessToken": "JWT",
+      "refreshToken": "string (new, old is revoked)",
+      "expiresIn": 3600
+    }
+  }
+}
+            ]]>
+          </response-200>
+          <errors>
+            <error code="401">Invalid or expired refresh token</error>
+          </errors>
+        </endpoint>
+
+        <endpoint>
+          <method>POST</method>
+          <path>/api/v1/auth/logout</path>
+          <description>Logout and revoke refresh token</description>
+          <auth-required>true</auth-required>
+          <request-body>
+            <![CDATA[
+{
+  "refreshToken": "string (optional)"
+}
+            ]]>
+          </request-body>
+          <response-200>
+            <![CDATA[
+{
+  "success": true,
+  "data": {}
+}
+            ]]>
+          </response-200>
+        </endpoint>
+
+        <endpoint>
+          <method>POST</method>
+          <path>/api/v1/auth/mfa/setup</path>
+          <description>Setup MFA with TOTP</description>
+          <auth-required>true</auth-required>
+          <response-200>
+            <![CDATA[
+{
+  "success": true,
+  "data": {
+    "secret": "base32_encoded_secret",
+    "qrCodeUrl": "data:image/png;base64,...",
+    "backupCodes": ["XXXX-XXXX", ...]
+  }
+}
+            ]]>
+          </response-200>
+        </endpoint>
+
+        <endpoint>
+          <method>POST</method>
+          <path>/api/v1/auth/mfa/verify</path>
+          <description>Verify MFA code and enable MFA</description>
+          <auth-required>true</auth-required>
+          <request-body>
+            <![CDATA[
+{
+  "code": "string (6 digits)",
+  "secret": "string",
+  "backupCodes": ["string", ...]
+}
+            ]]>
+          </request-body>
+        </endpoint>
+      </category>
+
+      <category name="Sessions">
+        <endpoint>
+          <method>POST</method>
+          <path>/api/v1/sessions</path>
+          <description>Create new interview session</description>
+          <auth-required>true</auth-required>
+          <request-body>
+            <![CDATA[
+{
+  "intervieweeEmail": "string (required)",
+  "intervieweeId": "UUID (optional)",
+  "scheduledStart": "ISO8601 datetime (required)",
+  "durationMinutes": "number (optional, default 60)",
+  "questions": [
+    {
+      "questionText": "string (required)",
+      "difficulty": "easy | medium | hard | expert",
+      "expectedDurationSeconds": "number"
+    }
+  ],
+  "metadata": { ... }
+}
+            ]]>
+          </request-body>
+          <response-201>
+            <![CDATA[
+{
+  "success": true,
+  "data": {
+    "id": "UUID",
+    "interviewerId": "UUID",
+    "intervieweeId": "UUID | null",
+    "intervieweeEmail": "string",
+    "organizationId": "UUID",
+    "status": "scheduled",
+    "sessionToken": "64-char token",
+    "scheduledStart": "ISO8601",
+    "createdAt": "ISO8601",
+    "joinUrl": "https://app.blockd.io/join/{token}",
+    "questions": [...]
+  }
+}
+            ]]>
+          </response-201>
+        </endpoint>
+
+        <endpoint>
+          <method>GET</method>
+          <path>/api/v1/sessions</path>
+          <description>List sessions with pagination</description>
+          <auth-required>true</auth-required>
+          <query-params>
+            <param name="page" type="number" default="1"/>
+            <param name="pageSize" type="number" default="20" max="100"/>
+            <param name="status" type="string" options="scheduled,active,ended,cancelled"/>
+            <param name="interviewerId" type="UUID"/>
+            <param name="intervieweeId" type="UUID"/>
+          </query-params>
+          <response-200>
+            <![CDATA[
+{
+  "success": true,
+  "data": [
+    {
+      "id": "UUID",
+      "status": "scheduled | active | ended | cancelled",
+      "interviewerId": "UUID",
+      "intervieweeId": "UUID | null",
+      "intervieweeEmail": "string",
+      "scheduledStart": "ISO8601",
+      "actualStart": "ISO8601 | null",
+      "actualEnd": "ISO8601 | null",
+      "durationMinutes": "number | null",
+      "riskScore": "number 0-1 | null"
+    },
+    ...
+  ],
+  "pagination": { ... }
+}
+            ]]>
+          </response-200>
+        </endpoint>
+
+        <endpoint>
+          <method>GET</method>
+          <path>/api/v1/sessions/:id</path>
+          <description>Get session details</description>
+          <auth-required>true</auth-required>
+          <response-200>Full session object with questions, answers, and participants</response-200>
+        </endpoint>
+
+        <endpoint>
+          <method>POST</method>
+          <path>/api/v1/sessions/:id/start</path>
+          <description>Start a scheduled session</description>
+          <auth-required>true</auth-required>
+          <request-body>None (empty)</request-body>
+          <response-200>
+            <![CDATA[
+{
+  "success": true,
+  "data": {
+    "id": "UUID",
+    "status": "active",
+    "actualStart": "ISO8601",
+    "websocketUrl": "wss://ws.blockd.io/sessions/{id}"
+  }
+}
+            ]]>
+          </response-200>
+          <errors>
+            <error code="400">Session cannot be started (wrong state)</error>
+          </errors>
+        </endpoint>
+
+        <endpoint>
+          <method>POST</method>
+          <path>/api/v1/sessions/:id/end</path>
+          <description>End an active session</description>
+          <auth-required>true</auth-required>
+          <response-200>Session object with final status, duration, and risk score</response-200>
+        </endpoint>
+
+        <endpoint>
+          <method>DELETE</method>
+          <path>/api/v1/sessions/:id</path>
+          <description>Delete a session (only scheduled or cancelled)</description>
+          <auth-required>true</auth-required>
+          <response-204>No content</response-204>
+        </endpoint>
+      </category>
+
+      <category name="Analysis">
+        <endpoint>
+          <method>POST</method>
+          <path>/api/v1/analysis/question</path>
+          <description>Generate AI answers for a question (pre-cache)</description>
+          <auth-required>true</auth-required>
+          <request-body>
+            <![CDATA[
+{
+  "sessionId": "UUID",
+  "questionText": "string",
+  "difficulty": "easy | medium | hard | expert",
+  "expectedDuration": "number (seconds)"
+}
+            ]]>
+          </request-body>
+          <response-201>
+            <![CDATA[
+{
+  "success": true,
+  "data": {
+    "questionId": "UUID",
+    "questionText": "string",
+    "aiAnswers": [
+      { "model": "gpt-4", "answer": "...", "confidence": 0.95 },
+      { "model": "claude-3.5-sonnet", "answer": "...", "confidence": 0.93 },
+      { "model": "gemini-1.5-pro", "answer": "...", "confidence": 0.91 }
+    ]
+  }
+}
+            ]]>
+          </response-201>
+        </endpoint>
+
+        <endpoint>
+          <method>POST</method>
+          <path>/api/v1/analysis/answer</path>
+          <description>Analyze interviewee answer for AI detection</description>
+          <auth-required>true</auth-required>
+          <request-body>
+            <![CDATA[
+{
+  "questionId": "UUID",
+  "answerText": "string",
+  "answerAudioUrl": "string (optional)",
+  "transcriptionText": "string (optional)",
+  "responseTime": "number (ms)"
+}
+            ]]>
+          </request-body>
+          <response-201>
+            <![CDATA[
+{
+  "success": true,
+  "data": {
+    "analysisId": "UUID",
+    "questionId": "UUID",
+    "riskScore": 0.72,
+    "riskLevel": "medium",
+    "isAiGenerated": false,
+    "confidence": 0.85,
+    "similarityScores": {
+      "gpt4": 0.78,
+      "claude": 0.71,
+      "gemini": 0.69
+    },
+    "perplexityScore": 145.2,
+    "flags": ["high_similarity_gpt4", "fast_response"]
+  }
+}
+            ]]>
+          </response-201>
+        </endpoint>
+      </category>
+
+      <category name="Gaze Tracking">
+        <endpoint>
+          <method>GET</method>
+          <path>/api/v1/gaze/summary/:session_id</path>
+          <description>Get aggregated gaze tracking summary</description>
+          <auth-required>true</auth-required>
+          <response-200>
+            <![CDATA[
+{
+  "success": true,
+  "data": {
+    "sessionId": "UUID",
+    "totalEvents": 18000,
+    "offScreenEvents": 450,
+    "offScreenPercentage": 2.5,
+    "averageConfidence": 0.92,
+    "offScreenByDirection": {
+      "left": 120,
+      "right": 180,
+      "up": 80,
+      "down": 70
+    },
+    "anomalyScore": 0.15
+  }
+}
+            ]]>
+          </response-200>
+        </endpoint>
+      </category>
+
+      <category name="Reports">
+        <endpoint>
+          <method>GET</method>
+          <path>/api/v1/reports/:session_id</path>
+          <description>Get comprehensive session report</description>
+          <auth-required>true</auth-required>
+          <response-200>
+            <![CDATA[
+{
+  "success": true,
+  "data": {
+    "id": "UUID",
+    "sessionId": "UUID",
+    "session": { ... session details ... },
+    "participants": {
+      "interviewer": { ... },
+      "interviewee": { ... }
+    },
+    "overallRiskScore": 0.65,
+    "riskLevel": "medium",
+    "assessment": "review_required",
+    "riskBreakdown": {
+      "aiDetectionScore": 0.72,
+      "aiDetectionWeight": 0.40,
+      "securityEventsScore": 0.55,
+      "securityEventsWeight": 0.30,
+      "gazeAnomalyScore": 0.45,
+      "gazeAnomalyWeight": 0.20,
+      "timingAnomalyScore": 0.30,
+      "timingAnomalyWeight": 0.10
+    },
+    "questionsAnalysis": [
+      {
+        "questionId": "UUID",
+        "questionText": "...",
+        "answerText": "...",
+        "riskScore": 0.78,
+        "isAiGenerated": false,
+        "similarityScores": { ... },
+        "responseTime": 12500
+      }
+    ],
+    "securityEvents": {
+      "total": 5,
+      "bySeverity": { "low": 2, "medium": 2, "high": 1, "critical": 0 },
+      "events": [ ... ]
+    },
+    "gazeTracking": {
+      "totalEvents": 18000,
+      "offScreenPercentage": 2.5,
+      "averageConfidence": 0.92
+    },
+    "recommendations": [
+      {
+        "type": "warning",
+        "category": "integrity",
+        "title": "Possible AI-Generated Answers",
+        "severity": "high",
+        "actionRequired": true,
+        "description": "Review answers to questions 2 and 4"
+      }
+    ],
+    "generatedAt": "ISO8601"
+  }
+}
+            ]]>
+          </response-200>
+        </endpoint>
+      </category>
+    </endpoints>
+  </api-specification>
+
+  <websocket-specification>
+    <connection>
+      <url>
+        <development>ws://localhost:3003</development>
+        <production>wss://ws.blockd.io</production>
+      </url>
+      <library>Socket.io-client 4.x</library>
+      <authentication>
+        <method>JWT token in auth property</method>
+        <example>
+          <![CDATA[
+const socket = io('wss://ws.blockd.io', {
+  auth: {
+    token: accessToken
+  },
+  transports: ['websocket', 'polling']
+});
+          ]]>
+        </example>
+      </authentication>
+    </connection>
+
+    <heartbeat>
+      <ping-interval>25 seconds</ping-interval>
+      <ping-timeout>20 seconds</ping-timeout>
+      <missed-pongs-threshold>3</missed-pongs-threshold>
+      <note>Client must respond to 'ping' events with 'pong' containing same timestamp</note>
+    </heartbeat>
+
+    <reconnection>
+      <max-attempts>10</max-attempts>
+      <initial-delay>1000ms</initial-delay>
+      <max-delay>30000ms</max-delay>
+      <backoff-multiplier>2</backoff-multiplier>
+      <jitter>±20%</jitter>
+    </reconnection>
+
+    <client-to-server-events>
+      <event name="session:join">
+        <description>Join an interview session room</description>
+        <payload>
+          <![CDATA[
+{
+  "sessionId": "UUID"
+}
+          ]]>
+        </payload>
+        <acknowledgement>
+          <![CDATA[
+{
+  "success": true,
+  "sessionState": { ... current session state ... }
+}
+          ]]>
+        </acknowledgement>
+      </event>
+
+      <event name="session:leave">
+        <description>Leave a session room</description>
+        <payload>
+          <![CDATA[
+{
+  "sessionId": "UUID"
+}
+          ]]>
+        </payload>
+      </event>
+
+      <event name="pong">
+        <description>Heartbeat response</description>
+        <payload>
+          <![CDATA[
+{
+  "timestamp": 1700000000000
+}
+          ]]>
+        </payload>
+      </event>
+
+      <event name="chat:message">
+        <description>Send chat message in session</description>
+        <payload>
+          <![CDATA[
+{
+  "sessionId": "UUID",
+  "message": "string (1-2000 chars)"
+}
+          ]]>
+        </payload>
+      </event>
+    </client-to-server-events>
+
+    <server-to-client-events>
+      <event name="ping">
+        <description>Heartbeat request from server</description>
+        <frequency>Every 25 seconds</frequency>
+        <payload>
+          <![CDATA[
+{
+  "timestamp": 1700000000000
+}
+          ]]>
+        </payload>
+        <response>Client must respond with 'pong' event</response>
+      </event>
+
+      <event name="session:state">
+        <description>Current session state (sent on join)</description>
+        <payload>
+          <![CDATA[
+{
+  "sessionId": "UUID",
+  "status": "scheduled | active | ended | cancelled",
+  "participants": [
+    { "userId": "UUID", "role": "interviewer", "online": true }
+  ],
+  "currentQuestion": { ... } | null,
+  "startedAt": "ISO8601" | null
+}
+          ]]>
+        </payload>
+      </event>
+
+      <event name="session:started">
+        <description>Session has started</description>
+        <payload>
+          <![CDATA[
+{
+  "sessionId": "UUID",
+  "startedAt": "ISO8601",
+  "interviewer": { "id": "UUID", "name": "string" },
+  "interviewee": { "id": "UUID", "name": "string" }
+}
+          ]]>
+        </payload>
+      </event>
+
+      <event name="session:ended">
+        <description>Session has ended</description>
+        <payload>
+          <![CDATA[
+{
+  "sessionId": "UUID",
+  "endedAt": "ISO8601",
+  "duration": 3600,
+  "reason": "completed | cancelled | terminated"
+}
+          ]]>
+        </payload>
+      </event>
+
+      <event name="participant:joined">
+        <description>Participant joined session</description>
+        <payload>
+          <![CDATA[
+{
+  "userId": "UUID",
+  "role": "interviewer | interviewee",
+  "name": "string",
+  "timestamp": "ISO8601"
+}
+          ]]>
+        </payload>
+      </event>
+
+      <event name="participant:left">
+        <description>Participant left session</description>
+        <payload>
+          <![CDATA[
+{
+  "userId": "UUID",
+  "timestamp": "ISO8601"
+}
+          ]]>
+        </payload>
+      </event>
+
+      <event name="security:alert">
+        <description>Security event detected</description>
+        <payload>
+          <![CDATA[
+{
+  "eventId": "UUID",
+  "sessionId": "UUID",
+  "eventType": "suspicious_process | screen_recording_detected | vm_detected | window_focus_changed | multi_monitor_detected | copy_paste_detected | keyboard_shortcut_blocked",
+  "severity": "low | medium | high | critical",
+  "description": "string",
+  "metadata": { ... },
+  "timestamp": "ISO8601"
+}
+          ]]>
+        </payload>
+      </event>
+
+      <event name="gaze:update">
+        <description>Real-time gaze tracking data</description>
+        <frequency>10 Hz (throttled from 30 Hz)</frequency>
+        <payload>
+          <![CDATA[
+{
+  "sessionId": "UUID",
+  "userId": "UUID",
+  "gazeX": 0.5,
+  "gazeY": 0.3,
+  "isOffScreen": false,
+  "offScreenDirection": null,
+  "confidence": 0.95,
+  "timestamp": "ISO8601"
+}
+          ]]>
+        </payload>
+      </event>
+
+      <event name="question:asked">
+        <description>New question posed in session</description>
+        <payload>
+          <![CDATA[
+{
+  "sessionId": "UUID",
+  "question": {
+    "questionId": "UUID",
+    "questionText": "string",
+    "difficulty": "easy | medium | hard | expert"
+  },
+  "askedAt": "ISO8601"
+}
+          ]]>
+        </payload>
+      </event>
+
+      <event name="answer:received">
+        <description>Answer submitted by interviewee</description>
+        <payload>
+          <![CDATA[
+{
+  "sessionId": "UUID",
+  "answerId": "UUID",
+  "questionId": "UUID",
+  "intervieweeId": "UUID",
+  "timestamp": "ISO8601"
+}
+          ]]>
+        </payload>
+      </event>
+
+      <event name="chat:message">
+        <description>Chat message received</description>
+        <payload>
+          <![CDATA[
+{
+  "sessionId": "UUID",
+  "senderId": "UUID",
+  "senderRole": "interviewer | interviewee",
+  "message": "string",
+  "timestamp": "ISO8601",
+  "messageId": "UUID"
+}
+          ]]>
+        </payload>
+      </event>
+
+      <event name="error">
+        <description>Error event</description>
+        <payload>
+          <![CDATA[
+{
+  "code": "AUTHENTICATION_ERROR | AUTHORIZATION_ERROR | SESSION_NOT_FOUND | RATE_LIMIT_EXCEEDED | VALIDATION_ERROR",
+  "message": "string",
+  "details": { ... }
+}
+          ]]>
+        </payload>
+      </event>
+    </server-to-client-events>
+  </websocket-specification>
+
+  <type-definitions>
+    <type name="User">
+      <![CDATA[
+interface User {
+  id: string;
+  email: string;
+  firstName: string | null;
+  lastName: string | null;
+  role: 'admin' | 'interviewer' | 'interviewee';
+  organizationId: string | null;
+  mfaEnabled: boolean;
+  emailVerified: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+      ]]>
+    </type>
+
+    <type name="Session">
+      <![CDATA[
+interface Session {
+  id: string;
+  interviewerId: string;
+  intervieweeId: string | null;
+  intervieweeEmail: string | null;
+  organizationId: string;
+  status: 'scheduled' | 'active' | 'ended' | 'cancelled';
+  sessionToken: string | null;
+  scheduledStart: string | null;
+  actualStart: string | null;
+  actualEnd: string | null;
+  durationMinutes: number | null;
+  riskScore: number | null;
+  createdAt: string;
+  updatedAt: string;
+  questions?: Question[];
+  interviewer?: User;
+  interviewee?: User;
+}
+      ]]>
+    </type>
+
+    <type name="Question">
+      <![CDATA[
+interface Question {
+  id: string;
+  sessionId: string;
+  questionText: string;
+  difficulty: 'easy' | 'medium' | 'hard' | 'expert' | null;
+  expectedDurationSeconds: number | null;
+  askedAt: string | null;
+  orderIndex: number;
+}
+      ]]>
+    </type>
+
+    <type name="SecurityEvent">
+      <![CDATA[
+interface SecurityEvent {
+  id: string;
+  sessionId: string;
+  eventType: SecurityEventType;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  description: string;
+  metadata: Record<string, unknown>;
+  timestamp: string;
+}
+
+type SecurityEventType =
+  | 'suspicious_process'
+  | 'screen_recording_detected'
+  | 'vm_detected'
+  | 'window_focus_changed'
+  | 'multi_monitor_detected'
+  | 'unauthorized_browser'
+  | 'copy_paste_detected'
+  | 'keyboard_shortcut_blocked';
+      ]]>
+    </type>
+
+    <type name="GazeData">
+      <![CDATA[
+interface GazeData {
+  gazeX: number; // 0-1 normalized
+  gazeY: number; // 0-1 normalized
+  isOffScreen: boolean;
+  offScreenDirection: 'left' | 'right' | 'up' | 'down' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | null;
+  confidence: number; // 0-1
+  timestamp: string;
+  userId?: string;
+}
+      ]]>
+    </type>
+
+    <type name="AIAnalysisResult">
+      <![CDATA[
+interface AIAnalysisResult {
+  analysisId: string;
+  questionId: string;
+  riskScore: number; // 0-1
+  riskLevel: 'low' | 'medium' | 'high' | 'critical';
+  isAiGenerated: boolean;
+  confidence: number; // 0-1
+  similarityScores: {
+    gpt4: number;
+    claude: number;
+    gemini: number;
+  };
+  perplexityScore: number;
+  flags: string[];
+}
+      ]]>
+    </type>
+
+    <type name="SessionReport">
+      <![CDATA[
+interface SessionReport {
+  id: string;
+  sessionId: string;
+  session: Session;
+  participants: {
+    interviewer: User;
+    interviewee: User | null;
+  };
+  overallRiskScore: number;
+  riskLevel: 'low' | 'medium' | 'high' | 'critical';
+  assessment: 'pass' | 'review_required' | 'fail';
+  riskBreakdown: {
+    aiDetectionScore: number;
+    aiDetectionWeight: number;
+    securityEventsScore: number;
+    securityEventsWeight: number;
+    gazeAnomalyScore: number;
+    gazeAnomalyWeight: number;
+    timingAnomalyScore: number;
+    timingAnomalyWeight: number;
+  };
+  questionsAnalysis: QuestionAnalysis[];
+  securityEvents: {
+    total: number;
+    bySeverity: Record<string, number>;
+    events: SecurityEvent[];
+  };
+  gazeTracking: {
+    totalEvents: number;
+    offScreenPercentage: number;
+    averageConfidence: number;
+  };
+  recommendations: Recommendation[];
+  generatedAt: string;
+}
+
+interface Recommendation {
+  type: 'action' | 'warning' | 'info';
+  category: 'integrity' | 'security' | 'technical';
+  title: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  actionRequired: boolean;
+  description: string;
+}
+      ]]>
+    </type>
+
+    <type name="ApiResponse">
+      <![CDATA[
+interface ApiResponse<T> {
+  success: boolean;
+  data: T;
+  meta?: {
+    timestamp: string;
+    requestId: string;
+  };
+}
+
+interface ApiErrorResponse {
+  success: false;
+  error: {
+    code: string;
+    message: string;
+    statusCode: number;
+    details?: Record<string, unknown>;
+  };
+  meta?: {
+    timestamp: string;
+    requestId: string;
+  };
+}
+
+interface PaginatedResponse<T> {
+  success: boolean;
+  data: T[];
+  pagination: {
+    page: number;
+    pageSize: number;
+    totalPages: number;
+    totalItems: number;
+    hasNext: boolean;
+    hasPrev: boolean;
+  };
+}
+      ]]>
+    </type>
+
+    <type name="AuthTokens">
+      <![CDATA[
+interface AuthTokens {
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number; // seconds
+}
+      ]]>
+    </type>
+  </type-definitions>
+
+  <zustand-stores>
+    <store name="authStore">
+      <file>src/stores/authStore.ts</file>
+      <description>Authentication state management with persistence</description>
+      <state>
+        <![CDATA[
+interface AuthState {
+  user: User | null;
+  tokens: AuthTokens | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  error: string | null;
+  mfaRequired: boolean;
+  mfaToken: string | null;
+}
+        ]]>
+      </state>
+      <actions>
+        <![CDATA[
+interface AuthActions {
+  setUser: (user: User) => void;
+  setTokens: (tokens: AuthTokens) => void;
+  setMfaRequired: (required: boolean, token?: string) => void;
+  login: (email: string, password: string) => Promise<void>;
+  register: (data: RegisterData) => Promise<void>;
+  verifyMfa: (code: string) => Promise<void>;
+  logout: () => void;
+  refreshToken: () => Promise<void>;
+  setLoading: (loading: boolean) => void;
+  setError: (error: string | null) => void;
+  clearError: () => void;
+}
+        ]]>
+      </actions>
+      <persistence>true</persistence>
+      <persist-keys>user, tokens, isAuthenticated</persist-keys>
+    </store>
+
+    <store name="sessionStore">
+      <file>src/stores/sessionStore.ts</file>
+      <description>Current active session state</description>
+      <state>
+        <![CDATA[
+interface SessionState {
+  currentSession: Session | null;
+  currentQuestions: Question[];
+  currentQuestionIndex: number;
+  isSessionActive: boolean;
+  sessionStartTime: number | null;
+  participants: Participant[];
+}
+
+interface Participant {
+  userId: string;
+  role: string;
+  name: string;
+  online: boolean;
+}
+        ]]>
+      </state>
+      <actions>
+        <![CDATA[
+interface SessionActions {
+  setCurrentSession: (session: Session | null) => void;
+  setCurrentQuestions: (questions: Question[]) => void;
+  startSession: () => void;
+  endSession: () => void;
+  nextQuestion: () => void;
+  previousQuestion: () => void;
+  goToQuestion: (index: number) => void;
+  addParticipant: (participant: Participant) => void;
+  removeParticipant: (userId: string) => void;
+  updateParticipantStatus: (userId: string, online: boolean) => void;
+  clearSession: () => void;
+}
+        ]]>
+      </actions>
+      <persistence>false</persistence>
+    </store>
+
+    <store name="realtimeStore">
+      <file>src/stores/realtimeStore.ts</file>
+      <description>Real-time data from WebSocket</description>
+      <state>
+        <![CDATA[
+interface RealtimeState {
+  securityEvents: SecurityEvent[];
+  gazeData: GazeData[];
+  chatMessages: ChatMessage[];
+  connectionStatus: 'connecting' | 'connected' | 'disconnected' | 'error';
+  lastPingLatency: number | null;
+}
+
+interface ChatMessage {
+  id: string;
+  sessionId: string;
+  senderId: string;
+  senderRole: string;
+  message: string;
+  timestamp: string;
+}
+        ]]>
+      </state>
+      <actions>
+        <![CDATA[
+interface RealtimeActions {
+  addSecurityEvent: (event: SecurityEvent) => void;
+  addGazeData: (data: GazeData) => void;
+  addChatMessage: (message: ChatMessage) => void;
+  setConnectionStatus: (status: ConnectionStatus) => void;
+  setPingLatency: (latency: number) => void;
+  clearSecurityEvents: () => void;
+  clearGazeData: () => void;
+  clearChatMessages: () => void;
+  clearAll: () => void;
+}
+        ]]>
+      </actions>
+      <max-gaze-points>1000</max-gaze-points>
+      <max-security-events>100</max-security-events>
+    </store>
+
+    <store name="uiStore">
+      <file>src/stores/uiStore.ts</file>
+      <description>UI state and preferences</description>
+      <state>
+        <![CDATA[
+interface UIState {
+  theme: 'light' | 'dark' | 'system';
+  sidebarOpen: boolean;
+  soundAlertsEnabled: boolean;
+  modal: {
+    isOpen: boolean;
+    type: string | null;
+    data: unknown;
+  };
+}
+        ]]>
+      </state>
+      <actions>
+        <![CDATA[
+interface UIActions {
+  setTheme: (theme: 'light' | 'dark' | 'system') => void;
+  toggleSidebar: () => void;
+  setSidebarOpen: (open: boolean) => void;
+  toggleSoundAlerts: () => void;
+  openModal: (type: string, data?: unknown) => void;
+  closeModal: () => void;
+}
+        ]]>
+      </actions>
+      <persistence>true</persistence>
+      <persist-keys>theme, soundAlertsEnabled</persist-keys>
+    </store>
+  </zustand-stores>
+
+  <custom-hooks>
+    <hook name="useAuth">
+      <file>src/hooks/useAuth.ts</file>
+      <description>Authentication hook wrapping authStore with additional logic</description>
+      <returns>
+        <![CDATA[
+{
+  user: User | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  error: string | null;
+  login: (email: string, password: string) => Promise<void>;
+  register: (data: RegisterData) => Promise<void>;
+  logout: () => void;
+  verifyMfa: (code: string) => Promise<void>;
+}
+        ]]>
+      </returns>
+    </hook>
+
+    <hook name="useWebSocket">
+      <file>src/hooks/useWebSocket.ts</file>
+      <description>Socket.io connection management</description>
+      <returns>
+        <![CDATA[
+{
+  isConnected: boolean;
+  latency: number | null;
+  connectionQuality: 'excellent' | 'good' | 'fair' | 'poor';
+  joinSession: (sessionId: string) => void;
+  leaveSession: (sessionId: string) => void;
+  sendMessage: (sessionId: string, message: string) => void;
+  on: (event: string, handler: Function) => void;
+  off: (event: string, handler: Function) => void;
+}
+        ]]>
+      </returns>
+    </hook>
+
+    <hook name="useSession">
+      <file>src/hooks/useSession.ts</file>
+      <description>Session management with React Query</description>
+      <returns>
+        <![CDATA[
+{
+  session: Session | null;
+  isLoading: boolean;
+  error: Error | null;
+  startSession: () => Promise<void>;
+  endSession: () => Promise<void>;
+  refetch: () => void;
+}
+        ]]>
+      </returns>
+    </hook>
+
+    <hook name="useSessions">
+      <file>src/hooks/useSessions.ts</file>
+      <description>Sessions list with pagination and filtering</description>
+      <returns>
+        <![CDATA[
+{
+  sessions: Session[];
+  isLoading: boolean;
+  error: Error | null;
+  pagination: Pagination;
+  filters: SessionFilters;
+  setFilters: (filters: SessionFilters) => void;
+  setPage: (page: number) => void;
+  refetch: () => void;
+}
+        ]]>
+      </returns>
+    </hook>
+
+    <hook name="useSecurityEvents">
+      <file>src/hooks/useSecurityEvents.ts</file>
+      <description>Real-time security events for a session</description>
+      <returns>
+        <![CDATA[
+{
+  events: SecurityEvent[];
+  criticalCount: number;
+  highCount: number;
+  mediumCount: number;
+  lowCount: number;
+  hasUnread: boolean;
+  markAllRead: () => void;
+}
+        ]]>
+      </returns>
+    </hook>
+
+    <hook name="useGazeTracking">
+      <file>src/hooks/useGazeTracking.ts</file>
+      <description>Gaze tracking data with heatmap generation</description>
+      <returns>
+        <![CDATA[
+{
+  gazeData: GazeData[];
+  heatmapPoints: HeatmapPoint[];
+  offScreenPercentage: number;
+  currentGaze: GazeData | null;
+  isOffScreen: boolean;
+}
+        ]]>
+      </returns>
+    </hook>
+  </custom-hooks>
+
+  <component-specifications>
+    <component name="VideoPlayer">
+      <file>src/components/session/VideoPlayer.tsx</file>
+      <description>WebRTC video player with gaze overlay capability</description>
+      <props>
+        <![CDATA[
+interface VideoPlayerProps {
+  sessionId: string;
+  showGazeOverlay?: boolean;
+  onConnectionChange?: (connected: boolean) => void;
+  onQualityChange?: (quality: string) => void;
+}
+        ]]>
+      </props>
+      <features>
+        <feature>WebRTC connection via mediasoup-client</feature>
+        <feature>Gaze overlay (optional, renders gaze point on video)</feature>
+        <feature>Mute/unmute controls</feature>
+        <feature>Fullscreen toggle</feature>
+        <feature>Connection quality indicator</feature>
+        <feature>Loading and error states</feature>
+      </features>
+    </component>
+
+    <component name="SecurityEventsDashboard">
+      <file>src/components/session/SecurityEventsDashboard.tsx</file>
+      <description>Real-time security events display with filtering</description>
+      <props>
+        <![CDATA[
+interface SecurityEventsDashboardProps {
+  sessionId: string;
+  maxEvents?: number;
+  showFilters?: boolean;
+  onEventClick?: (event: SecurityEvent) => void;
+}
+        ]]>
+      </props>
+      <features>
+        <feature>Real-time event list with auto-scroll</feature>
+        <feature>Severity badges (color-coded)</feature>
+        <feature>Filter by severity</feature>
+        <feature>Sound alerts for critical events</feature>
+        <feature>Event count summary</feature>
+        <feature>Event details on click</feature>
+      </features>
+    </component>
+
+    <component name="GazeHeatmap">
+      <file>src/components/session/GazeHeatmap.tsx</file>
+      <description>Gaze tracking heatmap visualization</description>
+      <props>
+        <![CDATA[
+interface GazeHeatmapProps {
+  sessionId: string;
+  width: number;
+  height: number;
+  showStatistics?: boolean;
+}
+        ]]>
+      </props>
+      <features>
+        <feature>Canvas-based heatmap using heatmap.js</feature>
+        <feature>Real-time updates</feature>
+        <feature>Off-screen indicators at edges</feature>
+        <feature>Statistics panel (off-screen %, confidence)</feature>
+        <feature>Clear/reset button</feature>
+      </features>
+    </component>
+
+    <component name="AIDetectionResults">
+      <file>src/components/session/AIDetectionResults.tsx</file>
+      <description>AI detection analysis results display</description>
+      <props>
+        <![CDATA[
+interface AIDetectionResultsProps {
+  sessionId: string;
+  questionId?: string;
+}
+        ]]>
+      </props>
+      <features>
+        <feature>Risk score gauge/meter</feature>
+        <feature>Similarity scores by LLM model (bar chart)</feature>
+        <feature>Flags list with explanations</feature>
+        <feature>Per-question breakdown</feature>
+        <feature>Overall session risk</feature>
+      </features>
+    </component>
+
+    <component name="QuestionTimeline">
+      <file>src/components/session/QuestionTimeline.tsx</file>
+      <description>Questions and answers timeline for session</description>
+      <props>
+        <![CDATA[
+interface QuestionTimelineProps {
+  sessionId: string;
+  questions: Question[];
+  currentQuestionIndex: number;
+  onQuestionSelect?: (index: number) => void;
+}
+        ]]>
+      </props>
+      <features>
+        <feature>Vertical timeline of questions</feature>
+        <feature>Current question highlight</feature>
+        <feature>Answer status indicator</feature>
+        <feature>Risk score badge per answer</feature>
+        <feature>Response time display</feature>
+        <feature>Ask question button</feature>
+      </features>
+    </component>
+
+    <component name="SessionControls">
+      <file>src/components/session/SessionControls.tsx</file>
+      <description>Session control buttons (start, end, etc.)</description>
+      <props>
+        <![CDATA[
+interface SessionControlsProps {
+  sessionId: string;
+  status: SessionStatus;
+  onStart?: () => void;
+  onEnd?: () => void;
+  onCancel?: () => void;
+}
+        ]]>
+      </props>
+      <features>
+        <feature>Start session button (if scheduled)</feature>
+        <feature>End session button (if active)</feature>
+        <feature>Cancel session button</feature>
+        <feature>Session timer (elapsed time)</feature>
+        <feature>Confirmation dialogs</feature>
+      </features>
+    </component>
+  </component-specifications>
+
+  <styling-guidelines>
+    <colors>
+      <color name="background" light="white" dark="slate-950"/>
+      <color name="foreground" light="slate-950" dark="slate-50"/>
+      <color name="primary" light="blue-600" dark="blue-500"/>
+      <color name="destructive" light="red-600" dark="red-500"/>
+      <color name="success" light="green-600" dark="green-500"/>
+      <color name="warning" light="yellow-600" dark="yellow-500"/>
+      <color name="muted" light="slate-100" dark="slate-800"/>
+    </colors>
+
+    <severity-colors>
+      <severity level="low" color="blue"/>
+      <severity level="medium" color="yellow"/>
+      <severity level="high" color="orange"/>
+      <severity level="critical" color="red"/>
+    </severity-colors>
+
+    <risk-colors>
+      <risk range="0-0.49" color="green" label="Low"/>
+      <risk range="0.50-0.74" color="yellow" label="Medium"/>
+      <risk range="0.75-0.89" color="orange" label="High"/>
+      <risk range="0.90-1.00" color="red" label="Critical"/>
+    </risk-colors>
+
+    <responsive-breakpoints>
+      <breakpoint name="sm">640px</breakpoint>
+      <breakpoint name="md">768px</breakpoint>
+      <breakpoint name="lg">1024px</breakpoint>
+      <breakpoint name="xl">1280px</breakpoint>
+      <breakpoint name="2xl">1536px</breakpoint>
+    </responsive-breakpoints>
+  </styling-guidelines>
+
+  <error-handling>
+    <api-errors>
+      <error code="401" action="Redirect to login, clear auth state"/>
+      <error code="403" action="Show permission denied message"/>
+      <error code="404" action="Show not found page or message"/>
+      <error code="422" action="Display validation errors on form"/>
+      <error code="429" action="Show rate limit message, retry with backoff"/>
+      <error code="500" action="Show generic error message, log to console"/>
+    </api-errors>
+
+    <websocket-errors>
+      <error code="AUTHENTICATION_ERROR" action="Redirect to login"/>
+      <error code="SESSION_NOT_FOUND" action="Show error, redirect to sessions list"/>
+      <error code="RATE_LIMIT_EXCEEDED" action="Throttle events, show warning"/>
+    </websocket-errors>
+
+    <error-boundary>
+      <description>Wrap app in ErrorBoundary component</description>
+      <fallback>Show error message with reload button</fallback>
+    </error-boundary>
+  </error-handling>
+
+  <testing-requirements>
+    <unit-tests>
+      <coverage-target>80%</coverage-target>
+      <areas>
+        <area>Utility functions (formatters, validators)</area>
+        <area>Custom hooks (mocked API calls)</area>
+        <area>Zustand stores (state management)</area>
+      </areas>
+    </unit-tests>
+
+    <component-tests>
+      <library>React Testing Library</library>
+      <areas>
+        <area>Form components (validation, submission)</area>
+        <area>UI components (rendering, interactions)</area>
+        <area>Page components (routing, data display)</area>
+      </areas>
+    </component-tests>
+
+    <integration-tests>
+      <areas>
+        <area>Authentication flow</area>
+        <area>Session CRUD operations</area>
+        <area>WebSocket connections</area>
+      </areas>
+    </integration-tests>
+  </testing-requirements>
+
+  <environment-variables>
+    <variable name="VITE_API_URL" required="true" example="http://localhost:3000"/>
+    <variable name="VITE_WS_URL" required="true" example="ws://localhost:3003"/>
+    <variable name="VITE_APP_NAME" required="false" default="Blockd"/>
+    <variable name="VITE_ENABLE_DEVTOOLS" required="false" default="false"/>
+  </environment-variables>
+
+  <implementation-notes>
+    <note priority="high">
+      Implement automatic token refresh using axios interceptors. When a request fails with 401,
+      attempt to refresh the token using the refresh endpoint. If refresh fails, logout the user.
+    </note>
+    <note priority="high">
+      WebSocket connection should automatically reconnect with exponential backoff on disconnect.
+      Use the reconnection strategy defined in the websocket-specification section.
+    </note>
+    <note priority="high">
+      Gaze data should be throttled/buffered to prevent performance issues. Store only the last
+      1000 points in the realtime store and use a circular buffer approach.
+    </note>
+    <note priority="medium">
+      Implement sound alerts for critical security events. Use the Web Audio API or a sound
+      notification library. Allow users to toggle this in settings.
+    </note>
+    <note priority="medium">
+      Use React Query's staleTime and cacheTime appropriately. Sessions list can be stale for 30s,
+      but session details should be refetched more frequently during active sessions.
+    </note>
+    <note priority="low">
+      Consider implementing optimistic updates for session actions (start, end) to provide
+      immediate feedback while the API call is in progress.
+    </note>
+  </implementation-notes>
+
+  <security-considerations>
+    <consideration>
+      Store JWT tokens in memory (Zustand) rather than localStorage for XSS protection.
+      Use the persist middleware only for non-sensitive state.
+    </consideration>
+    <consideration>
+      Implement CSRF protection if using cookies for any authentication.
+    </consideration>
+    <consideration>
+      Sanitize all user inputs before displaying to prevent XSS attacks.
+    </consideration>
+    <consideration>
+      Use HTTPS in production for all API and WebSocket connections.
+    </consideration>
+    <consideration>
+      Implement rate limiting awareness - show user-friendly messages when rate limited.
+    </consideration>
+  </security-considerations>
+</interviewer-frontend-specification>
