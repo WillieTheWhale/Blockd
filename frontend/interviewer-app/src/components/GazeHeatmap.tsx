@@ -147,7 +147,7 @@ export function GazeHeatmap({
       if (!heatmapInstanceRef.current) return
 
       const dataPoints: { x: number; y: number; value: number }[] = []
-      let offScreen = { top: 0, bottom: 0, left: 0, right: 0 }
+      const offScreen = { top: 0, bottom: 0, left: 0, right: 0 }
 
       points.forEach((point) => {
         // Normalize coordinates to heatmap dimensions

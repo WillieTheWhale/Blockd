@@ -13,7 +13,7 @@ import { toast } from 'sonner'
 import { useAuthStore } from '@/stores/auth-store'
 import { registerSchema, type RegisterFormData, calculatePasswordStrength } from '@/lib/validations'
 import { USER_ROLES } from '@/lib/constants'
-import { Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
+import { Loader2, CheckCircle2 } from 'lucide-react'
 import type { UserRole } from '@/types'
 
 export function RegisterPage() {

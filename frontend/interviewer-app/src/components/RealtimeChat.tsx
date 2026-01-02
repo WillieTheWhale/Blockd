@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Send, User, Bot, Check, CheckCheck } from 'lucide-react'
+import { Send, Bot, Check, CheckCheck } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -45,7 +45,7 @@ export function RealtimeChat({
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   const { user } = useAuthStore()
-  const { chatMessages, addChatMessage, getMessagesForSession } = useRealtimeStore()
+  const { addChatMessage, getMessagesForSession } = useRealtimeStore()
   const { emit, subscribe, isConnected } = useWebSocket({ sessionId })
 
   // Get messages for current session

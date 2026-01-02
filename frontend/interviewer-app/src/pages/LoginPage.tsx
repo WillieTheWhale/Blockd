@@ -11,11 +11,11 @@ import { Separator } from '@/components/ui/separator'
 import { toast } from 'sonner'
 import { useAuthStore } from '@/stores/auth-store'
 import { loginSchema, type LoginFormData } from '@/lib/validations'
-import { Loader2, Mail } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 
 export function LoginPage() {
   const navigate = useNavigate()
-  const { login, isLoading, mfaRequired, setMfaRequired } = useAuthStore()
+  const { login, isLoading, mfaRequired, setMfaRequired: _setMfaRequired } = useAuthStore()
   const [showMfaInput, setShowMfaInput] = useState(false)
 
   const {

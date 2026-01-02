@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Home, FileText, Settings, LogOut, Menu, Users } from 'lucide-react'
+import { Home, Settings, LogOut, Menu, Users } from 'lucide-react'
 import { getInitials } from '@/lib/utils'
 
 export function MainLayout() {

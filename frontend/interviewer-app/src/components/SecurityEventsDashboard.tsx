@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import {
-  AlertTriangle,
   Eye,
   Copy,
   Users,
@@ -116,7 +115,7 @@ export function SecurityEventsDashboard({
   const [filterSeverities, setFilterSeverities] = useState<Set<SecurityEventSeverity>>(
     new Set(['low', 'medium', 'high', 'critical'])
   )
-  const [filterTypes, setFilterTypes] = useState<Set<SecurityEventType>>(new Set())
+  const [filterTypes, _setFilterTypes] = useState<Set<SecurityEventType>>(new Set())
   const [autoScroll, setAutoScroll] = useState(true)
 
   const scrollAreaRef = useRef<HTMLDivElement>(null)

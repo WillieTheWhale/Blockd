@@ -24,7 +24,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import { useWebRTC } from '@/hooks/useWebRTC'
-import type { VideoStreamStats } from '@/types'
+// VideoStreamStats type available for future use
+import type {} from '@/types'
 
 interface VideoPlayerProps {
   sessionId: string
@@ -65,8 +66,8 @@ export function VideoPlayer({
 
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [isMuted, setIsMuted] = useState(false)
-  const [volume, setVolume] = useState(1)
-  const [isPipEnabled, setIsPipEnabled] = useState(false)
+  const [_volume, setVolume] = useState(1)
+  const [_isPipEnabled, setIsPipEnabled] = useState(false)
   const [availableDevices, setAvailableDevices] = useState<MediaDeviceInfo[]>([])
   const [localError, setLocalError] = useState<string | null>(null)
 
@@ -76,8 +77,8 @@ export function VideoPlayer({
     connectionState,
     stats,
     error,
-    startProducing,
-    stopProducing,
+    startProducing: _startProducing,
+    stopProducing: _stopProducing,
     startConsuming,
     toggleVideo,
     toggleAudio,
@@ -202,9 +203,9 @@ export function VideoPlayer({
   }, [])
 
   /**
-   * Handle picture-in-picture toggle
+   * Handle picture-in-picture toggle (for future PiP button)
    */
-  const handlePictureInPicture = useCallback(async () => {
+  const _handlePictureInPicture = useCallback(async () => {
     if (!videoRef.current) return
 
     try {
@@ -231,9 +232,9 @@ export function VideoPlayer({
   }, [isMuted])
 
   /**
-   * Handle volume change
+   * Handle volume change (for future volume slider)
    */
-  const handleVolumeChange = useCallback((newVolume: number) => {
+  const _handleVolumeChange = useCallback((newVolume: number) => {
     if (videoRef.current) {
       videoRef.current.volume = newVolume
       setVolume(newVolume)

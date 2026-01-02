@@ -8,7 +8,6 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { QUERY_KEYS, API_ENDPOINTS } from '@/lib/constants'
 import apiClient from '@/lib/api-client'
-import { formatDateTime, cn } from '@/lib/utils'
 import {
   ArrowLeft,
   FileText,
@@ -19,7 +18,6 @@ import {
   Clock,
   User,
   Calendar,
-  MessageSquare,
 } from 'lucide-react'
 import { VideoPlayer } from '@/components/VideoPlayer'
 import { SecurityEventsDashboard } from '@/components/SecurityEventsDashboard'
@@ -29,7 +27,7 @@ import { RealtimeChat } from '@/components/RealtimeChat'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { useRealtimeStore } from '@/stores/realtime-store'
 import { toast } from 'sonner'
-import type { Session, Question, Answer, AIDetectionResult } from '@/types'
+import type { Session, Question, AIDetectionResult } from '@/types'
 import { format } from 'date-fns'
 
 export function SessionDetailPage() {
@@ -39,7 +37,7 @@ export function SessionDetailPage() {
   const [showGazeHeatmap, setShowGazeHeatmap] = useState(false)
   const [activeTab, setActiveTab] = useState('overview')
 
-  const { connectionStatus } = useRealtimeStore()
+  const { connectionStatus: _connectionStatus } = useRealtimeStore()
   const { subscribe, isConnected } = useWebSocket({ sessionId: id })
 
   // Fetch session data
@@ -75,7 +73,7 @@ export function SessionDetailPage() {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.SESSIONS.DETAIL(id!) })
       toast.success('Session started successfully')
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast.error(error.message || 'Failed to start session')
     },
   })
@@ -90,7 +88,7 @@ export function SessionDetailPage() {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.SESSIONS.DETAIL(id!) })
       toast.success('Session ended successfully')
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast.error(error.message || 'Failed to end session')
     },
   })
@@ -139,8 +137,9 @@ export function SessionDetailPage() {
       link.click()
       link.remove()
       toast.success('Report downloaded successfully')
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to download report')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to download report'
+      toast.error(message)
     }
   }
 

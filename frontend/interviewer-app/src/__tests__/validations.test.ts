@@ -3,8 +3,6 @@ import {
   loginSchema,
   registerSchema,
   createSessionSchema,
-  profileUpdateSchema,
-  passwordChangeSchema,
   calculatePasswordStrength,
 } from '../lib/validations'
 

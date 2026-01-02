@@ -114,8 +114,8 @@ export function AIDetectionResults({ result, className }: AIDetectionResultsProp
     { name: 'Gemini', score: result.similarityScores.gemini * 100 },
   ]
 
-  // Calculate average similarity
-  const avgSimilarity =
+  // Calculate average similarity (used for future analytics features)
+  const _avgSimilarity =
     (result.similarityScores.gpt4 + result.similarityScores.claude + result.similarityScores.gemini) / 3
 
   return (
@@ -185,7 +185,7 @@ export function AIDetectionResults({ result, className }: AIDetectionResultsProp
                 value={result.similarityScores.gpt4 * 100}
                 className="h-2"
                 style={{
-                  // @ts-ignore
+                  // @ts-expect-error CSS custom property for progress color
                   '--progress-color': getSimilarityColor(result.similarityScores.gpt4),
                 }}
               />
@@ -202,7 +202,7 @@ export function AIDetectionResults({ result, className }: AIDetectionResultsProp
                 value={result.similarityScores.claude * 100}
                 className="h-2"
                 style={{
-                  // @ts-ignore
+                  // @ts-expect-error CSS custom property for progress color
                   '--progress-color': getSimilarityColor(result.similarityScores.claude),
                 }}
               />
@@ -219,7 +219,7 @@ export function AIDetectionResults({ result, className }: AIDetectionResultsProp
                 value={result.similarityScores.gemini * 100}
                 className="h-2"
                 style={{
-                  // @ts-ignore
+                  // @ts-expect-error CSS custom property for progress color
                   '--progress-color': getSimilarityColor(result.similarityScores.gemini),
                 }}
               />

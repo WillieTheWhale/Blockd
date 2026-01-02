@@ -493,7 +493,7 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
         const transport = sendTransportRef.current || recvTransportRef.current
         if (!transport) return
 
-        const rtcStats = await transport.getStats()
+        const _rtcStats = await transport.getStats()
 
         // Parse stats (simplified - in real implementation, parse actual RTC stats)
         const statsData: VideoStreamStats = {

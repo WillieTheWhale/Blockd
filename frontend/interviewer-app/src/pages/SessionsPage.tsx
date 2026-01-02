@@ -43,7 +43,7 @@ import {
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react'
-import type { Session, SessionStatus } from '@/types'
+import type { SessionStatus } from '@/types'
 
 export function SessionsPage() {
   const navigate = useNavigate()
