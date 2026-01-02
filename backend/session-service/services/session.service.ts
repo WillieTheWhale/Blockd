@@ -1,4 +1,5 @@
-import { Prisma, InterviewSession, SessionStatus } from '@prisma/client';
+import { Prisma, SessionStatus } from '@prisma/client';
+import type { InterviewSession } from '@prisma/client';
 import prisma from '../src/database';
 import { CacheService } from '../src/redis';
 import tokenService from './token.service';
@@ -68,7 +69,7 @@ export class SessionService {
           status: 'scheduled',
           scheduledStart: new Date(dto.scheduled_start),
           durationMinutes: dto.duration_minutes,
-          metadata: dto.metadata || {},
+          metadata: dto.metadata ? JSON.parse(JSON.stringify(dto.metadata)) : {},
         },
       });
 
@@ -247,11 +248,27 @@ export class SessionService {
    */
   async updateSession(
     sessionId: string,
-    data: Partial<Pick<InterviewSession, 'status' | 'actualStart' | 'actualEnd' | 'riskScore' | 'metadata'>>
+    data: {
+      status?: SessionStatus;
+      actualStart?: Date;
+      actualEnd?: Date;
+      riskScore?: number;
+      metadata?: Record<string, unknown>;
+    }
   ): Promise<InterviewSession> {
+    const updateData: Parameters<typeof prisma.interviewSession.update>[0]['data'] = {};
+
+    if (data.status !== undefined) updateData.status = data.status;
+    if (data.actualStart !== undefined) updateData.actualStart = data.actualStart;
+    if (data.actualEnd !== undefined) updateData.actualEnd = data.actualEnd;
+    if (data.riskScore !== undefined) updateData.riskScore = data.riskScore;
+    if (data.metadata !== undefined) {
+      updateData.metadata = JSON.parse(JSON.stringify(data.metadata));
+    }
+
     const session = await prisma.interviewSession.update({
       where: { id: sessionId },
-      data,
+      data: updateData,
     });
 
     // Update cache

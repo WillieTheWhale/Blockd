@@ -81,7 +81,7 @@ model Organization {
   users              User[]
   interviewSessions  InterviewSession[]
 
-  @@index([subscriptionTier], where: { deletedAt: null })
+  @@index([subscriptionTier])
   @@map("organizations")
 }
 
@@ -106,8 +106,8 @@ model User {
   interviewsAsInterviewee InterviewSession[] @relation("IntervieweeSessions")
   auditLogs              AuditLog[]
 
-  @@index([email], where: { deletedAt: null })
-  @@index([organizationId], where: { deletedAt: null })
+  @@index([email])
+  @@index([organizationId])
   @@index([role])
   @@map("users")
 }
@@ -228,7 +228,7 @@ model GazeEvent {
   session InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([sessionId, timestamp(sort: Desc)])
-  @@index([sessionId, isOffScreen], where: { isOffScreen: true })
+  @@index([sessionId, isOffScreen])
   @@map("gaze_events")
 }
 

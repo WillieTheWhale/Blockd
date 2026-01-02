@@ -91,13 +91,13 @@ export class ReportService {
         gazeAnomalyScore: riskAnalysis.gaze_anomaly_score,
         timingAnomalyScore: riskAnalysis.timing_anomaly_score,
         securityEventsCount: securitySummary.total_events,
-        recommendations: recommendations,
-        detailedAnalysis: {
+        recommendations: JSON.parse(JSON.stringify(recommendations)),
+        detailedAnalysis: JSON.parse(JSON.stringify({
           risk_analysis: riskAnalysis,
           security_summary: securitySummary,
           gaze_analysis: gazeAnalysis,
           timing_analysis: timingAnalysis,
-        },
+        })),
       },
     });
 
@@ -169,12 +169,15 @@ export class ReportService {
    * Calculate comprehensive risk analysis
    */
   private async calculateRiskAnalysis(sessionId: string): Promise<RiskAnalysis> {
-    // Get answer analysis data
+    // Get answer analysis data with question info
     const answers = await prisma.answerAnalysis.findMany({
       where: {
         question: {
           sessionId,
         },
+      },
+      include: {
+        question: true,
       },
     });
 
@@ -209,12 +212,12 @@ export class ReportService {
     const gazeAnomalyScore = this.riskCalculator.calculateGazeAnomalyScore(
       gazeEventsCount,
       offScreenCount,
-      0, // Would need to calculate actual off-screen duration
+      0, // Would need to calculate actual off-screen duration from timestamps
       session?.durationMinutes || 0
     );
 
-    // Calculate timing anomaly score
-    const timingAnomalyScore = 0; // Would be calculated from actual timing data
+    // Calculate timing anomaly score from actual response timing data
+    const timingAnomalyScore = this.calculateTimingAnomalyScoreFromAnswers(answers);
 
     // Calculate overall risk
     const overallRiskScore = this.riskCalculator.calculateOverallRisk({
@@ -231,6 +234,9 @@ export class ReportService {
       .filter((a) => a.riskScore && parseFloat(a.riskScore.toString()) > 0.75)
       .map((a) => a.id);
 
+    // Flagged behaviors from timing anomalies
+    const flaggedBehaviors = this.extractFlaggedBehaviors(answers);
+
     return {
       overall_risk_score: overallRiskScore,
       risk_level: riskLevel,
@@ -245,8 +251,105 @@ export class ReportService {
         timing_anomaly: 0.1,
       },
       flagged_answers: flaggedAnswers,
-      flagged_behaviors: [],
+      flagged_behaviors: flaggedBehaviors,
     };
+  }
+
+  /**
+   * Calculate timing anomaly score from answer analysis data
+   */
+  private calculateTimingAnomalyScoreFromAnswers(answers: Array<{
+    responseTiming: unknown;
+    question: { difficulty: string | null } | null;
+  }>): number {
+    if (answers.length === 0) return 0;
+
+    let totalLatency = 0;
+    let totalWpm = 0;
+    let totalFillerRatio = 0;
+    let validCount = 0;
+    let unusuallyFast = 0;
+    let unusuallySlow = 0;
+
+    for (const answer of answers) {
+      const timing = answer.responseTiming as Record<string, unknown> | null;
+      if (!timing) continue;
+
+      validCount++;
+
+      const latency = Number(
+        timing.response_latency_ms ?? timing.latency_ms ?? timing.responseLatencyMs ?? 0
+      );
+      const wpm = Number(
+        timing.words_per_minute ?? timing.wpm ?? timing.speech_rate_wpm ?? 0
+      );
+      const fillerRatio = Number(
+        timing.filler_ratio ?? timing.fillerRatio ?? timing.filler_word_ratio ?? 0
+      );
+
+      totalLatency += latency;
+      totalWpm += wpm;
+      totalFillerRatio += fillerRatio;
+
+      // Check for fast/slow responses based on difficulty
+      const expectedLatency = this.getExpectedLatency(answer.question?.difficulty ?? 'medium');
+      if (latency > 0 && latency < expectedLatency * 0.25) {
+        unusuallyFast++;
+      }
+      if (latency > 60000) {
+        unusuallySlow++;
+      }
+    }
+
+    if (validCount === 0) return 0;
+
+    const avgLatency = totalLatency / validCount;
+    const avgWpm = totalWpm / validCount;
+    const avgFillerRatio = totalFillerRatio / validCount;
+
+    return this.riskCalculator.calculateTimingAnomalyScore(
+      avgLatency,
+      avgWpm,
+      avgFillerRatio,
+      unusuallyFast,
+      unusuallySlow,
+      answers.length
+    );
+  }
+
+  /**
+   * Extract flagged behaviors from answer timing data
+   */
+  private extractFlaggedBehaviors(answers: Array<{
+    responseTiming: unknown;
+    question: { questionOrder: number | null } | null;
+  }>): string[] {
+    const behaviors: string[] = [];
+
+    for (const answer of answers) {
+      const timing = answer.responseTiming as Record<string, unknown> | null;
+      if (!timing) continue;
+
+      const anomalies = timing.anomalies as Record<string, boolean> | undefined;
+      const questionNum = answer.question?.questionOrder ?? 0;
+
+      if (anomalies) {
+        if (anomalies.instant_response) {
+          behaviors.push(`Q${questionNum}: Instant response (possible pre-prepared answer)`);
+        }
+        if (anomalies.robotic_speech_pattern) {
+          behaviors.push(`Q${questionNum}: Robotic speech pattern detected`);
+        }
+        if (anomalies.delayed_then_fluent) {
+          behaviors.push(`Q${questionNum}: Long pause followed by fluent answer`);
+        }
+        if (anomalies.no_filler_words) {
+          behaviors.push(`Q${questionNum}: Unusual absence of natural hesitation`);
+        }
+      }
+    }
+
+    return [...new Set(behaviors)]; // Remove duplicates
   }
 
   /**
@@ -340,21 +443,118 @@ export class ReportService {
           sessionId,
         },
       },
+      include: {
+        question: true,
+      },
     });
 
     if (answers.length === 0) return undefined;
 
+    // Parse and aggregate timing data from response_timing JSONB field
+    let totalLatency = 0;
+    let totalWpm = 0;
+    let totalPauseCount = 0;
+    let totalFillerRatio = 0;
+    let validTimingCount = 0;
+    let unusuallyFast = 0;
+    let unusuallySlow = 0;
+    const suspiciousPatterns: string[] = [];
+
+    for (const answer of answers) {
+      const timing = answer.responseTiming as Record<string, unknown> | null;
+      if (!timing) continue;
+
+      validTimingCount++;
+
+      // Extract timing metrics (handle different field naming conventions)
+      const latency = Number(
+        timing.response_latency_ms ?? timing.latency_ms ?? timing.responseLatencyMs ?? 0
+      );
+      const wpm = Number(
+        timing.words_per_minute ?? timing.wpm ?? timing.speech_rate_wpm ?? 0
+      );
+      const pauseCount = Number(
+        timing.pause_count ?? timing.pauseCount ?? 0
+      );
+      const fillerRatio = Number(
+        timing.filler_ratio ?? timing.fillerRatio ?? timing.filler_word_ratio ?? 0
+      );
+
+      totalLatency += latency;
+      totalWpm += wpm;
+      totalPauseCount += pauseCount;
+      totalFillerRatio += fillerRatio;
+
+      // Detect unusually fast responses (< 2 seconds for complex questions)
+      const difficulty = answer.question?.difficulty;
+      const expectedLatency = this.getExpectedLatency(difficulty ?? 'medium');
+      if (latency > 0 && latency < expectedLatency * 0.25) {
+        unusuallyFast++;
+      }
+
+      // Detect unusually slow responses (> 60 seconds)
+      if (latency > 60000) {
+        unusuallySlow++;
+      }
+
+      // Check for suspicious patterns in anomalies field
+      const anomalies = timing.anomalies as Record<string, boolean> | undefined;
+      if (anomalies) {
+        if (anomalies.instant_response) {
+          suspiciousPatterns.push(`Instant response detected for question ${answer.question?.questionOrder ?? 'unknown'}`);
+        }
+        if (anomalies.unnatural_consistency) {
+          suspiciousPatterns.push('Unnatural speech consistency detected');
+        }
+        if (anomalies.robotic_speech_pattern) {
+          suspiciousPatterns.push('Robotic speech pattern detected');
+        }
+        if (anomalies.delayed_then_fluent) {
+          suspiciousPatterns.push('Delayed then fluent pattern detected (possible pre-prepared answer)');
+        }
+      }
+    }
+
+    // Calculate averages
+    const avgLatency = validTimingCount > 0 ? totalLatency / validTimingCount : 0;
+    const avgWpm = validTimingCount > 0 ? totalWpm / validTimingCount : 0;
+    const avgPauseCount = validTimingCount > 0 ? totalPauseCount / validTimingCount : 0;
+    const avgFillerRatio = validTimingCount > 0 ? totalFillerRatio / validTimingCount : 0;
+
+    // Calculate timing anomaly score
+    const anomalyScore = this.riskCalculator.calculateTimingAnomalyScore(
+      avgLatency,
+      avgWpm,
+      avgFillerRatio,
+      unusuallyFast,
+      unusuallySlow,
+      answers.length
+    );
+
     return {
       total_answers: answers.length,
-      avg_response_latency_ms: 0,
-      avg_words_per_minute: 0,
-      avg_pause_count: 0,
-      avg_filler_ratio: 0,
-      anomaly_score: 0,
-      unusually_fast_responses: 0,
-      unusually_slow_responses: 0,
-      suspicious_patterns: [],
+      avg_response_latency_ms: Math.round(avgLatency),
+      avg_words_per_minute: Math.round(avgWpm),
+      avg_pause_count: Math.round(avgPauseCount * 10) / 10,
+      avg_filler_ratio: Math.round(avgFillerRatio * 1000) / 1000,
+      anomaly_score: Math.round(anomalyScore * 100) / 100,
+      unusually_fast_responses: unusuallyFast,
+      unusually_slow_responses: unusuallySlow,
+      suspicious_patterns: [...new Set(suspiciousPatterns)], // Remove duplicates
     };
+  }
+
+  /**
+   * Get expected response latency by question difficulty
+   */
+  private getExpectedLatency(difficulty: string): number {
+    const latencyMap: Record<string, number> = {
+      easy: 5000,      // 5 seconds
+      medium: 10000,   // 10 seconds
+      hard: 20000,     // 20 seconds
+      expert: 30000,   // 30 seconds
+    };
+    return latencyMap[difficulty] ?? 10000;
   }
 
   /**

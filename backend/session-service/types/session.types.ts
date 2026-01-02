@@ -201,8 +201,7 @@ export interface SecurityEventResponse {
 
 // Question management
 export interface AskQuestionDTO {
-  question_id: string;
-  asked_by: string; // user_id
+  asked_by: string; // user_id - question_id comes from URL params
 }
 
 export interface SubmitAnswerDTO {

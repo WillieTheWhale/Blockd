@@ -1,10 +1,10 @@
-import amqp, { Connection, Channel } from 'amqplib';
+import amqp from 'amqplib';
 import { config } from './config';
 import { MessageQueueError } from '../lib/errors';
 
 // RabbitMQ connection singleton
-let connection: Connection | null = null;
-let channel: Channel | null = null;
+let connection: amqp.ChannelModel | null = null;
+let channel: amqp.Channel | null = null;
 
 export async function connectMessageQueue(): Promise<void> {
   try {
@@ -20,7 +20,7 @@ export async function connectMessageQueue(): Promise<void> {
     console.log('RabbitMQ connected');
 
     // Handle connection errors
-    connection.on('error', (error) => {
+    connection.on('error', (error: Error) => {
       console.error('RabbitMQ connection error:', error);
     });
 
@@ -50,7 +50,7 @@ export async function disconnectMessageQueue(): Promise<void> {
   }
 }
 
-export function getChannel(): Channel {
+export function getChannel(): amqp.Channel {
   if (!channel) {
     throw new MessageQueueError('getChannel', 'Channel not initialized');
   }
@@ -58,7 +58,7 @@ export function getChannel(): Channel {
 }
 
 export class MessageQueueService {
-  private channel: Channel;
+  private channel: amqp.Channel;
 
   constructor() {
     this.channel = getChannel();

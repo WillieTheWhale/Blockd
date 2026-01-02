@@ -39,7 +39,7 @@ export class SecurityEventService {
         eventType: dto.event_type,
         severity: dto.severity,
         description: dto.description,
-        metadata: dto.metadata || {},
+        metadata: dto.metadata ? JSON.parse(JSON.stringify(dto.metadata)) : {},
       },
     });
 
@@ -125,7 +125,7 @@ export class SecurityEventService {
       latest_critical: null as any,
     };
 
-    events.forEach((event) => {
+    for (const event of events) {
       stats.by_severity[event.severity]++;
 
       if (!stats.by_type[event.eventType]) {
@@ -136,7 +136,7 @@ export class SecurityEventService {
       if (event.severity === 'critical' && !stats.latest_critical) {
         stats.latest_critical = event;
       }
-    });
+    }
 
     return stats;
   }
@@ -155,9 +155,10 @@ export class SecurityEventService {
       critical: 1.0,
     };
 
-    const totalRisk = events.reduce((sum, event) => {
-      return sum + severityWeights[event.severity];
-    }, 0);
+    let totalRisk = 0;
+    for (const event of events) {
+      totalRisk += severityWeights[event.severity];
+    }
 
     // Normalize to 0-1 scale (max 10 critical events = 1.0)
     const riskScore = Math.min(1.0, totalRisk / 10);
@@ -189,9 +190,9 @@ export class SecurityEventService {
       critical: 0,
     };
 
-    events.forEach((event) => {
+    for (const event of events) {
       counts[event.severity]++;
-    });
+    }
 
     return counts;
   }

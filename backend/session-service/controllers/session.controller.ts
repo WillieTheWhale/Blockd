@@ -48,7 +48,8 @@ export class SessionController {
       const dto = createSessionSchema.parse(request.body) as CreateSessionDTO;
 
       // Get interviewer ID from JWT (would be extracted from auth middleware)
-      const interviewerId = (request.user as any)?.userId || 'mock-interviewer-id';
+      const user = (request as FastifyRequest & { user?: { userId: string } }).user;
+      const interviewerId = user?.userId || 'mock-interviewer-id';
 
       // Create session
       const session = await sessionService.createSession(interviewerId, dto);

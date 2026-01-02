@@ -92,10 +92,14 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.setErrorHandler((error, request, reply) => {
     app.log.error(error);
 
-    reply.status(error.statusCode || 500).send({
-      statusCode: error.statusCode || 500,
-      error: error.name || 'InternalServerError',
-      message: error.message || 'An unexpected error occurred',
+    const statusCode = (error as { statusCode?: number }).statusCode || 500;
+    const errorName = error instanceof Error ? error.name : 'InternalServerError';
+    const message = error instanceof Error ? error.message : 'An unexpected error occurred';
+
+    reply.status(statusCode).send({
+      statusCode,
+      error: errorName,
+      message,
       timestamp: new Date().toISOString(),
     });
   });
