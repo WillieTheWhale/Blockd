@@ -4,6 +4,7 @@ Uses LSTM autoencoder to detect unusual gaze patterns
 """
 
 import numpy as np
+from collections import deque
 from typing import List, Dict, Tuple, Optional
 from datetime import datetime
 import structlog
@@ -50,8 +51,8 @@ class AnomalyDetectionService:
             logger.warning("lstm_detector_initialization_failed", error=str(e))
             self.detector = None
 
-        # Gaze sequence buffer
-        self.gaze_buffer: List[Tuple[float, float]] = []
+        # Gaze sequence buffer (deque with maxlen for O(1) append/remove)
+        self.gaze_buffer: deque[Tuple[float, float]] = deque(maxlen=self.sequence_length)
 
         # Detected anomalies
         self.anomalies: List[Dict] = []
@@ -78,12 +79,8 @@ class AnomalyDetectionService:
             Anomaly info if detected, None otherwise
         """
         try:
-            # Add to buffer
+            # Add to buffer (deque with maxlen automatically removes oldest)
             self.gaze_buffer.append((x, y))
-
-            # Keep buffer at sequence length
-            if len(self.gaze_buffer) > self.sequence_length:
-                self.gaze_buffer.pop(0)
 
             # Check for anomalies if buffer is full
             if check_anomaly and len(self.gaze_buffer) == self.sequence_length:

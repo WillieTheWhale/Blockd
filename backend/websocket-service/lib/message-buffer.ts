@@ -3,7 +3,7 @@
  * Buffers messages for offline users and delivers on reconnection
  */
 
-import { Socket } from 'socket.io';
+import { Server, Socket } from 'socket.io';
 import {
   BufferedMessage,
   MessagePriority,
@@ -19,6 +19,7 @@ import { MessageBufferOverflowError } from './errors';
 export class MessageBuffer {
   private buffers: Map<string, BufferedMessage[]> = new Map();
   private options: Required<MessageBufferOptions>;
+  private io: Server | null = null;
 
   constructor(options: MessageBufferOptions = {}) {
     this.options = {
@@ -29,6 +30,14 @@ export class MessageBuffer {
 
     // Start cleanup interval
     setInterval(() => this.cleanup(), 60000); // Cleanup every minute
+  }
+
+  /**
+   * Set the Socket.io server instance for socket lookup
+   */
+  setServer(io: Server): void {
+    this.io = io;
+    logger.debug('MessageBuffer initialized with Socket.io server');
   }
 
   /**
@@ -296,11 +305,20 @@ export class MessageBuffer {
   }
 
   /**
-   * Get socket by ID (placeholder - should be implemented with actual socket lookup)
+   * Get socket by ID from Socket.io server
    */
   private getSocketById(socketId: string): Socket | null {
-    // This should be implemented to get socket from Socket.io server
-    // For now, returning null as placeholder
-    return null;
+    if (!this.io) {
+      logger.warn('MessageBuffer: Socket.io server not set, call setServer() first');
+      return null;
+    }
+
+    const socket = this.io.sockets.sockets.get(socketId);
+    if (!socket) {
+      logger.debug('Socket not found', { socketId });
+      return null;
+    }
+
+    return socket;
   }
 }

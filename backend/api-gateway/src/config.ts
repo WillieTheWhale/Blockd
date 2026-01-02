@@ -44,6 +44,7 @@ export interface Config {
   cors: {
     origin: string | string[];
     credentials: boolean;
+    allowNoOrigin: boolean;
   };
 
   // Rate Limiting Configuration
@@ -157,6 +158,7 @@ export const config: Config = {
   cors: {
     origin: parseCorsOrigins(getEnv('CORS_ORIGINS', 'http://localhost:3000')),
     credentials: getEnvBoolean('CORS_CREDENTIALS', true),
+    allowNoOrigin: getEnvBoolean('CORS_ALLOW_NO_ORIGIN', false),
   },
 
   rateLimit: {

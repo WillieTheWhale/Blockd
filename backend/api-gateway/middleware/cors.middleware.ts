@@ -22,14 +22,24 @@ export const corsOptions: CorsOptions = {
   origin: (origin: string, callback: (err: Error | null, allow?: boolean) => void) => {
     const allowedOrigins = config.cors.origin;
 
-    // Allow requests with no origin (mobile apps, curl, etc.)
+    // Reject requests with no origin in production
+    // No-origin requests (curl, Postman, etc.) should use API keys instead of CORS
     if (!origin) {
-      callback(null, true);
+      // In development, allow no-origin for testing tools
+      if (config.cors.allowNoOrigin || process.env.NODE_ENV === 'development') {
+        callback(null, true);
+        return;
+      }
+      callback(new Error('Origin header is required'), false);
       return;
     }
 
-    // Allow all origins if configured as '*'
+    // Allow all origins if configured as '*' (development only)
     if (allowedOrigins === '*') {
+      if (process.env.NODE_ENV === 'production') {
+        callback(new Error('Wildcard CORS not allowed in production'), false);
+        return;
+      }
       callback(null, true);
       return;
     }

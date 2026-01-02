@@ -87,21 +87,51 @@ export const config = {
  * Validate required configuration
  */
 export function validateConfig(): void {
-  const requiredVars = [
-    'DATABASE_URL',
-    'MFA_ENCRYPTION_KEY'
-  ];
+  const isProduction = process.env.NODE_ENV === 'production';
+  const errors: string[] = [];
+  const warnings: string[] = [];
 
+  // Check required environment variables
+  const requiredVars = ['DATABASE_URL'];
   const missing = requiredVars.filter(key => !process.env[key]);
 
   if (missing.length > 0) {
-    console.warn(`⚠️  Missing environment variables: ${missing.join(', ')}`);
-    console.warn('⚠️  Some features may not work correctly');
+    if (isProduction) {
+      errors.push(`Missing required environment variables: ${missing.join(', ')}`);
+    } else {
+      warnings.push(`Missing environment variables: ${missing.join(', ')}`);
+    }
   }
 
-  // Validate MFA encryption key length
-  if (process.env.MFA_ENCRYPTION_KEY && process.env.MFA_ENCRYPTION_KEY.length !== 64) {
-    console.warn('⚠️  MFA_ENCRYPTION_KEY should be 64 characters (32 bytes hex)');
+  // Validate MFA encryption key (required in production)
+  const mfaKey = process.env.MFA_ENCRYPTION_KEY;
+  if (!mfaKey || mfaKey.length === 0) {
+    if (isProduction) {
+      errors.push('MFA_ENCRYPTION_KEY is required in production');
+    } else {
+      warnings.push('MFA_ENCRYPTION_KEY not set - MFA features will be disabled');
+    }
+  } else if (mfaKey.length !== 64) {
+    errors.push(`MFA_ENCRYPTION_KEY must be 64 characters (32 bytes hex), got ${mfaKey.length} characters`);
+  } else if (!/^[0-9a-fA-F]+$/.test(mfaKey)) {
+    errors.push('MFA_ENCRYPTION_KEY must contain only hexadecimal characters (0-9, a-f, A-F)');
+  }
+
+  // Log warnings
+  for (const warning of warnings) {
+    console.warn(`⚠️  ${warning}`);
+  }
+
+  // Throw errors in production, warn in development
+  if (errors.length > 0) {
+    console.error('Configuration validation errors:');
+    for (const error of errors) {
+      console.error(`  ❌ ${error}`);
+    }
+    if (isProduction) {
+      throw new Error(`Configuration validation failed: ${errors.join('; ')}`);
+    }
+    console.warn('⚠️  Running with invalid configuration (development mode only)');
   }
 }
 

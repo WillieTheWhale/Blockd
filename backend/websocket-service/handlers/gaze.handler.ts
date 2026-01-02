@@ -162,11 +162,16 @@ const gazeBuffer: Map<string, GazeUpdateData[]> = new Map();
 const BUFFER_FLUSH_SIZE = 50; // Flush when buffer reaches this size
 const BUFFER_FLUSH_INTERVAL = 5000; // Flush every 5 seconds
 
+// Track in-flight flush operations to prevent concurrent flushes
+const flushInProgress = new Set<string>();
+
 // Set up interval for flushing buffers
 setInterval(() => {
   for (const [sessionId, buffer] of gazeBuffer.entries()) {
-    if (buffer.length > 0) {
-      flushGazeBuffer(sessionId);
+    if (buffer.length > 0 && !flushInProgress.has(sessionId)) {
+      flushGazeBuffer(sessionId).catch((error) => {
+        logger.error('Unhandled error in scheduled flush', error, { sessionId });
+      });
     }
   }
 }, BUFFER_FLUSH_INTERVAL);
@@ -175,16 +180,24 @@ setInterval(() => {
  * Flush gaze buffer to database
  */
 async function flushGazeBuffer(sessionId: string): Promise<void> {
+  // Prevent concurrent flushes for the same session
+  if (flushInProgress.has(sessionId)) {
+    return;
+  }
+
   const buffer = gazeBuffer.get(sessionId);
   if (!buffer || buffer.length === 0) return;
 
-  // Clear buffer immediately to prevent race conditions
+  flushInProgress.add(sessionId);
+
+  // Take a snapshot of current buffer and clear only what we're processing
+  const dataToFlush = [...buffer];
   gazeBuffer.set(sessionId, []);
 
   try {
     // Batch insert gaze events
     await prisma.gazeEvent.createMany({
-      data: buffer.map((data) => ({
+      data: dataToFlush.map((data) => ({
         sessionId: data.session_id,
         timestamp: new Date(data.timestamp),
         gazeX: new Decimal(data.gaze_x.toFixed(8)),
@@ -199,13 +212,15 @@ async function flushGazeBuffer(sessionId: string): Promise<void> {
 
     logger.debug('Flushed gaze buffer to database', {
       sessionId,
-      count: buffer.length,
+      count: dataToFlush.length,
     });
   } catch (error) {
-    logger.error('Failed to flush gaze buffer', error, { sessionId, count: buffer.length });
-    // Put data back in buffer for retry
-    const currentBuffer = gazeBuffer.get(sessionId) || [];
-    gazeBuffer.set(sessionId, [...buffer, ...currentBuffer]);
+    logger.error('Failed to flush gaze buffer', error, { sessionId, count: dataToFlush.length });
+    // Put data back at the FRONT of buffer for retry (maintain chronological order)
+    const newData = gazeBuffer.get(sessionId) || [];
+    gazeBuffer.set(sessionId, [...dataToFlush, ...newData]);
+  } finally {
+    flushInProgress.delete(sessionId);
   }
 }
 

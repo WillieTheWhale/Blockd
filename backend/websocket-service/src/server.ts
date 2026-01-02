@@ -99,6 +99,9 @@ class WebSocketServer {
    * Setup event handlers
    */
   private setupHandlers(): void {
+    // Initialize message buffer with Socket.io server for socket lookup
+    this.messageBuffer.setServer(this.io);
+
     // Connection/disconnection handler
     setupConnectionHandler(this.io, this.roomManager, this.messageBuffer);
 
