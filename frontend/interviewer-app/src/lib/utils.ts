@@ -88,13 +88,24 @@ export function capitalize(str: string): string {
 }
 
 /**
- * Get initials from a name
+ * Get initials from a name (always returns 2 characters when possible)
  */
 export function getInitials(name: string): string {
-  return name
-    .split(' ')
+  const parts = name.trim().split(' ').filter(Boolean)
+
+  if (parts.length === 0) {
+    return ''
+  }
+
+  if (parts.length === 1) {
+    // Single name: take first two letters
+    return parts[0].slice(0, 2).toUpperCase()
+  }
+
+  // Multiple names: take first letter of first two words
+  return parts
+    .slice(0, 2)
     .map((n) => n[0])
     .join('')
     .toUpperCase()
-    .slice(0, 2)
 }

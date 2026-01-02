@@ -8,14 +8,16 @@ describe('utils', () => {
     })
 
     it('should handle conditional classes', () => {
-      expect(cn('foo', false && 'bar', 'baz')).toBe('foo baz')
+      const shouldIncludeBar = false
+      expect(cn('foo', shouldIncludeBar && 'bar', 'baz')).toBe('foo baz')
     })
   })
 
   describe('formatDate', () => {
     it('should format date correctly', () => {
-      const date = new Date('2024-01-01')
-      expect(formatDate(date)).toBe('January 1, 2024')
+      // Use noon UTC to avoid timezone issues (midnight UTC can roll to previous day in western timezones)
+      const date = new Date('2024-01-15T12:00:00')
+      expect(formatDate(date)).toBe('January 15, 2024')
     })
   })
 
