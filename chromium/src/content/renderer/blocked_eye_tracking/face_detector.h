@@ -5,6 +5,7 @@
 #ifndef CONTENT_RENDERER_BLOCKED_EYE_TRACKING_FACE_DETECTOR_H_
 #define CONTENT_RENDERER_BLOCKED_EYE_TRACKING_FACE_DETECTOR_H_
 
+#include <array>
 #include <memory>
 #include <vector>
 
@@ -28,8 +29,15 @@ class FaceDetector {
   };
 
   struct FaceLandmarks {
+    FaceLandmarks();
+    ~FaceLandmarks();
+    FaceLandmarks(const FaceLandmarks&);
+    FaceLandmarks& operator=(const FaceLandmarks&);
+    FaceLandmarks(FaceLandmarks&&) noexcept;
+    FaceLandmarks& operator=(FaceLandmarks&&) noexcept;
+
     std::vector<Landmark> landmarks;  // 468 points
-    float confidence;
+    float confidence = 0.0f;
 
     // Key landmark indices (MediaPipe FaceMesh topology).
     static constexpr int kLeftEyeCenter = 468;
@@ -37,13 +45,15 @@ class FaceDetector {
     static constexpr int kLeftIrisCenter = 468;
     static constexpr int kRightIrisCenter = 473;
 
-    // Eye contour indices.
-    static constexpr int kLeftEyeIndices[] = {
-        33, 7, 163, 144, 145, 153, 154, 155, 133,
-        173, 157, 158, 159, 160, 161, 246};
-    static constexpr int kRightEyeIndices[] = {
-        362, 382, 381, 380, 374, 373, 390, 249,
-        263, 466, 388, 387, 386, 385, 384, 398};
+    // Eye contour landmark indices (16 points per eye).
+    static constexpr std::array<int, 16> kLeftEyeIndices = {
+      33, 7, 163, 144, 145, 153, 154, 155,
+      133, 173, 157, 158, 159, 160, 161, 246
+    };
+    static constexpr std::array<int, 16> kRightEyeIndices = {
+      362, 382, 381, 380, 374, 373, 390, 249,
+      263, 466, 388, 387, 386, 385, 384, 398
+    };
   };
 
   FaceDetector();

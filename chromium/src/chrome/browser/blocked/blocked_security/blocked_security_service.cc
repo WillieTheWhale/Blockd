@@ -10,12 +10,13 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/values.h"
+#include "build/build_config.h"
 
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
 #include "chrome/browser/blocked/blocked_security/platform/windows/windows_security_monitor.h"
-#elif defined(OS_MAC)
+#elif BUILDFLAG(IS_MAC)
 #include "chrome/browser/blocked/blocked_security/platform/macos/macos_security_monitor.h"
-#elif defined(OS_LINUX)
+#elif BUILDFLAG(IS_LINUX)
 #include "chrome/browser/blocked/blocked_security/platform/linux/linux_security_monitor.h"
 #endif
 
@@ -63,30 +64,17 @@ ProcessInfo::ProcessInfo(const std::string& name,
 
 ProcessInfo::~ProcessInfo() = default;
 
-// BlockedSecurityService::PlatformMonitor (platform-specific interface)
-class BlockedSecurityService::PlatformMonitor {
- public:
-  virtual ~PlatformMonitor() = default;
-
-  virtual std::vector<ProcessInfo> GetRunningProcesses() = 0;
-  virtual bool IsVirtualMachineDetected() = 0;
-  virtual bool IsScreenRecordingActive() = 0;
-  virtual std::string GetFocusedWindowTitle() = 0;
-  virtual void StartClipboardMonitoring() = 0;
-  virtual void StopClipboardMonitoring() = 0;
-};
-
 // BlockedSecurityService implementation
 BlockedSecurityService::BlockedSecurityService() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
   platform_monitor_ = std::make_unique<WindowsSecurityMonitor>();
   LOG(INFO) << "Blocked security service initialized (Windows platform)";
-#elif defined(OS_MAC)
+#elif BUILDFLAG(IS_MAC)
   platform_monitor_ = std::make_unique<MacSecurityMonitor>();
   LOG(INFO) << "Blocked security service initialized (macOS platform)";
-#elif defined(OS_LINUX)
+#elif BUILDFLAG(IS_LINUX)
   platform_monitor_ = std::make_unique<LinuxSecurityMonitor>();
   LOG(INFO) << "Blocked security service initialized (Linux platform)";
 #else
@@ -368,10 +356,9 @@ void BlockedSecurityService::ReportSecurityEvent(const SecurityEvent& event) {
   }
 
   // Record metric
-  base::UmaHistogramEnumeration("Blocked.Security.EventType",
-                                static_cast<int>(event.type));
+  base::UmaHistogramEnumeration("Blocked.Security.EventType", event.type);
   base::UmaHistogramEnumeration("Blocked.Security.EventSeverity",
-                                static_cast<int>(event.severity));
+                                event.severity);
 }
 
 void BlockedSecurityService::UpdateRiskLevel() {

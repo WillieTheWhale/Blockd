@@ -9,8 +9,10 @@
 #include <vector>
 
 #include "base/memory/weak_ptr.h"
+#include "base/no_destructor.h"
 #include "base/time/time.h"
-#include "chrome/browser/blocked/public/mojom/eye_tracking.mojom.h"
+#include "content/public/common/blocked_mojom/blocked_mojom_traits.h"
+#include "content/public/common/blocked_mojom/eye_tracking.mojom.h"
 #include "mojo/public/cpp/bindings/remote.h"
 
 namespace content {
@@ -62,12 +64,14 @@ class GazeDataSender {
   int GetBufferedCount() const { return static_cast<int>(gaze_buffer_.size()); }
 
  private:
+  friend class base::NoDestructor<GazeDataSender>;
+
   GazeDataSender();
   ~GazeDataSender();
 
   void BufferGazeData(const GazeDataPoint& point);
   void SendBufferedData();
-  blocked::mojom::GazeDataPtr CreateMojoGazeData(const GazeDataPoint& point);
+  blocked::GazeData CreateNativeGazeData(const GazeDataPoint& point);
 
   mojo::Remote<blocked::mojom::EyeTrackingHost> host_;
 

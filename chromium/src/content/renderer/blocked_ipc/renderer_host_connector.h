@@ -9,10 +9,12 @@
 #include <string>
 #include <vector>
 
+#include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/blocked/public/mojom/eye_tracking.mojom.h"
-#include "chrome/browser/blocked/public/mojom/session.mojom.h"
-#include "chrome/browser/blocked/public/mojom/video_capture.mojom.h"
+#include "base/no_destructor.h"
+#include "content/public/common/blocked_mojom/eye_tracking.mojom.h"
+#include "content/public/common/blocked_mojom/session.mojom.h"
+#include "content/public/common/blocked_mojom/video_capture.mojom.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/receiver.h"
@@ -89,6 +91,8 @@ class RendererHostConnector : public blocked::mojom::BlockedSessionClient {
   void EndSession() override;
 
  private:
+  friend class base::NoDestructor<RendererHostConnector>;
+
   RendererHostConnector();
   ~RendererHostConnector() override;
 
@@ -110,16 +114,12 @@ class RendererHostConnector : public blocked::mojom::BlockedSessionClient {
 
   // Eye tracking interfaces.
   mojo::Remote<blocked::mojom::EyeTrackingHost> eye_tracking_host_;
-  mojo::Receiver<blocked::mojom::EyeTrackingClient>* eye_tracking_client_ =
-      nullptr;
 
   // Video capture interfaces.
   mojo::Remote<blocked::mojom::VideoCaptureHost> video_capture_host_;
-  mojo::Receiver<blocked::mojom::VideoCaptureClient>* video_capture_client_ =
-      nullptr;
 
   // Observers.
-  std::vector<Observer*> observers_;
+  std::vector<raw_ptr<Observer>> observers_;
 
   base::WeakPtrFactory<RendererHostConnector> weak_factory_{this};
 };

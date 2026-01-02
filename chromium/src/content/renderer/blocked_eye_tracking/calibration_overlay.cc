@@ -4,6 +4,8 @@
 
 #include "content/renderer/blocked_eye_tracking/calibration_overlay.h"
 
+#include <array>
+
 #include "base/functional/bind.h"
 #include "base/logging.h"
 #include "third_party/blink/public/web/web_local_frame.h"
@@ -13,14 +15,20 @@ namespace content {
 
 namespace {
 
+// Calibration point with x,y coordinates.
+struct CalibrationGridPoint {
+  float x;
+  float y;
+};
+
 // 9-point calibration grid (3x3).
-constexpr float kCalibrationGrid[][2] = {
+constexpr std::array<CalibrationGridPoint, 9> kCalibrationGrid = {{
     {0.1f, 0.1f}, {0.5f, 0.1f}, {0.9f, 0.1f},
     {0.1f, 0.5f}, {0.5f, 0.5f}, {0.9f, 0.5f},
     {0.1f, 0.9f}, {0.5f, 0.9f}, {0.9f, 0.9f}
-};
+}};
 
-constexpr int kNumCalibrationPoints = 9;
+constexpr size_t kNumCalibrationPoints = 9;
 
 // Duration to show each calibration point (milliseconds).
 constexpr int kPointDurationMs = 2000;
@@ -133,10 +141,10 @@ void CalibrationOverlay::Show(CalibrationCallback callback,
 
   // Setup calibration points.
   calibration_points_.clear();
-  for (int i = 0; i < kNumCalibrationPoints; i++) {
+  for (const auto& grid_point : kCalibrationGrid) {
     CalibrationPoint point;
-    point.x = kCalibrationGrid[i][0];
-    point.y = kCalibrationGrid[i][1];
+    point.x = grid_point.x;
+    point.y = grid_point.y;
     calibration_points_.push_back(point);
   }
 

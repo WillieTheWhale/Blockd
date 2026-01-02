@@ -135,7 +135,12 @@ check_environment() {
     info "Chromium source: $CHROMIUM_DIR"
 
     # Check disk space (need 50+ GB)
-    AVAILABLE_SPACE=$(df -BG "$SCRIPT_DIR" | awk 'NR==2 {print $4}' | sed 's/G//')
+    # macOS uses df -g, Linux uses df -BG
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        AVAILABLE_SPACE=$(df -g "$SCRIPT_DIR" | awk 'NR==2 {print $4}')
+    else
+        AVAILABLE_SPACE=$(df -BG "$SCRIPT_DIR" | awk 'NR==2 {print $4}' | sed 's/G//')
+    fi
     info "Available disk space: ${AVAILABLE_SPACE} GB"
 
     if [ "$AVAILABLE_SPACE" -lt 50 ]; then
@@ -224,10 +229,11 @@ symbol_level = 1
 blocked_enable_security_monitoring = true
 blocked_enable_eye_tracking = true
 blocked_enable_telemetry = true
+blocked_enable_video_capture = true
 blocked_backend_url = "wss://api.blockd.com"
 
-# Branding
-chrome_branding = "Blocked"
+# Branding (use Chromium branding, not Chrome)
+is_chrome_branded = false
 
 # Codecs
 proprietary_codecs = true
@@ -253,7 +259,9 @@ build_target() {
 
     cd "$CHROMIUM_DIR"
 
-    local NINJA_ARGS="-C $(basename $BUILD_DIR) $TARGET"
+    # Use relative path from src to out directory
+    local RELATIVE_BUILD_DIR="../out/$(basename $BUILD_DIR)"
+    local NINJA_ARGS="-C $RELATIVE_BUILD_DIR $TARGET"
 
     if [ "$VERBOSE" = true ]; then
         NINJA_ARGS="$NINJA_ARGS -v"

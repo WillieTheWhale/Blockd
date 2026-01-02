@@ -6,6 +6,7 @@
 
 #include "base/logging.h"
 #include "base/no_destructor.h"
+#include "content/public/common/blocked_mojom/blocked_mojom_traits.h"
 
 namespace content {
 
@@ -49,14 +50,14 @@ void GazeDataSender::SendGazeBatch(
     return;
   }
 
-  std::vector<blocked::mojom::GazeDataPtr> mojo_gazes;
-  mojo_gazes.reserve(gaze_points.size());
+  std::vector<blocked::GazeData> gazes;
+  gazes.reserve(gaze_points.size());
 
   for (const auto& point : gaze_points) {
-    mojo_gazes.push_back(CreateMojoGazeData(point));
+    gazes.push_back(CreateNativeGazeData(point));
   }
 
-  host_->OnGazeBatch(std::move(mojo_gazes));
+  host_->OnGazeBatch(gazes);
   total_sent_ += static_cast<int>(gaze_points.size());
 
   VLOG(1) << "Sent batch of " << gaze_points.size() << " gaze points";
@@ -104,30 +105,29 @@ void GazeDataSender::SendBufferedData() {
   }
 
   // Send as batch for efficiency.
-  std::vector<blocked::mojom::GazeDataPtr> mojo_gazes;
-  mojo_gazes.reserve(gaze_buffer_.size());
+  std::vector<blocked::GazeData> gazes;
+  gazes.reserve(gaze_buffer_.size());
 
   for (const auto& point : gaze_buffer_) {
-    mojo_gazes.push_back(CreateMojoGazeData(point));
+    gazes.push_back(CreateNativeGazeData(point));
   }
 
-  host_->OnGazeBatch(std::move(mojo_gazes));
+  host_->OnGazeBatch(gazes);
   total_sent_ += static_cast<int>(gaze_buffer_.size());
 
   VLOG(2) << "Sent buffered " << gaze_buffer_.size() << " gaze points";
   gaze_buffer_.clear();
 }
 
-blocked::mojom::GazeDataPtr GazeDataSender::CreateMojoGazeData(
+blocked::GazeData GazeDataSender::CreateNativeGazeData(
     const GazeDataPoint& point) {
-  auto mojo_gaze = blocked::mojom::GazeData::New();
-  mojo_gaze->x = point.x;
-  mojo_gaze->y = point.y;
-  mojo_gaze->confidence = point.confidence;
-  mojo_gaze->is_off_screen = point.is_off_screen;
-  mojo_gaze->off_screen_direction = point.off_screen_direction;
-  mojo_gaze->timestamp = point.timestamp;
-  return mojo_gaze;
+  return blocked::GazeData(
+      point.x,
+      point.y,
+      point.confidence,
+      point.is_off_screen,
+      point.off_screen_direction,
+      point.timestamp);
 }
 
 }  // namespace content

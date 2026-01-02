@@ -19,14 +19,15 @@ source_set("blocked_ipc") {
 
   deps = [
     "//base",
-    "//chrome/browser/blocked/public/mojom",
+    "//content/public/common/blocked_mojom",
     "//mojo/public/cpp/bindings",
   ]
 
   # Allow access from other blocked modules.
   visibility = [
-    "//content/renderer/blocked_eye_tracking",
-    "//content/renderer/blocked_video",
+    ":*",
+    "//content/renderer/blocked_eye_tracking:*",
+    "//content/renderer/blocked_video:*",
     "//content/renderer:renderer",
   ]
 }

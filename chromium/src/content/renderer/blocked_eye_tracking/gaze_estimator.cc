@@ -12,14 +12,6 @@ namespace content {
 
 namespace {
 
-// Helper to compute distance between two landmarks.
-float Distance(const FaceDetector::Landmark& a,
-               const FaceDetector::Landmark& b) {
-  float dx = a.x - b.x;
-  float dy = a.y - b.y;
-  return std::sqrt(dx * dx + dy * dy);
-}
-
 // Helper to compute centroid of landmarks.
 FaceDetector::Landmark Centroid(
     const std::vector<FaceDetector::Landmark>& points) {
@@ -113,9 +105,9 @@ GazeEstimator::EyeState GazeEstimator::ExtractEyeState(
   EyeState state;
 
   // Get iris center (MediaPipe provides iris landmarks).
-  int iris_center_idx = left_eye ?
+  size_t iris_center_idx = static_cast<size_t>(left_eye ?
       FaceDetector::FaceLandmarks::kLeftIrisCenter :
-      FaceDetector::FaceLandmarks::kRightIrisCenter;
+      FaceDetector::FaceLandmarks::kRightIrisCenter);
 
   if (iris_center_idx < landmarks.landmarks.size()) {
     const auto& iris = landmarks.landmarks[iris_center_idx];
@@ -128,13 +120,13 @@ GazeEstimator::EyeState GazeEstimator::ExtractEyeState(
   }
 
   // Compute eye bounding box from contour landmarks.
-  const int* eye_indices = left_eye ?
+  const auto& eye_indices = left_eye ?
       FaceDetector::FaceLandmarks::kLeftEyeIndices :
       FaceDetector::FaceLandmarks::kRightEyeIndices;
 
   std::vector<FaceDetector::Landmark> eye_points;
-  for (int i = 0; i < 16; i++) {
-    int idx = eye_indices[i];
+  for (int eye_idx : eye_indices) {
+    size_t idx = static_cast<size_t>(eye_idx);
     if (idx < landmarks.landmarks.size()) {
       eye_points.push_back(landmarks.landmarks[idx]);
     }

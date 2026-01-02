@@ -11,7 +11,7 @@
 #include "base/functional/callback.h"
 #include "base/memory/weak_ptr.h"
 #include "base/sequence_checker.h"
-#include "third_party/blink/public/platform/web_media_stream.h"
+#include "third_party/blink/public/platform/modules/mediastream/web_media_stream.h"
 
 namespace content {
 

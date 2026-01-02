@@ -5,8 +5,10 @@
 #ifndef CONTENT_RENDERER_BLOCKED_EYE_TRACKING_EYE_TRACKER_H_
 #define CONTENT_RENDERER_BLOCKED_EYE_TRACKING_EYE_TRACKER_H_
 
+#include <array>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "base/memory/weak_ptr.h"
 #include "base/sequence_checker.h"
@@ -14,7 +16,7 @@
 #include "content/renderer/blocked_eye_tracking/face_detector.h"
 #include "content/renderer/blocked_eye_tracking/gaze_estimator.h"
 #include "mojo/public/cpp/bindings/remote.h"
-#include "third_party/blink/public/platform/web_media_stream.h"
+#include "third_party/blink/public/platform/modules/mediastream/web_media_stream.h"
 
 namespace content {
 
@@ -26,17 +28,31 @@ class EyeTrackingWorker;
 class EyeTracker {
  public:
   struct GazePoint {
-    float x;  // Normalized 0-1 (left to right)
-    float y;  // Normalized 0-1 (top to bottom)
-    float confidence;  // 0-1 quality score
+    GazePoint();
+    ~GazePoint();
+    GazePoint(const GazePoint&);
+    GazePoint& operator=(const GazePoint&);
+    GazePoint(GazePoint&&) noexcept;
+    GazePoint& operator=(GazePoint&&) noexcept;
+
+    float x = 0.0f;  // Normalized 0-1 (left to right)
+    float y = 0.0f;  // Normalized 0-1 (top to bottom)
+    float confidence = 0.0f;  // 0-1 quality score
     base::TimeTicks timestamp;
-    bool is_off_screen;
+    bool is_off_screen = false;
     std::string off_screen_direction;  // "left", "right", "up", "down"
   };
 
   struct CalibrationPoint {
-    float screen_x;
-    float screen_y;
+    CalibrationPoint();
+    ~CalibrationPoint();
+    CalibrationPoint(const CalibrationPoint&);
+    CalibrationPoint& operator=(const CalibrationPoint&);
+    CalibrationPoint(CalibrationPoint&&) noexcept;
+    CalibrationPoint& operator=(CalibrationPoint&&) noexcept;
+
+    float screen_x = 0.0f;
+    float screen_y = 0.0f;
     std::vector<GazePoint> samples;
   };
 
@@ -98,10 +114,10 @@ class EyeTracker {
 
   GazePoint latest_gaze_;
   std::vector<CalibrationPoint> calibration_points_;
-  int current_calibration_index_ = 0;
+  size_t current_calibration_index_ = 0;
 
   // Calibration transformation matrix (3x3).
-  float calibration_matrix_[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
+  std::array<float, 9> calibration_matrix_ = {1, 0, 0, 0, 1, 0, 0, 0, 1};
 
   SEQUENCE_CHECKER(sequence_checker_);
   base::WeakPtrFactory<EyeTracker> weak_factory_{this};

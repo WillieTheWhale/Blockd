@@ -11,6 +11,7 @@
 
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
+#include "base/observer_list_types.h"
 #include "base/sequence_checker.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
@@ -27,7 +28,8 @@ enum class SecurityEventType {
   CLIPBOARD_COPY,
   CLIPBOARD_PASTE,
   KEYBOARD_HOOK_DETECTED,
-  UNKNOWN_EVENT
+  UNKNOWN_EVENT,
+  kMaxValue = UNKNOWN_EVENT  // Required for UmaHistogramEnumeration
 };
 
 // Security event severity levels
@@ -35,7 +37,8 @@ enum class SecurityEventSeverity {
   LOW,
   MEDIUM,
   HIGH,
-  CRITICAL
+  CRITICAL,
+  kMaxValue = CRITICAL  // Required for UmaHistogramEnumeration
 };
 
 // Represents a single security event
@@ -70,9 +73,9 @@ struct ProcessInfo {
 };
 
 // Observer interface for security events
-class BlockedSecurityObserver {
+class BlockedSecurityObserver : public base::CheckedObserver {
  public:
-  virtual ~BlockedSecurityObserver() = default;
+  ~BlockedSecurityObserver() override = default;
 
   // Called when a security event is detected
   virtual void OnSecurityEvent(const SecurityEvent& event) = 0;
@@ -85,6 +88,19 @@ class BlockedSecurityObserver {
 // Runs in browser process, coordinates platform-specific monitoring
 class BlockedSecurityService : public KeyedService {
  public:
+  // Platform-specific monitoring interface (must be public for inheritance)
+  class PlatformMonitor {
+   public:
+    virtual ~PlatformMonitor() = default;
+
+    virtual std::vector<ProcessInfo> GetRunningProcesses() = 0;
+    virtual bool IsVirtualMachineDetected() = 0;
+    virtual bool IsScreenRecordingActive() = 0;
+    virtual std::string GetFocusedWindowTitle() = 0;
+    virtual void StartClipboardMonitoring() = 0;
+    virtual void StopClipboardMonitoring() = 0;
+  };
+
   BlockedSecurityService();
   ~BlockedSecurityService() override;
 
@@ -123,8 +139,6 @@ class BlockedSecurityService : public KeyedService {
   void ReportSecurityEvent(const SecurityEvent& event);
   void UpdateRiskLevel();
 
-  // Platform-specific implementation
-  class PlatformMonitor;
   std::unique_ptr<PlatformMonitor> platform_monitor_;
 
   bool is_monitoring_ = false;

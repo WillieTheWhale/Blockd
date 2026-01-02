@@ -98,8 +98,9 @@ bool MacSecurityMonitor::IsVirtualMachineDetected() {
 
 bool MacSecurityMonitor::CheckIORegistry() {
   // Check IOPlatformExpertDevice for VM indicators
+  // Use kIOMainPortDefault (kIOMasterPortDefault is deprecated)
   io_service_t service = IOServiceGetMatchingService(
-      kIOMasterPortDefault,
+      kIOMainPortDefault,
       IOServiceMatching("IOPlatformExpertDevice"));
 
   if (!service) {

@@ -21,9 +21,8 @@ blocked_backend_url = "wss://api.blockd.com"
 # ============================================
 # Branding
 # ============================================
-# Note: Requires custom branding files in chrome/app/theme/blocked/
+# Use Chromium branding (not Chrome branding)
 is_chrome_branded = false
-chrome_branding_directory = "//chrome/app/theme/blocked"
 
 # ============================================
 # Compiler Optimization

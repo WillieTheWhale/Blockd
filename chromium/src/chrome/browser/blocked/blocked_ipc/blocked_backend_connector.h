@@ -106,7 +106,8 @@ class BlockedBackendConnector : public KeyedService,
   void SendHeartbeat();
   void OnReconnectTimer();
   void NotifyObservers(ConnectionState state);
-  void ReadFromDataPipe();
+  void ReadFromDataPipe(MojoResult result,
+                        const mojo::HandleSignalsState& state);
   void WriteToDataPipe(const std::string& message);
 
   std::string backend_url_;

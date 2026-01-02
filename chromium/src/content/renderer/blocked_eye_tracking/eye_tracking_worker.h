@@ -13,13 +13,23 @@
 #include "base/thread_annotations.h"
 #include "base/threading/thread.h"
 #include "content/renderer/blocked_eye_tracking/eye_tracker.h"
-#include "third_party/blink/public/platform/web_media_stream.h"
+#include "media/base/video_frame.h"
+#include "third_party/blink/public/platform/modules/mediastream/web_media_stream.h"
+
+class SkBitmap;
 
 namespace base {
 class SequencedTaskRunner;
 }  // namespace base
 
 namespace content {
+
+// Interface for capturing video frames from a media stream.
+class VideoFrameCapture {
+ public:
+  virtual ~VideoFrameCapture() = default;
+  virtual scoped_refptr<media::VideoFrame> GetLatestFrame() = 0;
+};
 
 class FaceDetector;
 class GazeEstimator;
@@ -50,8 +60,14 @@ class EyeTrackingWorker {
   bool IsRunning() const { return is_running_; }
 
  private:
+  // Maximum consecutive frame capture failures before reporting error.
+  static constexpr int kMaxConsecutiveFailures = 30;
+
   void ProcessFrames();
   void ProcessSingleFrame();
+  bool CaptureFrameFromStream(SkBitmap* frame);
+  void ConvertVideoFrameToSkBitmap(scoped_refptr<media::VideoFrame> video_frame,
+                                   SkBitmap* bitmap);
   void OnGazeComputed(const EyeTracker::GazePoint& gaze);
   void OnProcessingFailed();
 
@@ -61,8 +77,13 @@ class EyeTrackingWorker {
 
   std::unique_ptr<FaceDetector> face_detector_;
   std::unique_ptr<GazeEstimator> gaze_estimator_;
+  std::unique_ptr<VideoFrameCapture> video_frame_capture_;
+
+  // Latest video frame received from the media stream sink.
+  scoped_refptr<media::VideoFrame> latest_video_frame_;
 
   bool is_running_ = false;
+  int consecutive_failures_ = 0;
   base::Thread worker_thread_;
 
   scoped_refptr<base::SequencedTaskRunner> main_task_runner_;

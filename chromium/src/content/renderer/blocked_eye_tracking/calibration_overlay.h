@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/functional/callback.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 
 namespace blink {
@@ -51,10 +52,10 @@ class CalibrationOverlay {
   void OnPointCompleted();
   void OnCalibrationComplete();
 
-  blink::WebLocalFrame* frame_;
+  raw_ptr<blink::WebLocalFrame> frame_;
 
   bool is_active_ = false;
-  int current_point_index_ = 0;
+  size_t current_point_index_ = 0;
   std::vector<CalibrationPoint> calibration_points_;
 
   CalibrationCallback point_callback_;

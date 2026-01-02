@@ -30,6 +30,16 @@ constexpr char kFaceMeshModelFile[] = "mediapipe_face_mesh.tflite";
 
 }  // namespace
 
+// FaceLandmarks implementation.
+FaceDetector::FaceLandmarks::FaceLandmarks() = default;
+FaceDetector::FaceLandmarks::~FaceLandmarks() = default;
+FaceDetector::FaceLandmarks::FaceLandmarks(const FaceLandmarks&) = default;
+FaceDetector::FaceLandmarks& FaceDetector::FaceLandmarks::operator=(
+    const FaceLandmarks&) = default;
+FaceDetector::FaceLandmarks::FaceLandmarks(FaceLandmarks&&) noexcept = default;
+FaceDetector::FaceLandmarks& FaceDetector::FaceLandmarks::operator=(
+    FaceLandmarks&&) noexcept = default;
+
 FaceDetector::FaceDetector() = default;
 
 FaceDetector::~FaceDetector() = default;

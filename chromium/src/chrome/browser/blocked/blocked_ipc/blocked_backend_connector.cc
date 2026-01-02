@@ -491,7 +491,7 @@ void BlockedBackendConnector::OnDataFrame(
 
   if (type == network::mojom::WebSocketMessageType::TEXT) {
     // Read text message from data pipe
-    ReadFromDataPipe();
+    ReadFromDataPipe(MOJO_RESULT_OK, mojo::HandleSignalsState());
   }
 }
 
@@ -524,7 +524,9 @@ void BlockedBackendConnector::OnClosingHandshake() {
   VLOG(1) << "WebSocket closing handshake initiated by server";
 }
 
-void BlockedBackendConnector::ReadFromDataPipe() {
+void BlockedBackendConnector::ReadFromDataPipe(
+    MojoResult result,
+    const mojo::HandleSignalsState& state) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   if (!readable_pipe_.is_valid()) {
@@ -534,12 +536,12 @@ void BlockedBackendConnector::ReadFromDataPipe() {
   std::vector<uint8_t> buffer(4096);
   size_t num_bytes = buffer.size();
 
-  MojoResult result = readable_pipe_->ReadData(
+  MojoResult read_result = readable_pipe_->ReadData(
       MOJO_READ_DATA_FLAG_NONE,
       base::span<uint8_t>(buffer.data(), buffer.size()),
       num_bytes);
 
-  if (result == MOJO_RESULT_OK && num_bytes > 0) {
+  if (read_result == MOJO_RESULT_OK && num_bytes > 0) {
     std::string data(buffer.begin(), buffer.begin() + num_bytes);
     incoming_message_ += data;
     bytes_received_ += num_bytes;
@@ -556,7 +558,7 @@ void BlockedBackendConnector::ReadFromDataPipe() {
       incoming_message_.clear();
       expected_data_length_ = 0;
     }
-  } else if (result == MOJO_RESULT_SHOULD_WAIT) {
+  } else if (read_result == MOJO_RESULT_SHOULD_WAIT) {
     // Re-arm the watcher
     if (read_watcher_) {
       read_watcher_->ArmOrNotify();

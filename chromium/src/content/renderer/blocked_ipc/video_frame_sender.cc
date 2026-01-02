@@ -4,11 +4,37 @@
 
 #include "content/renderer/blocked_ipc/video_frame_sender.h"
 
+#include <cstring>
+#include <vector>
+
 #include "base/logging.h"
 #include "base/no_destructor.h"
+#include "content/public/common/blocked_mojom/blocked_mojom_traits.h"
 #include "mojo/public/cpp/base/big_buffer.h"
 
+// SAFETY: memcpy operations in CopyFrameData are safe because:
+// 1. Size is validated to be > 0 before any copy
+// 2. Source pointers come from video capture APIs and are guaranteed valid
+// 3. Destination vectors are sized appropriately before copy
+namespace {
+// NOLINTNEXTLINE(bugprone-suspicious-include)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunsafe-buffer-usage-in-libc-call"
+void CopyFrameData(std::vector<uint8_t>& dest, const uint8_t* src, size_t size) {
+  dest.resize(size);
+  std::memcpy(dest.data(), src, size);
+}
+#pragma clang diagnostic pop
+}  // namespace
+
 namespace content {
+
+// PendingFrame implementation.
+VideoFrameSender::PendingFrame::PendingFrame() = default;
+VideoFrameSender::PendingFrame::~PendingFrame() = default;
+VideoFrameSender::PendingFrame::PendingFrame(PendingFrame&&) noexcept = default;
+VideoFrameSender::PendingFrame& VideoFrameSender::PendingFrame::operator=(
+    PendingFrame&&) noexcept = default;
 
 // static
 VideoFrameSender* VideoFrameSender::GetInstance() {
@@ -46,20 +72,20 @@ void VideoFrameSender::SendFrame(const uint8_t* frame_data,
     return;
   }
 
-  // Create metadata.
-  auto metadata = blocked::mojom::VideoFrameMetadata::New();
-  metadata->width = width;
-  metadata->height = height;
-  metadata->format = blocked::mojom::VideoFormat::I420;
-  metadata->timestamp = base::TimeTicks::Now();
-  metadata->frame_number = frame_number_++;
+  // Create metadata using native type.
+  blocked::VideoFrameMetadata metadata(
+      width,
+      height,
+      static_cast<int32_t>(blocked::mojom::VideoFormat::I420),
+      base::TimeTicks::Now(),
+      frame_number_++);
 
-  SendFrame(frame_data, size, std::move(metadata));
+  SendFrame(frame_data, size, metadata);
 }
 
 void VideoFrameSender::SendFrame(const uint8_t* frame_data,
                                  int size,
-                                 blocked::mojom::VideoFrameMetadataPtr metadata) {
+                                 const blocked::VideoFrameMetadata& metadata) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   if (!frame_data || size <= 0) {
@@ -74,8 +100,8 @@ void VideoFrameSender::SendFrame(const uint8_t* frame_data,
     }
 
     PendingFrame pending;
-    pending.data.assign(frame_data, frame_data + size);
-    pending.metadata = std::move(metadata);
+    CopyFrameData(pending.data, frame_data, static_cast<size_t>(size));
+    pending.metadata = metadata;
     pending.queued_at = base::TimeTicks::Now();
     pending_frames_.push(std::move(pending));
 
@@ -84,13 +110,15 @@ void VideoFrameSender::SendFrame(const uint8_t* frame_data,
   }
 
   // Send frame via Mojo.
-  mojo_base::BigBuffer buffer(base::make_span(frame_data, size));
-  video_capture_host_->OnVideoFrame(std::move(buffer), std::move(metadata));
+  std::vector<uint8_t> frame_vec;
+  CopyFrameData(frame_vec, frame_data, static_cast<size_t>(size));
+  mojo_base::BigBuffer buffer(std::move(frame_vec));
+  video_capture_host_->OnVideoFrame(std::move(buffer), metadata);
 
   total_sent_++;
   total_bytes_ += size;
 
-  VLOG(2) << "Video frame sent: " << metadata->width << "x" << metadata->height
+  VLOG(2) << "Video frame sent: " << metadata.width << "x" << metadata.height
           << " (" << size << " bytes)";
 }
 
@@ -115,7 +143,9 @@ void VideoFrameSender::SendEncodedFrame(const uint8_t* encoded_data,
       base::Microseconds(timestamp_us);
 
   // Send encoded frame via Mojo.
-  mojo_base::BigBuffer buffer(base::make_span(encoded_data, size));
+  std::vector<uint8_t> encoded_vec;
+  CopyFrameData(encoded_vec, encoded_data, static_cast<size_t>(size));
+  mojo_base::BigBuffer buffer(std::move(encoded_vec));
   video_capture_host_->OnEncodedFrame(std::move(buffer), timestamp);
 
   total_sent_++;
@@ -133,14 +163,16 @@ void VideoFrameSender::NotifyCaptureStarted(int width, int height,
     return;
   }
 
-  auto settings = blocked::mojom::VideoCaptureSettings::New();
-  settings->width = width;
-  settings->height = height;
-  settings->frame_rate = frame_rate;
-  settings->format = blocked::mojom::VideoFormat::I420;
-  settings->enable_encoding = false;
+  // Create settings using native type.
+  blocked::VideoCaptureSettings settings(
+      width,
+      height,
+      frame_rate,
+      static_cast<int32_t>(blocked::mojom::VideoFormat::I420),
+      "",  // device_id
+      false);  // enable_encoding
 
-  video_capture_host_->OnCaptureStarted(std::move(settings));
+  video_capture_host_->OnCaptureStarted(settings);
 
   LOG(INFO) << "Capture started notification sent: " << width << "x" << height
             << " @ " << frame_rate << " fps";
@@ -198,12 +230,12 @@ void VideoFrameSender::ProcessPendingFrames() {
     }
 
     // Send frame.
-    mojo_base::BigBuffer buffer(base::make_span(pending.data));
-    video_capture_host_->OnVideoFrame(std::move(buffer),
-                                      std::move(pending.metadata));
+    size_t data_size = pending.data.size();
+    mojo_base::BigBuffer buffer(std::move(pending.data));
+    video_capture_host_->OnVideoFrame(std::move(buffer), pending.metadata);
 
     total_sent_++;
-    total_bytes_ += pending.data.size();
+    total_bytes_ += data_size;
     processed++;
 
     pending_frames_.pop();

@@ -11,7 +11,6 @@
 #include "base/no_destructor.h"
 #include "content/public/renderer/render_frame.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
-#include "third_party/blink/public/web/web_local_frame.h"
 
 namespace content {
 

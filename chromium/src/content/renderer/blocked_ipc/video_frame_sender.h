@@ -8,10 +8,13 @@
 #include <cstdint>
 #include <queue>
 
+#include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/no_destructor.h"
 #include "base/sequence_checker.h"
 #include "base/time/time.h"
-#include "chrome/browser/blocked/public/mojom/video_capture.mojom.h"
+#include "content/public/common/blocked_mojom/blocked_mojom_traits.h"
+#include "content/public/common/blocked_mojom/video_capture.mojom.h"
 
 namespace content {
 
@@ -20,8 +23,13 @@ namespace content {
 class VideoFrameSender {
  public:
   struct PendingFrame {
+    PendingFrame();
+    ~PendingFrame();
+    PendingFrame(PendingFrame&&) noexcept;
+    PendingFrame& operator=(PendingFrame&&) noexcept;
+
     std::vector<uint8_t> data;
-    blocked::mojom::VideoFrameMetadataPtr metadata;
+    blocked::VideoFrameMetadata metadata;
     base::TimeTicks queued_at;
   };
 
@@ -45,7 +53,7 @@ class VideoFrameSender {
   // Send video frame with full metadata.
   void SendFrame(const uint8_t* frame_data,
                  int size,
-                 blocked::mojom::VideoFrameMetadataPtr metadata);
+                 const blocked::VideoFrameMetadata& metadata);
 
   // Send encoded frame (H.264).
   void SendEncodedFrame(const uint8_t* encoded_data,
@@ -67,6 +75,8 @@ class VideoFrameSender {
   void SetMaxPendingFrames(size_t max) { max_pending_frames_ = max; }
 
  private:
+  friend class base::NoDestructor<VideoFrameSender>;
+
   VideoFrameSender();
   ~VideoFrameSender();
 
@@ -74,7 +84,7 @@ class VideoFrameSender {
   void ProcessPendingFrames();
   void DropOldestFrame();
 
-  blocked::mojom::VideoCaptureHost* video_capture_host_ = nullptr;
+  raw_ptr<blocked::mojom::VideoCaptureHost> video_capture_host_ = nullptr;
 
   // Frame queue for when host is temporarily unavailable.
   std::queue<PendingFrame> pending_frames_;

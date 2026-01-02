@@ -2,6 +2,7 @@
 # Build file for Blocked browser modules
 
 import("//build/config/features.gni")
+import("//chrome/browser/blocked/blocked_features.gni")
 
 # Main Blocked browser modules aggregation
 group("blocked_browser_modules") {

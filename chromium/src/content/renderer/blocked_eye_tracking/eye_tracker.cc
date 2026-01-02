@@ -17,9 +17,31 @@ namespace {
 // Calibration grid: 3x3 = 9 points
 constexpr float kCalibrationGridX[] = {0.1f, 0.5f, 0.9f};
 constexpr float kCalibrationGridY[] = {0.1f, 0.5f, 0.9f};
-constexpr int kCalibrationSamplesPerPoint = 60;  // 2 seconds at 30 FPS
+constexpr size_t kCalibrationSamplesPerPoint = 60;  // 2 seconds at 30 FPS
 
 }  // namespace
+
+// GazePoint implementation.
+EyeTracker::GazePoint::GazePoint() = default;
+EyeTracker::GazePoint::~GazePoint() = default;
+EyeTracker::GazePoint::GazePoint(const GazePoint&) = default;
+EyeTracker::GazePoint& EyeTracker::GazePoint::operator=(
+    const GazePoint&) = default;
+EyeTracker::GazePoint::GazePoint(GazePoint&&) noexcept = default;
+EyeTracker::GazePoint& EyeTracker::GazePoint::operator=(
+    GazePoint&&) noexcept = default;
+
+// CalibrationPoint implementation.
+EyeTracker::CalibrationPoint::CalibrationPoint() = default;
+EyeTracker::CalibrationPoint::~CalibrationPoint() = default;
+EyeTracker::CalibrationPoint::CalibrationPoint(const CalibrationPoint&) =
+    default;
+EyeTracker::CalibrationPoint& EyeTracker::CalibrationPoint::operator=(
+    const CalibrationPoint&) = default;
+EyeTracker::CalibrationPoint::CalibrationPoint(CalibrationPoint&&) noexcept =
+    default;
+EyeTracker::CalibrationPoint& EyeTracker::CalibrationPoint::operator=(
+    CalibrationPoint&&) noexcept = default;
 
 EyeTracker::EyeTracker() {
   DETACH_FROM_SEQUENCE(sequence_checker_);
@@ -136,9 +158,8 @@ void EyeTracker::FinishCalibration() {
 
   // For now, use identity matrix (no calibration adjustment).
   // TODO(blocked): Implement proper calibration matrix computation.
-  for (int i = 0; i < 9; i++) {
-    calibration_matrix_[i] = (i % 4 == 0) ? 1.0f : 0.0f;
-  }
+  // Identity matrix: 1 on diagonal positions (0, 4, 8), 0 elsewhere.
+  calibration_matrix_ = {1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f};
 
   is_calibrated_ = true;
   worker_->Stop();
