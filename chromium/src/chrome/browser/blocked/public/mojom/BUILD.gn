@@ -17,7 +17,7 @@ mojom("mojom") {
     "//mojo/public/mojom/base",
   ]
 
-  # Generate C++ bindings.
+  # Generate C++ bindings with type mappings for all structs.
   cpp_typemaps = [
     {
       types = [
@@ -25,6 +25,31 @@ mojom("mojom") {
           mojom = "blocked.mojom.GazeData"
           cpp = "::blocked::GazeData"
         },
+        {
+          mojom = "blocked.mojom.CalibrationPoint"
+          cpp = "::blocked::CalibrationPoint"
+        },
+        {
+          mojom = "blocked.mojom.CalibrationSettings"
+          cpp = "::blocked::CalibrationSettings"
+        },
+        {
+          mojom = "blocked.mojom.VideoFrameMetadata"
+          cpp = "::blocked::VideoFrameMetadata"
+        },
+        {
+          mojom = "blocked.mojom.VideoCaptureSettings"
+          cpp = "::blocked::VideoCaptureSettings"
+        },
+      ]
+      traits_headers = [
+        "//chrome/browser/blocked/public/mojom/blocked_mojom_traits.h",
+      ]
+      traits_sources = [
+        "//chrome/browser/blocked/public/mojom/blocked_mojom_traits.cc",
+      ]
+      traits_public_deps = [
+        "//base",
       ]
     },
   ]

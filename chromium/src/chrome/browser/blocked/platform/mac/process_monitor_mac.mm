@@ -158,13 +158,18 @@ std::vector<ProcessInfoMac> ProcessMonitorMac::EnumerateProcesses() {
   }
 
   size_t count = size / sizeof(struct kinfo_proc);
-  struct kinfo_proc* proc_list = (struct kinfo_proc*)malloc(size);
 
-  if (sysctl(mib, 4, proc_list, &size, nullptr, 0) < 0) {
+  // Use vector for automatic memory management (RAII).
+  // This ensures memory is freed even if an exception occurs.
+  std::vector<struct kinfo_proc> proc_list(count);
+
+  if (sysctl(mib, 4, proc_list.data(), &size, nullptr, 0) < 0) {
     LOG(ERROR) << "Failed to get process list";
-    free(proc_list);
     return processes;
   }
+
+  // Recalculate count in case it changed.
+  count = std::min(count, size / sizeof(struct kinfo_proc));
 
   for (size_t i = 0; i < count; ++i) {
     ProcessInfoMac info;
@@ -184,7 +189,6 @@ std::vector<ProcessInfoMac> ProcessMonitorMac::EnumerateProcesses() {
     processes.push_back(info);
   }
 
-  free(proc_list);
   return processes;
 }
 

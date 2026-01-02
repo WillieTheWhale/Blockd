@@ -51,6 +51,18 @@ class WindowsSecurityMonitor
   // Clipboard monitoring
   HWND clipboard_listener_hwnd_ = nullptr;
   bool clipboard_monitoring_active_ = false;
+  ATOM clipboard_window_class_ = 0;
+
+  // Clipboard message-only window procedure
+  static LRESULT CALLBACK ClipboardWndProc(HWND hwnd, UINT msg,
+                                            WPARAM wParam, LPARAM lParam);
+
+  // Create/destroy clipboard listener window
+  bool CreateClipboardListenerWindow();
+  void DestroyClipboardListenerWindow();
+
+  // Handle clipboard change notification
+  void OnClipboardChange();
 
   // Known suspicious processes
   std::vector<std::string> suspicious_processes_ = {

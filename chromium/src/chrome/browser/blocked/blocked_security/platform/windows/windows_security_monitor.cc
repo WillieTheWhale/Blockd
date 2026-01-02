@@ -182,14 +182,95 @@ bool WindowsSecurityMonitor::CheckRegistry() {
 }
 
 bool WindowsSecurityMonitor::CheckSMBIOS() {
-  // Check system manufacturer via registry
-  HKEY key;
-  if (RegOpenKeyExA(HKEY_LOCAL_MACHINE,
-                    "SYSTEM\\CurrentControlSet\\Services\\mssmbios\\Data",
-                    0, KEY_READ, &key) == ERROR_SUCCESS) {
-    // SMBIOS data would need to be parsed here
-    // Simplified version: just check for known manufacturer strings
+  // Check system manufacturer and model via WMI-style registry keys.
+  // These values are populated from SMBIOS data by Windows.
+
+  const char* registry_paths[] = {
+      "HARDWARE\\DESCRIPTION\\System\\BIOS",
+      "SYSTEM\\CurrentControlSet\\Control\\SystemInformation",
+  };
+
+  const char* value_names[] = {
+      "SystemManufacturer",
+      "SystemProductName",
+      "BIOSVendor",
+      "BaseBoardManufacturer",
+      "BaseBoardProduct",
+  };
+
+  const char* vm_indicators[] = {
+      "vmware",
+      "virtualbox",
+      "vbox",
+      "qemu",
+      "parallels",
+      "xen",
+      "hyper-v",
+      "microsoft virtual",
+      "innotek",
+      "oracle vm",
+      "kvm",
+      "bochs",
+      "virtual machine",
+  };
+
+  for (const char* path : registry_paths) {
+    HKEY key;
+    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, path, 0, KEY_READ, &key) !=
+        ERROR_SUCCESS) {
+      continue;
+    }
+
+    for (const char* value_name : value_names) {
+      char buffer[256] = {0};
+      DWORD size = sizeof(buffer);
+      DWORD type = REG_SZ;
+
+      if (RegQueryValueExA(key, value_name, nullptr, &type,
+                           reinterpret_cast<LPBYTE>(buffer),
+                           &size) == ERROR_SUCCESS) {
+        // Convert to lowercase for comparison.
+        std::string value = buffer;
+        std::transform(value.begin(), value.end(), value.begin(),
+                       [](unsigned char c) { return std::tolower(c); });
+
+        // Check against known VM indicators.
+        for (const char* indicator : vm_indicators) {
+          if (value.find(indicator) != std::string::npos) {
+            LOG(WARNING) << "VM detected via SMBIOS: " << value_name << " = "
+                         << buffer;
+            RegCloseKey(key);
+            return true;
+          }
+        }
+      }
+    }
+
     RegCloseKey(key);
+  }
+
+  // Additional check: System firmware table
+  // GetSystemFirmwareTable can retrieve raw SMBIOS data.
+  DWORD smbios_size = GetSystemFirmwareTable('RSMB', 0, nullptr, 0);
+  if (smbios_size > 0) {
+    std::vector<BYTE> smbios_data(smbios_size);
+    if (GetSystemFirmwareTable('RSMB', 0, smbios_data.data(), smbios_size) ==
+        smbios_size) {
+      // Parse SMBIOS structures for VM indicators.
+      // SMBIOS structure starts after a header.
+      // The raw data contains null-terminated strings after each structure.
+      std::string smbios_str(reinterpret_cast<char*>(smbios_data.data()),
+                             smbios_size);
+      std::transform(smbios_str.begin(), smbios_str.end(), smbios_str.begin(),
+                     [](unsigned char c) { return std::tolower(c); });
+
+      for (const char* indicator : vm_indicators) {
+        if (smbios_str.find(indicator) != std::string::npos) {
+          LOG(WARNING) << "VM detected via raw SMBIOS data: " << indicator;
+          return true;
+        }
+      }
+    }
   }
 
   return false;
@@ -332,6 +413,9 @@ std::string WindowsSecurityMonitor::GetFocusedWindowTitle() {
   return std::string();
 }
 
+// Static instance pointer for window procedure callback.
+static WindowsSecurityMonitor* g_clipboard_monitor_instance = nullptr;
+
 void WindowsSecurityMonitor::StartClipboardMonitoring() {
   if (clipboard_monitoring_active_) {
     return;
@@ -339,11 +423,22 @@ void WindowsSecurityMonitor::StartClipboardMonitoring() {
 
   LOG(INFO) << "Starting clipboard monitoring (Windows)";
 
-  // Create invisible window for clipboard monitoring
-  // This is a simplified version - full implementation would create a window
-  // and register with AddClipboardFormatListener
+  // Create message-only window for clipboard notifications.
+  if (!CreateClipboardListenerWindow()) {
+    LOG(ERROR) << "Failed to create clipboard listener window";
+    return;
+  }
+
+  // Register for clipboard format change notifications.
+  if (!AddClipboardFormatListener(clipboard_listener_hwnd_)) {
+    LOG(ERROR) << "Failed to register clipboard listener, error: "
+               << GetLastError();
+    DestroyClipboardListenerWindow();
+    return;
+  }
 
   clipboard_monitoring_active_ = true;
+  LOG(INFO) << "Clipboard monitoring started successfully";
 }
 
 void WindowsSecurityMonitor::StopClipboardMonitoring() {
@@ -355,10 +450,146 @@ void WindowsSecurityMonitor::StopClipboardMonitoring() {
 
   if (clipboard_listener_hwnd_) {
     RemoveClipboardFormatListener(clipboard_listener_hwnd_);
+  }
+
+  DestroyClipboardListenerWindow();
+  clipboard_monitoring_active_ = false;
+
+  LOG(INFO) << "Clipboard monitoring stopped";
+}
+
+bool WindowsSecurityMonitor::CreateClipboardListenerWindow() {
+  // Register window class if not already registered.
+  if (clipboard_window_class_ == 0) {
+    WNDCLASSEXW wc = {};
+    wc.cbSize = sizeof(wc);
+    wc.lpfnWndProc = ClipboardWndProc;
+    wc.hInstance = GetModuleHandle(nullptr);
+    wc.lpszClassName = L"BlockdClipboardListener";
+
+    clipboard_window_class_ = RegisterClassExW(&wc);
+    if (clipboard_window_class_ == 0) {
+      DWORD error = GetLastError();
+      if (error != ERROR_CLASS_ALREADY_EXISTS) {
+        LOG(ERROR) << "Failed to register clipboard window class: " << error;
+        return false;
+      }
+    }
+  }
+
+  // Set static instance pointer for callback.
+  g_clipboard_monitor_instance = this;
+
+  // Create message-only window (HWND_MESSAGE parent).
+  clipboard_listener_hwnd_ = CreateWindowExW(
+      0,
+      L"BlockdClipboardListener",
+      L"Blockd Clipboard Listener",
+      0,  // No style needed for message-only window.
+      0, 0, 0, 0,
+      HWND_MESSAGE,  // Message-only window.
+      nullptr,
+      GetModuleHandle(nullptr),
+      nullptr);
+
+  if (!clipboard_listener_hwnd_) {
+    LOG(ERROR) << "Failed to create clipboard listener window: "
+               << GetLastError();
+    return false;
+  }
+
+  return true;
+}
+
+void WindowsSecurityMonitor::DestroyClipboardListenerWindow() {
+  if (clipboard_listener_hwnd_) {
+    DestroyWindow(clipboard_listener_hwnd_);
     clipboard_listener_hwnd_ = nullptr;
   }
 
-  clipboard_monitoring_active_ = false;
+  g_clipboard_monitor_instance = nullptr;
+
+  if (clipboard_window_class_ != 0) {
+    UnregisterClassW(L"BlockdClipboardListener", GetModuleHandle(nullptr));
+    clipboard_window_class_ = 0;
+  }
+}
+
+// Static window procedure for clipboard listener.
+LRESULT CALLBACK WindowsSecurityMonitor::ClipboardWndProc(
+    HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+  switch (msg) {
+    case WM_CLIPBOARDUPDATE:
+      if (g_clipboard_monitor_instance) {
+        g_clipboard_monitor_instance->OnClipboardChange();
+      }
+      return 0;
+
+    case WM_DESTROY:
+      PostQuitMessage(0);
+      return 0;
+
+    default:
+      return DefWindowProcW(hwnd, msg, wParam, lParam);
+  }
+}
+
+void WindowsSecurityMonitor::OnClipboardChange() {
+  // Open clipboard to get contents.
+  if (!OpenClipboard(clipboard_listener_hwnd_)) {
+    VLOG(1) << "Could not open clipboard";
+    return;
+  }
+
+  // Check for text content.
+  bool has_text = IsClipboardFormatAvailable(CF_UNICODETEXT) ||
+                  IsClipboardFormatAvailable(CF_TEXT);
+
+  // Get text content if available (for logging/analysis).
+  std::string clipboard_text;
+  if (has_text) {
+    HANDLE hData = GetClipboardData(CF_UNICODETEXT);
+    if (hData) {
+      const wchar_t* text = static_cast<const wchar_t*>(GlobalLock(hData));
+      if (text) {
+        clipboard_text = base::SysWideToUTF8(text);
+        GlobalUnlock(hData);
+      }
+    }
+  }
+
+  // Check for suspicious content patterns.
+  bool is_suspicious = false;
+  std::string detection_reason;
+
+  if (!clipboard_text.empty()) {
+    // Check for code-like patterns that might indicate copying from AI.
+    if (clipboard_text.length() > 500) {
+      // Long text copied - might be AI response.
+      is_suspicious = true;
+      detection_reason = "large_text_copied";
+    }
+
+    // Check for common AI assistant output patterns.
+    if (clipboard_text.find("```") != std::string::npos ||
+        clipboard_text.find("def ") != std::string::npos ||
+        clipboard_text.find("function ") != std::string::npos) {
+      is_suspicious = true;
+      detection_reason = "code_pattern_detected";
+    }
+  }
+
+  CloseClipboard();
+
+  if (is_suspicious) {
+    LOG(WARNING) << "Suspicious clipboard activity: " << detection_reason
+                 << " (length: " << clipboard_text.length() << ")";
+
+    // Report security event would go here.
+    // NotifySecurityEvent(SecurityEventType::kClipboardActivity, ...);
+  } else {
+    VLOG(2) << "Clipboard changed, text length: " << clipboard_text.length();
+  }
 }
 
 }  // namespace blocked

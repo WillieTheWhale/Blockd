@@ -24,14 +24,22 @@ float Distance(const FaceDetector::Landmark& a,
 FaceDetector::Landmark Centroid(
     const std::vector<FaceDetector::Landmark>& points) {
   FaceDetector::Landmark center = {0.0f, 0.0f, 0.0f};
+
+  // Guard against division by zero.
+  if (points.empty()) {
+    return center;
+  }
+
   for (const auto& point : points) {
     center.x += point.x;
     center.y += point.y;
     center.z += point.z;
   }
-  center.x /= points.size();
-  center.y /= points.size();
-  center.z /= points.size();
+
+  float count = static_cast<float>(points.size());
+  center.x /= count;
+  center.y /= count;
+  center.z /= count;
   return center;
 }
 
@@ -44,8 +52,17 @@ GazeEstimator::~GazeEstimator() = default;
 GazeEstimator::GazeVector GazeEstimator::EstimateGaze(
     const FaceDetector::FaceLandmarks& landmarks) {
 
-  if (landmarks.landmarks.size() < 478) {
-    // Not enough landmarks.
+  // MediaPipe FaceMesh provides 468 landmarks by default.
+  // With iris refinement enabled, it can provide up to 478 landmarks
+  // (468 face + 10 iris landmarks: 5 per eye).
+  // We require at least the basic 468 landmarks for gaze estimation.
+  constexpr size_t kMinRequiredLandmarks = 468;
+
+  if (landmarks.landmarks.size() < kMinRequiredLandmarks) {
+    // Not enough landmarks - face detection may have failed.
+    LOG(WARNING) << "Insufficient landmarks for gaze estimation: "
+                 << landmarks.landmarks.size() << " (need at least "
+                 << kMinRequiredLandmarks << ")";
     GazeVector gaze;
     gaze.x = 0.5f;
     gaze.y = 0.5f;
@@ -155,14 +172,23 @@ GazeEstimator::GazeVector GazeEstimator::ComputeGazeFromEyes(
 
   GazeVector gaze;
 
+  // Minimum eye dimension to prevent division by zero or near-zero.
+  constexpr float kMinEyeDimension = 0.001f;
+
   // Compute normalized iris position within eye.
   // Iris at center = looking straight, iris left/right = looking left/right.
 
-  float left_ratio_x = (left_eye.iris_x - left_eye.center_x) / left_eye.eye_width;
-  float left_ratio_y = (left_eye.iris_y - left_eye.center_y) / left_eye.eye_height;
+  // Guard against division by zero with minimum dimension check.
+  float safe_left_width = std::max(left_eye.eye_width, kMinEyeDimension);
+  float safe_left_height = std::max(left_eye.eye_height, kMinEyeDimension);
+  float safe_right_width = std::max(right_eye.eye_width, kMinEyeDimension);
+  float safe_right_height = std::max(right_eye.eye_height, kMinEyeDimension);
 
-  float right_ratio_x = (right_eye.iris_x - right_eye.center_x) / right_eye.eye_width;
-  float right_ratio_y = (right_eye.iris_y - right_eye.center_y) / right_eye.eye_height;
+  float left_ratio_x = (left_eye.iris_x - left_eye.center_x) / safe_left_width;
+  float left_ratio_y = (left_eye.iris_y - left_eye.center_y) / safe_left_height;
+
+  float right_ratio_x = (right_eye.iris_x - right_eye.center_x) / safe_right_width;
+  float right_ratio_y = (right_eye.iris_y - right_eye.center_y) / safe_right_height;
 
   // Average both eyes.
   float avg_ratio_x = (left_ratio_x + right_ratio_x) / 2.0f;
@@ -176,6 +202,14 @@ GazeEstimator::GazeVector GazeEstimator::ComputeGazeFromEyes(
   // Confidence based on eye visibility and consistency.
   float consistency = 1.0f - std::abs(left_ratio_x - right_ratio_x);
   gaze.confidence = std::max(0.0f, std::min(1.0f, consistency));
+
+  // Reduce confidence if eye dimensions were too small (unreliable detection).
+  if (left_eye.eye_width < kMinEyeDimension ||
+      left_eye.eye_height < kMinEyeDimension ||
+      right_eye.eye_width < kMinEyeDimension ||
+      right_eye.eye_height < kMinEyeDimension) {
+    gaze.confidence *= 0.5f;
+  }
 
   gaze.is_off_screen = false;
   gaze.off_screen_direction = "";
