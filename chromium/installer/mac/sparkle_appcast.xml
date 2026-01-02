@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>Blockd Browser Changelog</title>
+    <link>https://update.blockd.com/macos/appcast.xml</link>
+    <description>Most recent updates for Blockd Browser</description>
+    <language>en</language>
+
+    <!-- Version 1.0.0 -->
+    <item>
+      <title>Version 1.0.0</title>
+      <sparkle:releaseNotesLink>https://blockd.com/release-notes/1.0.0.html</sparkle:releaseNotesLink>
+      <pubDate>Mon, 24 Nov 2025 12:00:00 +0000</pubDate>
+      <enclosure
+        url="https://update.blockd.com/macos/BlockedBrowser-v1.0.0.dmg"
+        sparkle:version="1.0.0"
+        sparkle:shortVersionString="1.0.0"
+        length="85000000"
+        type="application/octet-stream"
+        sparkle:edSignature="INSERT_EDDSA_SIGNATURE_HERE" />
+      <sparkle:minimumSystemVersion>11.0</sparkle:minimumSystemVersion>
+    </item>
+
+    <!-- Future versions will be added here -->
+
+  </channel>
+</rss>

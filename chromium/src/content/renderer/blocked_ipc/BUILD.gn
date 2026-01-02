@@ -1,0 +1,52 @@
+# Copyright 2025 The Blockd Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# IPC layer for Blocked renderer-to-browser communication.
+
+import("//build/config/features.gni")
+import("//mojo/public/tools/bindings/mojom.gni")
+
+source_set("blocked_ipc") {
+  sources = [
+    "gaze_data_sender.cc",
+    "gaze_data_sender.h",
+    "renderer_host_connector.cc",
+    "renderer_host_connector.h",
+    "video_frame_sender.cc",
+    "video_frame_sender.h",
+  ]
+
+  deps = [
+    "//base",
+    "//chrome/browser/blocked/public/mojom",
+    "//mojo/public/cpp/bindings",
+  ]
+
+  # Allow access from other blocked modules.
+  visibility = [
+    "//content/renderer/blocked_eye_tracking",
+    "//content/renderer/blocked_video",
+    "//content/renderer:renderer",
+  ]
+}
+
+# Unit tests
+source_set("blocked_ipc_unittests") {
+  testonly = true
+
+  sources = [
+    "gaze_data_sender_unittest.cc",
+    "video_frame_sender_unittest.cc",
+  ]
+
+  deps = [
+    ":blocked_ipc",
+    "//base",
+    "//base/test:test_support",
+    "//content/test:test_support",
+    "//mojo/public/cpp/bindings",
+    "//testing/gmock",
+    "//testing/gtest",
+  ]
+}

@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: blockd-config
+  namespace: blockd
+  labels:
+    app: blockd
+data:
+  # Database configuration
+  postgres_db: blockd
+
+  # S3 configuration
+  s3_bucket: blockd-videos-production
+
+  # Application configuration
+  log_level: info
+
+  # Service URLs (internal)
+  api_gateway_url: http://api-gateway:3000
+  auth_service_url: http://auth-service:3001
+  session_service_url: http://session-service:3002
+  ai_detection_url: http://ai-detection:8000
+  eye_tracking_url: http://eye-tracking:8001
+  response_timing_url: http://response-timing:8002
+  video_service_url: http://video-service:8003

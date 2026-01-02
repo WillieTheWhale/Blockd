@@ -1,0 +1,52 @@
+grafana:
+  enabled: true
+  adminUser: admin
+  persistence:
+    enabled: true
+    size: 10Gi
+  ingress:
+    enabled: true
+    annotations:
+      kubernetes.io/ingress.class: nginx
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+    hosts:
+      - grafana-${environment}.blockd.io
+    tls:
+      - secretName: grafana-tls
+        hosts:
+          - grafana-${environment}.blockd.io
+
+prometheus:
+  prometheusSpec:
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    replicas: 2
+    retention: 30d
+    resources:
+      requests:
+        cpu: 500m
+        memory: 2Gi
+      limits:
+        cpu: 2000m
+        memory: 4Gi
+
+alertmanager:
+  enabled: true
+  alertmanagerSpec:
+    replicas: 2
+  config:
+    global:
+      resolve_timeout: 5m
+    route:
+      group_by: ['alertname', 'cluster', 'service']
+      group_wait: 10s
+      group_interval: 10s
+      repeat_interval: 12h
+      receiver: 'slack'
+    receivers:
+      - name: 'slack'
+        slack_configs:
+          - api_url: '$${SLACK_WEBHOOK_URL}'
+            channel: '#alerts-${environment}'
+            title: 'Blockd Alert - ${environment}'
+            text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'

@@ -1,0 +1,354 @@
+name: Test Suite
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main, develop]
+
+env:
+  NODE_VERSION: '24'
+  PYTHON_VERSION: '3.14'
+
+jobs:
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: |
+            frontend/interviewer-app/package-lock.json
+            backend/*/package-lock.json
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install Node.js dependencies
+        run: |
+          cd frontend/interviewer-app && npm ci
+          cd ../../backend/api-gateway && npm ci
+          cd ../websocket-service && npm ci
+
+      - name: Install Python dependencies
+        run: |
+          pip install black flake8 mypy pylint
+          cd backend/ai-detection && pip install -r requirements.txt
+          cd ../eye-tracking && pip install -r requirements.txt
+          cd ../response-timing && pip install -r requirements.txt
+
+      - name: Run ESLint (Frontend)
+        run: |
+          cd frontend/interviewer-app
+          npm run lint
+
+      - name: Run ESLint (API Gateway)
+        run: |
+          cd backend/api-gateway
+          npm run lint
+
+      - name: Run ESLint (WebSocket Service)
+        run: |
+          cd backend/websocket-service
+          npm run lint
+
+      - name: Run Prettier check
+        run: |
+          npx prettier --check "frontend/**/*.{ts,tsx,js,jsx,json,css,scss}"
+          npx prettier --check "backend/**/*.{ts,js,json}"
+
+      - name: Run Black (Python formatter)
+        run: |
+          black --check backend/ai-detection
+          black --check backend/eye-tracking
+          black --check backend/response-timing
+
+      - name: Run TypeScript type checking
+        run: |
+          cd frontend/interviewer-app && npx tsc --noEmit
+          cd ../../backend/api-gateway && npx tsc --noEmit
+          cd ../websocket-service && npx tsc --noEmit
+
+      - name: Run Python type checking
+        run: |
+          cd backend/ai-detection && mypy .
+          cd ../eye-tracking && mypy .
+          cd ../response-timing && mypy .
+
+  unit-tests:
+    name: Unit Tests - ${{ matrix.service }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - frontend
+          - api-gateway
+          - auth-service
+          - session-service
+          - websocket-service
+          - ai-detection
+          - eye-tracking
+          - response-timing
+          - video-service
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js (for Node services)
+        if: matrix.service != 'ai-detection' && matrix.service != 'eye-tracking' && matrix.service != 'response-timing'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Setup Python (for Python services)
+        if: matrix.service == 'ai-detection' || matrix.service == 'eye-tracking' || matrix.service == 'response-timing'
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies (Frontend)
+        if: matrix.service == 'frontend'
+        run: |
+          cd frontend/interviewer-app
+          npm ci
+
+      - name: Install dependencies (Node.js services)
+        if: matrix.service != 'frontend' && matrix.service != 'ai-detection' && matrix.service != 'eye-tracking' && matrix.service != 'response-timing'
+        run: |
+          cd backend/${{ matrix.service }}
+          npm ci
+
+      - name: Install dependencies (Python services)
+        if: matrix.service == 'ai-detection' || matrix.service == 'eye-tracking' || matrix.service == 'response-timing'
+        run: |
+          cd backend/${{ matrix.service }}
+          pip install -r requirements.txt
+          pip install pytest pytest-cov pytest-asyncio
+
+      - name: Run tests (Frontend)
+        if: matrix.service == 'frontend'
+        run: |
+          cd frontend/interviewer-app
+          npm test -- --coverage --watchAll=false
+
+      - name: Run tests (Node.js services)
+        if: matrix.service != 'frontend' && matrix.service != 'ai-detection' && matrix.service != 'eye-tracking' && matrix.service != 'response-timing'
+        run: |
+          cd backend/${{ matrix.service }}
+          npm test -- --coverage --watchAll=false
+
+      - name: Run tests (Python services)
+        if: matrix.service == 'ai-detection' || matrix.service == 'eye-tracking' || matrix.service == 'response-timing'
+        run: |
+          cd backend/${{ matrix.service }}
+          pytest tests/ --cov=. --cov-report=xml --cov-report=html
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.xml,./coverage/coverage-final.json
+          flags: ${{ matrix.service }}
+          name: ${{ matrix.service }}-coverage
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: blockd_test
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: blockd_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+      rabbitmq:
+        image: rabbitmq:3.13-management-alpine
+        env:
+          RABBITMQ_DEFAULT_USER: blockd
+          RABBITMQ_DEFAULT_PASS: test_password
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5672:5672
+          - 15672:15672
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Newman (Postman CLI)
+        run: npm install -g newman newman-reporter-html
+
+      - name: Run database migrations
+        run: |
+          cd database
+          npm install
+          npx prisma migrate deploy
+        env:
+          DATABASE_URL: postgresql://blockd_test:test_password@localhost:5432/blockd_test
+
+      - name: Seed test data
+        run: |
+          cd database
+          npx prisma db seed
+        env:
+          DATABASE_URL: postgresql://blockd_test:test_password@localhost:5432/blockd_test
+
+      - name: Start Auth Service
+        run: |
+          cd backend/auth-service
+          npm ci
+          npm run build
+          npm start &
+          sleep 10
+        env:
+          DATABASE_URL: postgresql://blockd_test:test_password@localhost:5432/blockd_test
+          REDIS_URL: redis://localhost:6379
+          JWT_SECRET: test_jwt_secret_key_for_integration_tests
+          PORT: 3001
+
+      - name: Start Session Service
+        run: |
+          cd backend/session-service
+          npm ci
+          npm run build
+          npm start &
+          sleep 10
+        env:
+          DATABASE_URL: postgresql://blockd_test:test_password@localhost:5432/blockd_test
+          REDIS_URL: redis://localhost:6379
+          RABBITMQ_URL: amqp://blockd:test_password@localhost:5672
+          PORT: 3002
+
+      - name: Start API Gateway
+        run: |
+          cd backend/api-gateway
+          npm ci
+          npm run build
+          npm start &
+          sleep 10
+        env:
+          AUTH_SERVICE_URL: http://localhost:3001
+          SESSION_SERVICE_URL: http://localhost:3002
+          PORT: 3000
+
+      - name: Wait for services to be ready
+        run: |
+          timeout 60 bash -c 'until curl -f http://localhost:3000/health; do sleep 2; done'
+          timeout 60 bash -c 'until curl -f http://localhost:3001/health; do sleep 2; done'
+          timeout 60 bash -c 'until curl -f http://localhost:3002/health; do sleep 2; done'
+
+      - name: Run Newman API Tests - Authentication
+        run: |
+          newman run tests/api/postman-collections/auth-api.postman_collection.json \
+            -e tests/api/environments/local.json \
+            --reporters cli,html \
+            --reporter-html-export tests/api/reports/auth-api.html \
+            --bail
+
+      - name: Run Newman API Tests - Sessions
+        run: |
+          newman run tests/api/postman-collections/sessions-api.postman_collection.json \
+            -e tests/api/environments/local.json \
+            --reporters cli,html \
+            --reporter-html-export tests/api/reports/sessions-api.html \
+            --bail
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-reports
+          path: tests/api/reports/
+
+  e2e-tests:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Playwright
+        run: |
+          cd tests/e2e
+          npm ci
+          npx playwright install --with-deps
+
+      - name: Start services with Docker Compose
+        run: |
+          docker-compose up -d
+          sleep 30
+
+      - name: Wait for services to be ready
+        run: |
+          timeout 120 bash -c 'until curl -f http://localhost:3000/health; do sleep 5; done'
+
+      - name: Run Playwright E2E tests
+        run: |
+          cd tests/e2e
+          npx playwright test
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: tests/e2e/playwright-report/
+
+      - name: Stop services
+        if: always()
+        run: docker-compose down -v

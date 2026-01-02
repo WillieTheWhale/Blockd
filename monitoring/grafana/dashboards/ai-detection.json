@@ -1,0 +1,14 @@
+{
+  "dashboard": {
+    "title": "AI Detection Service Metrics",
+    "tags": ["blockd", "ai-detection", "ml"],
+    "panels": [
+      {"id": 1, "title": "Analysis Time (p95)", "type": "graph", "targets": [{"expr": "histogram_quantile(0.95, rate(ai_detection_analysis_duration_seconds_bucket[5m]))"}]},
+      {"id": 2, "title": "Analyses per Second", "type": "graph", "targets": [{"expr": "rate(ai_detection_analyses_total[5m])"}]},
+      {"id": 3, "title": "Cache Hit Rate", "type": "graph", "targets": [{"expr": "rate(ai_detection_cache_hits_total[5m]) / rate(ai_detection_requests_total[5m])"}]},
+      {"id": 4, "title": "Model Performance", "type": "graph", "targets": [{"expr": "ai_detection_similarity_score"}]},
+      {"id": 5, "title": "API Errors", "type": "graph", "targets": [{"expr": "rate(ai_detection_api_errors_total[5m]) by (provider)"}]}
+    ],
+    "refresh": "30s"
+  }
+}

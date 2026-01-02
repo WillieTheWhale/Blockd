@@ -1,0 +1,45 @@
+{
+  "id": "production-env-001",
+  "name": "Blockd Production Environment",
+  "values": [
+    {
+      "key": "baseUrl",
+      "value": "https://api.blockd.io/api",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "wsUrl",
+      "value": "wss://ws.blockd.io",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "frontendUrl",
+      "value": "https://blockd.io",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "environment",
+      "value": "production",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "secret",
+      "enabled": true
+    },
+    {
+      "key": "refreshToken",
+      "value": "",
+      "type": "secret",
+      "enabled": true
+    }
+  ],
+  "_postman_variable_scope": "environment",
+  "_postman_exported_at": "2025-11-24T00:00:00.000Z",
+  "_postman_exported_using": "Postman/10.0.0"
+}

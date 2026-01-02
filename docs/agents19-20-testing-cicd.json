@@ -1,0 +1,535 @@
+{
+  "agents": [19, 20],
+  "phase": 6,
+  "status": "implementation_guide",
+
+  "agent_19": {
+    "name": "Integration & E2E Testing Developer",
+
+    "testing_framework_setup": {
+      "e2e_testing": {
+        "tool": "Playwright 1.x",
+        "browsers": ["Chromium", "Firefox", "WebKit"],
+        "location": "/tests/e2e/",
+        "configuration": "playwright.config.ts"
+      },
+      "api_testing": {
+        "tool": "Newman (Postman CLI)",
+        "collections": "/tests/api/postman-collections/",
+        "environments": ["local", "staging", "production"]
+      },
+      "load_testing": {
+        "tool": "k6",
+        "scripts": "/tests/load/",
+        "scenarios": ["normal_load", "peak_load", "stress_test"]
+      }
+    },
+
+    "e2e_test_scenarios": [
+      {
+        "name": "Complete Interview Flow",
+        "file": "tests/e2e/interview-flow.spec.ts",
+        "steps": [
+          "1. Interviewer logs in",
+          "2. Creates new interview session",
+          "3. Invites interviewee",
+          "4. Starts session",
+          "5. Interviewee joins (simulated)",
+          "6. Questions are asked and answered",
+          "7. Security events are monitored",
+          "8. Gaze tracking is active",
+          "9. Session ends",
+          "10. Report is generated"
+        ],
+        "assertions": [
+          "Session created successfully",
+          "WebSocket connection established",
+          "Video stream active",
+          "Security events logged",
+          "AI detection completed",
+          "Report contains all data"
+        ]
+      },
+      {
+        "name": "Authentication Flow",
+        "file": "tests/e2e/auth.spec.ts",
+        "scenarios": [
+          "User registration",
+          "Email verification",
+          "Login with correct credentials",
+          "Login with incorrect credentials (should fail)",
+          "MFA setup",
+          "Login with MFA",
+          "Password reset",
+          "Token refresh",
+          "Logout"
+        ]
+      },
+      {
+        "name": "Real-time Features",
+        "file": "tests/e2e/realtime.spec.ts",
+        "tests": [
+          "WebSocket connection and reconnection",
+          "Security event broadcasting",
+          "Gaze data streaming",
+          "Chat messages",
+          "Participant join/leave notifications",
+          "Session status updates"
+        ]
+      },
+      {
+        "name": "Security Event Detection",
+        "file": "tests/e2e/security.spec.ts",
+        "simulations": [
+          "Simulate suspicious process (mock)",
+          "Simulate window focus change",
+          "Simulate screen recording attempt",
+          "Verify events logged to database",
+          "Verify real-time alerts to interviewer"
+        ]
+      },
+      {
+        "name": "AI Detection",
+        "file": "tests/e2e/ai-detection.spec.ts",
+        "tests": [
+          "Submit known AI-generated answer (high similarity expected)",
+          "Submit known human answer (low similarity expected)",
+          "Verify risk score calculation",
+          "Verify flags generation",
+          "Verify caching (second identical question should be faster)"
+        ]
+      },
+      {
+        "name": "Video Streaming",
+        "file": "tests/e2e/video.spec.ts",
+        "tests": [
+          "WebRTC peer connection establishment",
+          "Video stream starts within 2 seconds",
+          "Recording starts",
+          "Recording stops and uploads to S3",
+          "Adaptive bitrate switching"
+        ]
+      }
+    ],
+
+    "api_integration_tests": {
+      "postman_collections": [
+        {
+          "name": "Authentication API",
+          "file": "auth-api.postman_collection.json",
+          "tests": [
+            "POST /auth/register - Create new user",
+            "POST /auth/login - Login and receive JWT",
+            "POST /auth/refresh - Refresh access token",
+            "POST /auth/logout - Invalidate tokens",
+            "POST /auth/mfa/setup - Setup MFA",
+            "POST /auth/mfa/verify - Verify MFA code"
+          ]
+        },
+        {
+          "name": "Sessions API",
+          "file": "sessions-api.postman_collection.json",
+          "tests": [
+            "POST /sessions - Create session",
+            "GET /sessions - List sessions with pagination",
+            "GET /sessions/:id - Get session details",
+            "POST /sessions/:id/start - Start session",
+            "POST /sessions/:id/end - End session",
+            "GET /sessions/:id/events - Get security events"
+          ]
+        },
+        {
+          "name": "AI Detection API",
+          "file": "ai-detection.postman_collection.json",
+          "tests": [
+            "POST /analysis/question - Generate AI answers",
+            "POST /analysis/answer - Analyze user answer",
+            "Verify response time < 5s",
+            "Verify cache hit after first request"
+          ]
+        },
+        {
+          "name": "Video API",
+          "file": "video-api.postman_collection.json",
+          "tests": [
+            "POST /webrtc/create-transport",
+            "POST /webrtc/connect-transport",
+            "POST /webrtc/produce",
+            "POST /recording/start",
+            "POST /recording/stop",
+            "Verify S3 URL returned"
+          ]
+        }
+      ],
+      "newman_command": "newman run tests/api/sessions-api.postman_collection.json -e tests/api/environments/staging.json --reporters cli,html --reporter-html-export tests/api/reports/sessions-api.html"
+    },
+
+    "load_testing_scenarios": {
+      "normal_load": {
+        "script": "tests/load/normal-load.js",
+        "scenario": {
+          "virtual_users": 100,
+          "duration": "10m",
+          "ramp_up": "2m",
+          "targets": [
+            "API Gateway: 500 req/min sustained",
+            "WebSocket: 100 concurrent connections",
+            "Video Streaming: 20 active streams"
+          ]
+        },
+        "thresholds": {
+          "http_req_duration": ["p(95)<200"],
+          "http_req_failed": ["rate<0.01"],
+          "ws_connecting": ["p(95)<1000"]
+        }
+      },
+      "peak_load": {
+        "script": "tests/load/peak-load.js",
+        "scenario": {
+          "virtual_users": 500,
+          "duration": "5m",
+          "targets": [
+            "API Gateway: 2000 req/min",
+            "WebSocket: 500 concurrent connections",
+            "Video Streaming: 100 active streams"
+          ]
+        }
+      },
+      "stress_test": {
+        "script": "tests/load/stress-test.js",
+        "scenario": {
+          "virtual_users": "Ramp from 0 to 1000 over 10m",
+          "objective": "Find breaking point",
+          "monitor": ["CPU", "Memory", "Database connections", "Response times"]
+        }
+      }
+    },
+
+    "test_data_management": {
+      "fixtures": "/tests/fixtures/",
+      "factories": [
+        "UserFactory - Generate test users",
+        "SessionFactory - Generate test sessions",
+        "QuestionFactory - Generate test questions",
+        "AnswerFactory - Generate AI and human answers"
+      ],
+      "database_seeding": "Run seed scripts before test suite",
+      "cleanup": "Truncate test data after each test suite"
+    },
+
+    "test_coverage_targets": {
+      "unit_tests": "80% statements, 75% branches",
+      "integration_tests": "Cover all API endpoints",
+      "e2e_tests": "Cover critical user journeys",
+      "overall_goal": "90% confidence in production readiness"
+    },
+
+    "test_reporting": {
+      "format": "HTML reports + JUnit XML for CI integration",
+      "playwright_report": "tests/reports/playwright-report/",
+      "newman_report": "tests/reports/newman-report/",
+      "k6_report": "tests/reports/k6-report.html",
+      "coverage_report": "tests/reports/coverage/"
+    }
+  },
+
+  "agent_20": {
+    "name": "CI/CD & Deployment Automation Developer",
+
+    "github_actions_workflows": {
+      "lint_and_test": {
+        "file": ".github/workflows/test.yml",
+        "triggers": ["push", "pull_request"],
+        "jobs": [
+          {
+            "name": "lint",
+            "steps": [
+              "Checkout code",
+              "Setup Node.js 24 and Python 3.14",
+              "Install dependencies",
+              "Run ESLint (frontend + Node.js services)",
+              "Run Prettier check",
+              "Run Black (Python services)",
+              "Run TypeScript type checking"
+            ]
+          },
+          {
+            "name": "unit-tests",
+            "strategy": "matrix: [frontend, api-gateway, auth-service, session-service, websocket-service, ai-detection, eye-tracking, response-timing, video-service]",
+            "steps": [
+              "Run service-specific tests",
+              "Generate coverage report",
+              "Upload coverage to Codecov"
+            ]
+          },
+          {
+            "name": "integration-tests",
+            "services": ["postgres", "redis", "rabbitmq"],
+            "steps": [
+              "Start infrastructure services",
+              "Run database migrations",
+              "Start all microservices",
+              "Run Newman API tests",
+              "Collect test results"
+            ]
+          }
+        ]
+      },
+
+      "build_and_push": {
+        "file": ".github/workflows/build.yml",
+        "triggers": ["push to main", "push to develop"],
+        "jobs": [
+          {
+            "name": "build-docker-images",
+            "strategy": "matrix: [api-gateway, auth-service, session-service, websocket-service, ai-detection, eye-tracking, response-timing, video-service, frontend]",
+            "steps": [
+              "Checkout code",
+              "Set up Docker Buildx",
+              "Login to container registry (AWS ECR / GitHub Container Registry)",
+              "Build Docker image with cache",
+              "Tag image (commit SHA + branch name)",
+              "Push to registry",
+              "Scan image for vulnerabilities (Trivy)"
+            ]
+          }
+        ]
+      },
+
+      "deploy_staging": {
+        "file": ".github/workflows/deploy-staging.yml",
+        "trigger": "push to develop",
+        "environment": "staging",
+        "steps": [
+          "Checkout code",
+          "Configure kubectl (EKS/GKE/AKS)",
+          "Helm lint",
+          "Helm upgrade --install blockd ./k8s/helm/blockd -f values-staging.yaml --namespace staging",
+          "Wait for rollout to complete",
+          "Run smoke tests",
+          "Notify team (Slack)"
+        ]
+      },
+
+      "deploy_production": {
+        "file": ".github/workflows/deploy-production.yml",
+        "trigger": "Manual approval + push to main",
+        "environment": "production",
+        "deployment_strategy": "Blue-Green",
+        "steps": [
+          "Checkout code",
+          "Configure kubectl",
+          "Create new 'green' deployment",
+          "Wait for green deployment ready",
+          "Run smoke tests on green",
+          "Switch traffic to green (update service selector)",
+          "Monitor metrics for 10 minutes",
+          "If healthy: delete blue deployment",
+          "If unhealthy: rollback to blue",
+          "Notify team"
+        ]
+      },
+
+      "security_scan": {
+        "file": ".github/workflows/security.yml",
+        "triggers": ["schedule: daily at 2am", "pull_request"],
+        "jobs": [
+          {
+            "name": "dependency-check",
+            "tools": ["npm audit", "pip-audit", "Snyk"],
+            "action": "Fail if high/critical vulnerabilities"
+          },
+          {
+            "name": "code-scanning",
+            "tools": ["SonarQube", "CodeQL"],
+            "action": "Report security issues as GitHub issues"
+          },
+          {
+            "name": "container-scanning",
+            "tool": "Trivy",
+            "action": "Scan all Docker images for CVEs"
+          }
+        ]
+      }
+    },
+
+    "deployment_strategies": {
+      "staging": {
+        "strategy": "Rolling update",
+        "namespace": "staging",
+        "replicas": {
+          "api-gateway": 2,
+          "auth-service": 1,
+          "session-service": 1,
+          "ai-detection": 1,
+          "other-services": 1
+        },
+        "auto_deploy": "On every push to develop"
+      },
+      "production": {
+        "strategy": "Blue-Green",
+        "namespace": "production",
+        "replicas": {
+          "api-gateway": "3-10 (HPA)",
+          "auth-service": 2,
+          "session-service": 2,
+          "ai-detection": "3-10 (HPA)",
+          "other-services": 2
+        },
+        "approval_required": true,
+        "rollback_plan": "Switch service selector back to blue"
+      }
+    },
+
+    "infrastructure_as_code": {
+      "tool": "Terraform",
+      "location": "/infrastructure/terraform/",
+      "modules": [
+        {
+          "name": "kubernetes-cluster",
+          "provider": "aws",
+          "resources": ["EKS cluster", "Node groups", "VPC", "Security groups"]
+        },
+        {
+          "name": "database",
+          "resources": ["RDS PostgreSQL", "ElastiCache Redis", "Amazon MQ (RabbitMQ)"]
+        },
+        {
+          "name": "storage",
+          "resources": ["S3 buckets for videos", "CloudFront CDN"]
+        },
+        {
+          "name": "monitoring",
+          "resources": ["CloudWatch", "Prometheus", "Grafana"]
+        }
+      ],
+      "state_management": "Terraform Cloud or S3 backend with DynamoDB locking"
+    },
+
+    "monitoring_and_observability": {
+      "metrics": {
+        "tool": "Prometheus + Grafana",
+        "dashboards": [
+          "API Gateway metrics (req/s, latency, errors)",
+          "Database metrics (connections, query time)",
+          "Redis metrics (hit rate, memory usage)",
+          "WebSocket metrics (connections, messages/s)",
+          "AI Detection metrics (analysis time, cache hit rate)",
+          "Video Streaming metrics (active streams, bitrate)"
+        ],
+        "alerts": [
+          "High error rate (>1%)",
+          "High latency (p95 > 500ms)",
+          "Database connection pool exhausted",
+          "Redis memory > 80%",
+          "Disk space < 20%"
+        ]
+      },
+      "logging": {
+        "stack": "ELK (Elasticsearch, Logstash, Kibana) or Loki",
+        "format": "Structured JSON",
+        "retention": "30 days"
+      },
+      "tracing": {
+        "tool": "Jaeger or Zipkin",
+        "instrumentation": "OpenTelemetry SDKs in all services"
+      },
+      "error_tracking": {
+        "tool": "Sentry",
+        "integration": "All services send errors to Sentry",
+        "alerts": "New error types, error spike"
+      }
+    },
+
+    "secrets_management": {
+      "tool": "Kubernetes Secrets + External Secrets Operator",
+      "backend": "AWS Secrets Manager or HashiCorp Vault",
+      "secrets": [
+        "Database credentials",
+        "Redis password",
+        "JWT private keys",
+        "API keys (OpenAI, Anthropic, Google)",
+        "S3 access keys",
+        "OAuth client secrets"
+      ],
+      "rotation": "Automatic rotation every 90 days"
+    },
+
+    "backup_and_disaster_recovery": {
+      "database_backups": {
+        "frequency": "Daily automated backups",
+        "retention": "30 days",
+        "point_in_time_recovery": "Enabled",
+        "restore_testing": "Monthly"
+      },
+      "redis_backups": {
+        "frequency": "Snapshot every 6 hours",
+        "persistence": "AOF enabled"
+      },
+      "s3_backups": {
+        "replication": "Cross-region replication",
+        "versioning": "Enabled"
+      },
+      "disaster_recovery_plan": {
+        "rto": "4 hours (Recovery Time Objective)",
+        "rpo": "1 hour (Recovery Point Objective)",
+        "runbook": "/docs/runbooks/disaster-recovery.md"
+      }
+    },
+
+    "cost_optimization": {
+      "strategies": [
+        "Use spot instances for non-critical workloads",
+        "Auto-scaling based on load",
+        "S3 lifecycle policies (delete old videos after 90 days)",
+        "Reserved instances for baseline capacity",
+        "CloudFront caching to reduce origin requests",
+        "Compress logs before storing"
+      ],
+      "monitoring": "AWS Cost Explorer + custom budget alerts"
+    }
+  },
+
+  "deployment_checklist": {
+    "pre_deployment": [
+      "✅ All tests passing",
+      "✅ Code review approved",
+      "✅ Security scan passed",
+      "✅ Database migrations tested",
+      "✅ Environment variables configured",
+      "✅ Secrets uploaded to secrets manager",
+      "✅ Monitoring dashboards configured",
+      "✅ Rollback plan documented"
+    ],
+    "deployment": [
+      "✅ Tag release in Git",
+      "✅ Build and push Docker images",
+      "✅ Run database migrations",
+      "✅ Deploy to staging first",
+      "✅ Run smoke tests on staging",
+      "✅ Deploy to production (with approval)",
+      "✅ Verify health checks",
+      "✅ Monitor metrics for 30 minutes"
+    ],
+    "post_deployment": [
+      "✅ Verify all services running",
+      "✅ Check error rates",
+      "✅ Test critical user flows",
+      "✅ Update documentation",
+      "✅ Notify stakeholders",
+      "✅ Close deployment ticket"
+    ]
+  },
+
+  "runbooks": {
+    "location": "/docs/runbooks/",
+    "documents": [
+      "incident-response.md - How to respond to outages",
+      "rollback-procedure.md - How to rollback a deployment",
+      "database-restore.md - How to restore from backup",
+      "scaling-guide.md - How to manually scale services",
+      "monitoring-alerts.md - How to interpret and respond to alerts",
+      "security-incident.md - Security incident response"
+    ]
+  }
+}

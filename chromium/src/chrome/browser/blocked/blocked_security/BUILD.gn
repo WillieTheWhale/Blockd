@@ -1,0 +1,72 @@
+# Copyright 2025 The Blocked Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/config/features.gni")
+
+# Security monitoring module
+source_set("security_monitoring") {
+  sources = [
+    "blocked_security_service.cc",
+    "blocked_security_service.h",
+  ]
+
+  deps = [
+    "//base",
+    "//components/keyed_service/core",
+    "//content/public/browser",
+  ]
+
+  if (is_win) {
+    sources += [
+      "platform/windows/windows_security_monitor.cc",
+      "platform/windows/windows_security_monitor.h",
+    ]
+
+    libs = [
+      "dwmapi.lib",
+      "psapi.lib",
+      "wintrust.lib",
+    ]
+  }
+
+  if (is_mac) {
+    sources += [
+      "platform/macos/macos_security_monitor.h",
+      "platform/macos/macos_security_monitor.mm",
+    ]
+
+    frameworks = [
+      "AppKit.framework",
+      "Cocoa.framework",
+      "IOKit.framework",
+      "Security.framework",
+    ]
+  }
+
+  if (is_linux) {
+    sources += [
+      "platform/linux/linux_security_monitor.cc",
+      "platform/linux/linux_security_monitor.h",
+    ]
+
+    deps += [ "//ui/gfx/x" ]
+  }
+
+  configs += [ "//chrome/browser/blocked:blocked_config" ]
+}
+
+# Unit tests
+source_set("security_monitoring_unittests") {
+  testonly = true
+
+  sources = [
+    "blocked_security_service_unittest.cc",
+  ]
+
+  deps = [
+    ":security_monitoring",
+    "//base/test:test_support",
+    "//testing/gtest",
+  ]
+}

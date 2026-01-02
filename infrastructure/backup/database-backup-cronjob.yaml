@@ -1,0 +1,151 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgresql-backup
+  namespace: production
+spec:
+  schedule: "0 2 * * *"  # Daily at 2 AM UTC
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 3
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: backup-sa
+          containers:
+          - name: pg-backup
+            image: postgres:17
+            command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+
+              BACKUP_DATE=$(date +%Y%m%d_%H%M%S)
+              BACKUP_FILE="blockd-db-backup-${BACKUP_DATE}.sql.gz"
+              S3_BUCKET="blockd-backups-production"
+
+              echo "Starting database backup at $(date)"
+
+              # Create backup
+              pg_dump $DATABASE_URL | gzip > /tmp/${BACKUP_FILE}
+
+              echo "Backup created: ${BACKUP_FILE}"
+              echo "Size: $(du -h /tmp/${BACKUP_FILE} | cut -f1)"
+
+              # Upload to S3
+              aws s3 cp /tmp/${BACKUP_FILE} s3://${S3_BUCKET}/database/${BACKUP_FILE}
+
+              echo "Backup uploaded to S3"
+
+              # Verify backup
+              aws s3 ls s3://${S3_BUCKET}/database/${BACKUP_FILE}
+
+              # Clean up old backups (keep last 30 days)
+              aws s3 ls s3://${S3_BUCKET}/database/ | \
+                awk '{print $4}' | \
+                sort -r | \
+                tail -n +31 | \
+                xargs -I {} aws s3 rm s3://${S3_BUCKET}/database/{}
+
+              echo "Backup completed successfully at $(date)"
+            env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: blockd-database-secret
+                  key: database-url
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: blockd-secrets
+                  key: aws-access-key-id
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: blockd-secrets
+                  key: aws-secret-access-key
+            - name: AWS_DEFAULT_REGION
+              value: us-east-1
+
+---
+# ServiceAccount for backup jobs
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backup-sa
+  namespace: production
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/blockd-backup-role
+
+---
+# Staging Database Backup CronJob
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgresql-backup
+  namespace: staging
+spec:
+  schedule: "0 3 * * *"  # Daily at 3 AM UTC
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: backup-sa
+          containers:
+          - name: pg-backup
+            image: postgres:17
+            command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+
+              BACKUP_DATE=$(date +%Y%m%d_%H%M%S)
+              BACKUP_FILE="blockd-db-backup-${BACKUP_DATE}.sql.gz"
+              S3_BUCKET="blockd-backups-staging"
+
+              pg_dump $DATABASE_URL | gzip > /tmp/${BACKUP_FILE}
+              aws s3 cp /tmp/${BACKUP_FILE} s3://${S3_BUCKET}/database/${BACKUP_FILE}
+
+              # Keep last 7 days for staging
+              aws s3 ls s3://${S3_BUCKET}/database/ | \
+                awk '{print $4}' | \
+                sort -r | \
+                tail -n +8 | \
+                xargs -I {} aws s3 rm s3://${S3_BUCKET}/database/{}
+
+              echo "Backup completed"
+            env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: blockd-database-secret
+                  key: database-url
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: blockd-secrets
+                  key: aws-access-key-id
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: blockd-secrets
+                  key: aws-secret-access-key
+            - name: AWS_DEFAULT_REGION
+              value: us-east-1
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backup-sa
+  namespace: staging
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/blockd-backup-role

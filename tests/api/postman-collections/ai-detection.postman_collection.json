@@ -1,0 +1,297 @@
+{
+  "info": {
+    "name": "Blockd - AI Detection API",
+    "description": "API integration tests for AI answer detection endpoints",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_postman_id": "ai-detection-api-001",
+    "version": "1.0.0"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "{{baseUrl}}",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "questionId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "analysisId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "POST /analysis/question - Generate AI answers",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status code is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('Response has AI-generated answers', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('aiAnswers');",
+              "    pm.expect(jsonData.aiAnswers).to.be.an('array');",
+              "    pm.expect(jsonData.aiAnswers.length).to.be.above(0);",
+              "});",
+              "",
+              "pm.test('Each AI answer has required fields', function () {",
+              "    const jsonData = pm.response.json();",
+              "    jsonData.aiAnswers.forEach(answer => {",
+              "        pm.expect(answer).to.have.property('model');",
+              "        pm.expect(answer).to.have.property('text');",
+              "        pm.expect(answer).to.have.property('embeddings');",
+              "        pm.expect(answer.embeddings).to.be.an('array');",
+              "    });",
+              "});",
+              "",
+              "pm.test('Response has question ID', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('questionId');",
+              "    pm.collectionVariables.set('questionId', jsonData.questionId);",
+              "});",
+              "",
+              "pm.test('Response time is less than 5000ms', function () {",
+              "    pm.expect(pm.response.responseTime).to.be.below(5000);",
+              "});",
+              "",
+              "pm.test('Answers are from multiple models', function () {",
+              "    const jsonData = pm.response.json();",
+              "    const models = jsonData.aiAnswers.map(a => a.model);",
+              "    const uniqueModels = [...new Set(models)];",
+              "    pm.expect(uniqueModels.length).to.be.above(1);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"question\": \"Explain the concept of closures in JavaScript and provide an example.\",\n  \"difficulty\": \"medium\",\n  \"category\": \"technical\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/analysis/question",
+          "host": ["{{baseUrl}}"],
+          "path": ["analysis", "question"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "POST /analysis/answer - Analyze user answer",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status code is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('Response has analysis object', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('analysis');",
+              "    pm.collectionVariables.set('analysisId', jsonData.analysis.id);",
+              "});",
+              "",
+              "pm.test('Analysis has risk score', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData.analysis).to.have.property('riskScore');",
+              "    pm.expect(jsonData.analysis.riskScore).to.be.a('number');",
+              "    pm.expect(jsonData.analysis.riskScore).to.be.at.least(0);",
+              "    pm.expect(jsonData.analysis.riskScore).to.be.at.most(1);",
+              "});",
+              "",
+              "pm.test('Analysis has similarity scores', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData.analysis).to.have.property('similarityScores');",
+              "    pm.expect(jsonData.analysis.similarityScores).to.be.an('array');",
+              "    pm.expect(jsonData.analysis.similarityScores.length).to.be.above(0);",
+              "});",
+              "",
+              "pm.test('Analysis has flags', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData.analysis).to.have.property('flags');",
+              "    pm.expect(jsonData.analysis.flags).to.be.an('array');",
+              "});",
+              "",
+              "pm.test('Analysis has risk level classification', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData.analysis).to.have.property('riskLevel');",
+              "    pm.expect(jsonData.analysis.riskLevel).to.be.oneOf(['low', 'medium', 'high']);",
+              "});",
+              "",
+              "pm.test('Response time is less than 5000ms', function () {",
+              "    pm.expect(pm.response.responseTime).to.be.below(5000);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"questionId\": \"{{questionId}}\",\n  \"answer\": \"Certainly! I'd be happy to explain closures in JavaScript.\\n\\nA closure is a function that has access to variables in its outer (enclosing) lexical scope, even after the outer function has returned. This is a fundamental concept in JavaScript.\\n\\nHere's an example:\\n\\n```javascript\\nfunction createCounter() {\\n  let count = 0;\\n  return function() {\\n    count++;\\n    return count;\\n  };\\n}\\n\\nconst counter = createCounter();\\nconsole.log(counter()); // 1\\nconsole.log(counter()); // 2\\n```\\n\\nIn this example, the inner function has access to the `count` variable even after `createCounter` has finished executing.\",\n  \"sessionId\": \"test-session-123\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/analysis/answer",
+          "host": ["{{baseUrl}}"],
+          "path": ["analysis", "answer"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "POST /analysis/answer - Analyze (Cache Test)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "// Store start time for cache verification",
+              "pm.globals.set('cacheTestStartTime', Date.now());"
+            ],
+            "type": "text/javascript"
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status code is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('Response time is faster (cache hit)', function () {",
+              "    // Second identical request should be significantly faster",
+              "    pm.expect(pm.response.responseTime).to.be.below(1000);",
+              "});",
+              "",
+              "pm.test('Response indicates cache hit', function () {",
+              "    const jsonData = pm.response.json();",
+              "    // Some APIs include cache metadata",
+              "    if (jsonData.meta) {",
+              "        pm.expect(jsonData.meta.cached).to.be.true;",
+              "    }",
+              "});",
+              "",
+              "pm.test('Analysis results are identical to first request', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData.analysis).to.have.property('riskScore');",
+              "    pm.expect(jsonData.analysis).to.have.property('similarityScores');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"questionId\": \"{{questionId}}\",\n  \"answer\": \"Certainly! I'd be happy to explain closures in JavaScript.\\n\\nA closure is a function that has access to variables in its outer (enclosing) lexical scope, even after the outer function has returned. This is a fundamental concept in JavaScript.\\n\\nHere's an example:\\n\\n```javascript\\nfunction createCounter() {\\n  let count = 0;\\n  return function() {\\n    count++;\\n    return count;\\n  };\\n}\\n\\nconst counter = createCounter();\\nconsole.log(counter()); // 1\\nconsole.log(counter()); // 2\\n```\\n\\nIn this example, the inner function has access to the `count` variable even after `createCounter` has finished executing.\",\n  \"sessionId\": \"test-session-123\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/analysis/answer",
+          "host": ["{{baseUrl}}"],
+          "path": ["analysis", "answer"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "GET /analysis/:id - Get analysis details",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status code is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('Response has complete analysis object', function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('analysis');",
+              "    ",
+              "    const analysis = jsonData.analysis;",
+              "    pm.expect(analysis).to.have.property('id');",
+              "    pm.expect(analysis).to.have.property('riskScore');",
+              "    pm.expect(analysis).to.have.property('similarityScores');",
+              "    pm.expect(analysis).to.have.property('flags');",
+              "    pm.expect(analysis).to.have.property('riskLevel');",
+              "    pm.expect(analysis).to.have.property('createdAt');",
+              "});",
+              "",
+              "pm.test('Analysis ID matches requested ID', function () {",
+              "    const jsonData = pm.response.json();",
+              "    const requestedId = pm.collectionVariables.get('analysisId');",
+              "    pm.expect(jsonData.analysis.id).to.eql(requestedId);",
+              "});",
+              "",
+              "pm.test('Response time is less than 200ms', function () {",
+              "    pm.expect(pm.response.responseTime).to.be.below(200);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/analysis/{{analysisId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["analysis", "{{analysisId}}"]
+        }
+      },
+      "response": []
+    }
+  ]
+}

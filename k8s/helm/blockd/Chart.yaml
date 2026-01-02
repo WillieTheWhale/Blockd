@@ -1,0 +1,23 @@
+apiVersion: v2
+name: blockd
+description: A Helm chart for Blockd platform - AI-powered interview proctoring system
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+
+keywords:
+  - blockd
+  - interview
+  - proctoring
+  - ai-detection
+  - eye-tracking
+
+maintainers:
+  - name: Blockd Team
+    email: team@blockd.example.com
+
+dependencies: []
+
+annotations:
+  category: Application
+  licenses: Proprietary

@@ -1,0 +1,36 @@
+#!/usr/bin/make -f
+# Debian package build rules for Blockd Browser
+# Copyright 2025 The Blockd Authors. All rights reserved.
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	# Build is done separately with ninja
+
+override_dh_auto_install:
+	mkdir -p debian/blockd-browser/opt/blockd-browser
+	mkdir -p debian/blockd-browser/usr/share/applications
+	mkdir -p debian/blockd-browser/usr/share/icons/hicolor/256x256/apps
+	mkdir -p debian/blockd-browser/usr/bin
+
+	# Copy browser files
+	cp -r out/Release/* debian/blockd-browser/opt/blockd-browser/
+
+	# Install desktop file
+	cp installer/linux/blocked.desktop debian/blockd-browser/usr/share/applications/
+
+	# Install icon
+	cp resources/app_icon_256.png debian/blockd-browser/usr/share/icons/hicolor/256x256/apps/blockd-browser.png
+
+	# Create symlink in /usr/bin
+	ln -s /opt/blockd-browser/blocked debian/blockd-browser/usr/bin/blockd-browser
+
+override_dh_shlibdeps:
+	dh_shlibdeps --dpkg-shlibdeps-params=--ignore-missing-info
+
+override_dh_strip:
+	# Don't strip binaries (breaks Chromium)
+
+override_dh_builddeb:
+	dh_builddeb -- -Zxz

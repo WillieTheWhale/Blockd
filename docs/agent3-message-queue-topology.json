@@ -1,0 +1,724 @@
+{
+  "agent": "Agent 3: Message Queue & Event Streaming",
+  "version": "1.0.0",
+  "generated": "2025-11-24",
+  "platform": "Blockd - Online Exam Proctoring System",
+  "technology_stack": {
+    "message_broker": {
+      "name": "RabbitMQ",
+      "version": "4.x",
+      "type": "AMQP message broker",
+      "deployment": "3-node cluster with high availability"
+    },
+    "task_queue": {
+      "python": {
+        "name": "Celery",
+        "version": "5.x",
+        "broker": "RabbitMQ",
+        "backend": "Redis 8.4"
+      },
+      "nodejs": {
+        "name": "amqplib",
+        "version": "latest",
+        "protocol": "AMQP 0.9.1"
+      }
+    },
+    "result_backend": {
+      "name": "Redis",
+      "version": "8.4",
+      "purpose": "Celery result storage and caching"
+    }
+  },
+  "architecture": {
+    "cluster_configuration": {
+      "nodes": 3,
+      "node_names": [
+        "rabbitmq-node1",
+        "rabbitmq-node2",
+        "rabbitmq-node3"
+      ],
+      "replication_factor": 2,
+      "queue_type": "quorum",
+      "ha_policy": "exactly 2 nodes",
+      "sync_mode": "automatic"
+    },
+    "network": {
+      "subnet": "172.25.0.0/16",
+      "ports": {
+        "amqp": 5672,
+        "management_ui": 15672,
+        "prometheus": 15692
+      },
+      "load_balancing": "round-robin across nodes"
+    },
+    "resources": {
+      "per_node": {
+        "cpu_limit": "2 cores",
+        "cpu_reservation": "1 core",
+        "memory_limit": "2 GB",
+        "memory_reservation": "1 GB"
+      },
+      "redis": {
+        "cpu_limit": "1 core",
+        "memory_limit": "512 MB",
+        "maxmemory_policy": "allkeys-lru"
+      }
+    }
+  },
+  "exchanges": [
+    {
+      "name": "video_processing",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false,
+      "description": "Routes video encoding, thumbnail generation, and upload tasks",
+      "routing_patterns": [
+        "video.encode.*",
+        "video.thumbnail.*",
+        "video.upload.*"
+      ],
+      "use_cases": [
+        "Video encoding with FFmpeg (H.264, VP9, AV1)",
+        "Thumbnail generation at specific timestamps",
+        "Upload to S3/CDN after processing"
+      ],
+      "performance": {
+        "expected_throughput": "500 messages/second",
+        "peak_throughput": "1000 messages/second",
+        "average_message_size": "2 KB"
+      }
+    },
+    {
+      "name": "ai_detection",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false,
+      "description": "Routes AI-powered answer analysis and detection tasks",
+      "routing_patterns": [
+        "ai.analyze.*",
+        "ai.embedding.*",
+        "ai.cache.*"
+      ],
+      "use_cases": [
+        "Analyze student answers for AI-generated content",
+        "Generate embeddings for semantic similarity search",
+        "Pre-populate cache with frequently accessed data"
+      ],
+      "performance": {
+        "expected_throughput": "1000 messages/second",
+        "peak_throughput": "2000 messages/second",
+        "average_message_size": "5 KB"
+      }
+    },
+    {
+      "name": "security_events",
+      "type": "fanout",
+      "durable": true,
+      "auto_delete": false,
+      "description": "Broadcasts security events to all subscribed queues",
+      "routing_patterns": [
+        "(fanout - no routing key)"
+      ],
+      "use_cases": [
+        "Real-time security alerts for suspicious activity",
+        "Audit logging for compliance",
+        "Dashboard updates for monitoring"
+      ],
+      "performance": {
+        "expected_throughput": "200 messages/second",
+        "peak_throughput": "500 messages/second",
+        "average_message_size": "1 KB",
+        "priority": "high"
+      }
+    },
+    {
+      "name": "gaze_analysis",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false,
+      "description": "Routes eye tracking and gaze analysis tasks",
+      "routing_patterns": [
+        "gaze.process.*",
+        "gaze.anomaly.*"
+      ],
+      "use_cases": [
+        "Process raw eye tracking data from MediaPipe",
+        "Detect anomalies in gaze patterns",
+        "Generate gaze heatmaps and attention metrics"
+      ],
+      "performance": {
+        "expected_throughput": "800 messages/second",
+        "peak_throughput": "1500 messages/second",
+        "average_message_size": "10 KB"
+      }
+    },
+    {
+      "name": "dlx",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false,
+      "description": "Dead Letter Exchange for failed messages",
+      "routing_patterns": [
+        "*.dlq"
+      ],
+      "use_cases": [
+        "Capture messages that failed processing",
+        "Store messages that exceeded retry limits",
+        "Enable manual inspection and reprocessing"
+      ]
+    }
+  ],
+  "queues": [
+    {
+      "name": "video_encode",
+      "exchange": "video_processing",
+      "routing_key": "video.encode.*",
+      "type": "quorum",
+      "durable": true,
+      "max_length": 100000,
+      "overflow": "reject-publish",
+      "ttl": 86400000,
+      "dlx": "dlx",
+      "dlx_routing_key": "video_encode.dlq",
+      "description": "FFmpeg video encoding tasks",
+      "consumers": "Celery workers with FFmpeg",
+      "task_duration": "30-300 seconds per video",
+      "priority": "medium"
+    },
+    {
+      "name": "video_thumbnail",
+      "exchange": "video_processing",
+      "routing_key": "video.thumbnail.*",
+      "type": "quorum",
+      "durable": true,
+      "max_length": 50000,
+      "overflow": "reject-publish",
+      "ttl": 86400000,
+      "dlx": "dlx",
+      "dlx_routing_key": "video_thumbnail.dlq",
+      "description": "Video thumbnail generation",
+      "consumers": "Celery workers with FFmpeg",
+      "task_duration": "1-5 seconds per thumbnail",
+      "priority": "low"
+    },
+    {
+      "name": "video_upload",
+      "exchange": "video_processing",
+      "routing_key": "video.upload.*",
+      "type": "quorum",
+      "durable": true,
+      "max_length": 50000,
+      "overflow": "reject-publish",
+      "ttl": 86400000,
+      "dlx": "dlx",
+      "dlx_routing_key": "video_upload.dlq",
+      "description": "S3/CDN upload tasks",
+      "consumers": "Celery workers with S3 client",
+      "task_duration": "5-30 seconds per upload",
+      "priority": "medium"
+    },
+    {
+      "name": "ai_analyze",
+      "exchange": "ai_detection",
+      "routing_key": "ai.analyze.*",
+      "type": "quorum",
+      "durable": true,
+      "max_length": 100000,
+      "overflow": "reject-publish",
+      "ttl": 86400000,
+      "dlx": "dlx",
+      "dlx_routing_key": "ai_analyze.dlq",
+      "description": "AI-powered answer analysis",
+      "consumers": "Celery workers with ML models (XGBoost, sentence-transformers)",
+      "task_duration": "2-10 seconds per answer",
+      "priority": "high"
+    },
+    {
+      "name": "embedding_generate",
+      "exchange": "ai_detection",
+      "routing_key": "ai.embedding.*",
+      "type": "quorum",
+      "durable": true,
+      "max_length": 50000,
+      "overflow": "reject-publish",
+      "ttl": 86400000,
+      "dlx": "dlx",
+      "dlx_routing_key": "embedding_generate.dlq",
+      "description": "Text embedding generation for similarity search",
+      "consumers": "Celery workers with sentence-transformers",
+      "task_duration": "0.5-2 seconds per text",
+      "priority": "medium"
+    },
+    {
+      "name": "cache_warmup",
+      "exchange": "ai_detection",
+      "routing_key": "ai.cache.*",
+      "type": "quorum",
+      "durable": true,
+      "max_length": 10000,
+      "overflow": "drop-head",
+      "ttl": 86400000,
+      "dlx": "dlx",
+      "dlx_routing_key": "cache_warmup.dlq",
+      "description": "Cache pre-population for frequently accessed data",
+      "consumers": "Celery workers with Redis client",
+      "task_duration": "0.1-1 seconds",
+      "priority": "low"
+    },
+    {
+      "name": "security_alert",
+      "exchange": "security_events",
+      "routing_key": "",
+      "type": "quorum",
+      "durable": true,
+      "max_length": 10000,
+      "overflow": "reject-publish",
+      "ttl": 86400000,
+      "dlx": "dlx",
+      "dlx_routing_key": "security_alert.dlq",
+      "description": "Real-time security alerts",
+      "consumers": "Celery workers for notifications",
+      "task_duration": "0.1-0.5 seconds",
+      "priority": "critical"
+    },
+    {
+      "name": "security_log",
+      "exchange": "security_events",
+      "routing_key": "",
+      "type": "quorum",
+      "durable": true,
+      "max_length": 100000,
+      "overflow": "drop-head",
+      "ttl": 86400000,
+      "dlx": "dlx",
+      "dlx_routing_key": "security_log.dlq",
+      "description": "Security audit logging",
+      "consumers": "Celery workers for database/file logging",
+      "task_duration": "0.1-0.3 seconds",
+      "priority": "medium"
+    },
+    {
+      "name": "gaze_process",
+      "exchange": "gaze_analysis",
+      "routing_key": "gaze.process.*",
+      "type": "quorum",
+      "durable": true,
+      "max_length": 100000,
+      "overflow": "reject-publish",
+      "ttl": 86400000,
+      "dlx": "dlx",
+      "dlx_routing_key": "gaze_process.dlq",
+      "description": "Eye tracking data processing",
+      "consumers": "Celery workers with MediaPipe",
+      "task_duration": "0.5-2 seconds per batch",
+      "priority": "medium"
+    },
+    {
+      "name": "anomaly_detect",
+      "exchange": "gaze_analysis",
+      "routing_key": "gaze.anomaly.*",
+      "type": "quorum",
+      "durable": true,
+      "max_length": 50000,
+      "overflow": "reject-publish",
+      "ttl": 86400000,
+      "dlx": "dlx",
+      "dlx_routing_key": "anomaly_detect.dlq",
+      "description": "Gaze anomaly detection",
+      "consumers": "Celery workers with ML models",
+      "task_duration": "1-3 seconds per session",
+      "priority": "high"
+    }
+  ],
+  "dead_letter_queues": [
+    {
+      "name": "video_encode.dlq",
+      "source_queue": "video_encode",
+      "description": "Failed video encoding tasks",
+      "retention": "7 days",
+      "reprocessing": "manual or automated retry after issue resolution"
+    },
+    {
+      "name": "video_thumbnail.dlq",
+      "source_queue": "video_thumbnail",
+      "description": "Failed thumbnail generation tasks"
+    },
+    {
+      "name": "video_upload.dlq",
+      "source_queue": "video_upload",
+      "description": "Failed upload tasks"
+    },
+    {
+      "name": "ai_analyze.dlq",
+      "source_queue": "ai_analyze",
+      "description": "Failed AI analysis tasks"
+    },
+    {
+      "name": "embedding_generate.dlq",
+      "source_queue": "embedding_generate",
+      "description": "Failed embedding generation tasks"
+    },
+    {
+      "name": "cache_warmup.dlq",
+      "source_queue": "cache_warmup",
+      "description": "Failed cache warmup tasks"
+    },
+    {
+      "name": "security_alert.dlq",
+      "source_queue": "security_alert",
+      "description": "Failed security alert tasks"
+    },
+    {
+      "name": "security_log.dlq",
+      "source_queue": "security_log",
+      "description": "Failed security logging tasks"
+    },
+    {
+      "name": "gaze_process.dlq",
+      "source_queue": "gaze_process",
+      "description": "Failed gaze processing tasks"
+    },
+    {
+      "name": "anomaly_detect.dlq",
+      "source_queue": "anomaly_detect",
+      "description": "Failed anomaly detection tasks"
+    }
+  ],
+  "message_flows": {
+    "video_processing_flow": {
+      "description": "Complete video processing pipeline",
+      "steps": [
+        {
+          "step": 1,
+          "action": "User uploads video via API",
+          "component": "FastAPI/Fastify endpoint"
+        },
+        {
+          "step": 2,
+          "action": "API publishes to video_processing exchange",
+          "routing_key": "video.encode.{video_id}",
+          "exchange": "video_processing"
+        },
+        {
+          "step": 3,
+          "action": "Message routed to video_encode queue",
+          "queue": "video_encode"
+        },
+        {
+          "step": 4,
+          "action": "Celery worker processes with FFmpeg",
+          "worker": "tasks.video.encode"
+        },
+        {
+          "step": 5,
+          "action": "On success, publish thumbnail task",
+          "routing_key": "video.thumbnail.{video_id}"
+        },
+        {
+          "step": 6,
+          "action": "On thumbnail complete, publish upload task",
+          "routing_key": "video.upload.{video_id}"
+        },
+        {
+          "step": 7,
+          "action": "Final result stored in Redis backend",
+          "backend": "Redis"
+        }
+      ],
+      "retry_policy": {
+        "max_retries": 3,
+        "retry_delay": 60,
+        "backoff": "exponential",
+        "backoff_max": 600
+      },
+      "failure_handling": "Messages failing all retries move to DLQ for manual inspection"
+    },
+    "ai_detection_flow": {
+      "description": "AI-powered answer analysis pipeline",
+      "steps": [
+        {
+          "step": 1,
+          "action": "Student submits answer",
+          "component": "API endpoint"
+        },
+        {
+          "step": 2,
+          "action": "Publish to ai_detection exchange",
+          "routing_key": "ai.analyze.{exam_id}",
+          "exchange": "ai_detection"
+        },
+        {
+          "step": 3,
+          "action": "Message routed to ai_analyze queue",
+          "queue": "ai_analyze"
+        },
+        {
+          "step": 4,
+          "action": "Celery worker runs ML models",
+          "worker": "tasks.ai.analyze",
+          "models": ["XGBoost", "sentence-transformers"]
+        },
+        {
+          "step": 5,
+          "action": "Generate embedding for similarity search",
+          "routing_key": "ai.embedding.{exam_id}"
+        },
+        {
+          "step": 6,
+          "action": "Update cache with results",
+          "routing_key": "ai.cache.{cache_key}"
+        },
+        {
+          "step": 7,
+          "action": "Return analysis results",
+          "backend": "Redis + PostgreSQL"
+        }
+      ],
+      "retry_policy": {
+        "max_retries": 3,
+        "retry_delay": 60,
+        "backoff": "exponential"
+      }
+    },
+    "security_event_flow": {
+      "description": "Security event broadcasting",
+      "steps": [
+        {
+          "step": 1,
+          "action": "Security event detected",
+          "source": "Browser extension, API, monitoring"
+        },
+        {
+          "step": 2,
+          "action": "Publish to security_events exchange",
+          "exchange": "security_events",
+          "type": "fanout"
+        },
+        {
+          "step": 3,
+          "action": "Broadcast to all bound queues",
+          "queues": ["security_alert", "security_log"]
+        },
+        {
+          "step": 4,
+          "action": "Real-time alert processing",
+          "worker": "tasks.security.alert",
+          "actions": ["Send notification", "Update dashboard"]
+        },
+        {
+          "step": 5,
+          "action": "Audit log storage",
+          "worker": "tasks.security.log",
+          "storage": "PostgreSQL + TimescaleDB"
+        }
+      ],
+      "priority": "critical",
+      "latency_target": "< 100ms"
+    },
+    "gaze_analysis_flow": {
+      "description": "Eye tracking analysis pipeline",
+      "steps": [
+        {
+          "step": 1,
+          "action": "Browser captures gaze data",
+          "component": "MediaPipe in browser extension"
+        },
+        {
+          "step": 2,
+          "action": "Batch and publish to gaze_analysis exchange",
+          "routing_key": "gaze.process.{session_id}"
+        },
+        {
+          "step": 3,
+          "action": "Process gaze coordinates",
+          "worker": "tasks.gaze.process",
+          "outputs": ["Fixation points", "Saccades", "Heatmap data"]
+        },
+        {
+          "step": 4,
+          "action": "Detect anomalies",
+          "routing_key": "gaze.anomaly.{session_id}",
+          "worker": "tasks.gaze.anomaly"
+        },
+        {
+          "step": 5,
+          "action": "Store results",
+          "storage": "PostgreSQL + TimescaleDB"
+        }
+      ],
+      "batch_size": "100 points",
+      "batch_interval": "5 seconds"
+    }
+  },
+  "retry_policies": {
+    "default": {
+      "max_retries": 3,
+      "retry_delay": 60,
+      "backoff": "exponential",
+      "backoff_max": 600,
+      "jitter": true
+    },
+    "video_encoding": {
+      "max_retries": 2,
+      "retry_delay": 120,
+      "backoff": "exponential",
+      "reason": "Video encoding is resource-intensive"
+    },
+    "security_alerts": {
+      "max_retries": 5,
+      "retry_delay": 10,
+      "backoff": "exponential",
+      "reason": "Critical alerts should retry aggressively"
+    }
+  },
+  "performance_characteristics": {
+    "throughput": {
+      "expected": "1000 messages/second aggregate",
+      "peak": "2500 messages/second",
+      "sustained": "800 messages/second"
+    },
+    "latency": {
+      "p50": "< 50ms",
+      "p95": "< 200ms",
+      "p99": "< 500ms",
+      "measurement": "Time from publish to worker pickup"
+    },
+    "reliability": {
+      "message_durability": "Persistent messages with quorum queues",
+      "replication": "2x replication across cluster",
+      "acknowledgment": "Late ack after task completion",
+      "confirms": "Publisher confirms enabled"
+    },
+    "scalability": {
+      "horizontal_scaling": "Add more worker instances",
+      "queue_sharding": "Partition by routing key (e.g., video_id, exam_id)",
+      "cluster_expansion": "Add nodes to RabbitMQ cluster"
+    }
+  },
+  "monitoring": {
+    "metrics": [
+      "Queue depth (messages waiting)",
+      "Message rate (in/out per second)",
+      "Consumer count per queue",
+      "Task execution time",
+      "Task success/failure rate",
+      "DLQ depth",
+      "Memory/CPU usage per node"
+    ],
+    "alerting": {
+      "high_queue_depth": "> 10000 messages",
+      "consumer_lag": "Processing time > 5 minutes behind",
+      "dlq_growth": "> 100 messages in DLQ",
+      "node_down": "Cluster node unreachable",
+      "memory_high": "> 80% memory usage"
+    },
+    "tools": [
+      "RabbitMQ Management UI (port 15672)",
+      "Prometheus metrics (port 15692)",
+      "Celery Flower (task monitoring)",
+      "Grafana dashboards"
+    ]
+  },
+  "security": {
+    "authentication": {
+      "method": "Username/password (change in production)",
+      "user": "blockd_user",
+      "permissions": "Configure/Write/Read on vhost 'blockd'"
+    },
+    "network": {
+      "vhost_isolation": "Dedicated vhost 'blockd'",
+      "network_isolation": "Private Docker network",
+      "tls": "Optional (configure for production)"
+    },
+    "message_encryption": {
+      "in_transit": "TLS/SSL (when enabled)",
+      "at_rest": "Volume encryption (platform-dependent)"
+    }
+  },
+  "deployment": {
+    "docker_compose": "/infrastructure/rabbitmq/docker-compose.yml",
+    "configuration": "/infrastructure/rabbitmq/rabbitmq.conf",
+    "topology": "/infrastructure/rabbitmq/topology.json",
+    "startup_command": "docker-compose -f /infrastructure/rabbitmq/docker-compose.yml up -d",
+    "health_check": "rabbitmq-diagnostics -q ping",
+    "management_ui": "http://localhost:15672"
+  },
+  "celery_workers": {
+    "worker_types": [
+      {
+        "name": "video_worker",
+        "queues": ["video_encode", "video_thumbnail", "video_upload"],
+        "concurrency": 4,
+        "pool": "prefork",
+        "requirements": ["FFmpeg", "S3 access"]
+      },
+      {
+        "name": "ai_worker",
+        "queues": ["ai_analyze", "embedding_generate", "cache_warmup"],
+        "concurrency": 8,
+        "pool": "prefork",
+        "requirements": ["PyTorch", "sentence-transformers", "XGBoost"]
+      },
+      {
+        "name": "security_worker",
+        "queues": ["security_alert", "security_log"],
+        "concurrency": 16,
+        "pool": "gevent",
+        "requirements": ["PostgreSQL client", "notification service"]
+      },
+      {
+        "name": "gaze_worker",
+        "queues": ["gaze_process", "anomaly_detect"],
+        "concurrency": 8,
+        "pool": "prefork",
+        "requirements": ["MediaPipe", "ML models"]
+      }
+    ],
+    "startup_example": "celery -A backend.shared.queue.consumer worker --queues=video_encode,video_thumbnail,video_upload --concurrency=4 --loglevel=info"
+  },
+  "testing": {
+    "unit_tests": "Test individual publishers and consumers",
+    "integration_tests": "Test end-to-end message flows",
+    "load_tests": "Simulate 1000+ messages/second",
+    "failure_tests": "Simulate worker crashes, network issues, queue overflows",
+    "tools": ["pytest", "locust", "rabbitmq-perf-test"]
+  },
+  "files_created": [
+    {
+      "path": "/home/user/Blockd/infrastructure/rabbitmq/rabbitmq.conf",
+      "description": "RabbitMQ cluster configuration with memory limits, connection settings, and HA policies"
+    },
+    {
+      "path": "/home/user/Blockd/infrastructure/rabbitmq/docker-compose.yml",
+      "description": "Docker Compose for 3-node RabbitMQ cluster with Redis backend"
+    },
+    {
+      "path": "/home/user/Blockd/infrastructure/rabbitmq/topology.json",
+      "description": "Complete topology definition with exchanges, queues, bindings, and DLQs"
+    },
+    {
+      "path": "/home/user/Blockd/backend/shared/queue/publisher.py",
+      "description": "Python RabbitMQ publisher with retry logic and connection pooling"
+    },
+    {
+      "path": "/home/user/Blockd/backend/shared/queue/consumer.py",
+      "description": "Celery consumer with task definitions and worker configuration"
+    },
+    {
+      "path": "/home/user/Blockd/backend/shared/queue/publisher.ts",
+      "description": "Node.js/TypeScript RabbitMQ publisher with amqplib"
+    },
+    {
+      "path": "/home/user/Blockd/docs/agent3-message-queue-topology.json",
+      "description": "This comprehensive documentation file"
+    }
+  ],
+  "next_steps": [
+    "Start RabbitMQ cluster: docker-compose up -d",
+    "Access management UI: http://localhost:15672",
+    "Start Celery workers for each queue type",
+    "Run load tests to verify throughput targets",
+    "Configure monitoring and alerting",
+    "Integrate with FastAPI/Fastify services"
+  ]
+}

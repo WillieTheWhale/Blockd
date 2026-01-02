@@ -1,0 +1,59 @@
+From: Blocked Browser Team <dev@blockd.com>
+Date: Mon, 24 Nov 2025 12:00:00 +0000
+Subject: [PATCH 1/3] Add Blocked security monitoring module
+
+Add native security monitoring capabilities:
+- Process enumeration (detect screen recording software)
+- Window focus tracking
+- Virtual machine detection
+- Clipboard monitoring
+- System telemetry collection
+
+Platform support: Windows, macOS, Linux
+
+diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
+index 1234567..abcdefg 100644
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -1000,6 +1000,10 @@ static_library("browser") {
+     "//chrome/browser/apps",
+     "//chrome/browser/ash",
+     "//chrome/browser/autofill",
++    # Blocked browser modules
++    "//chrome/browser/blocked:blocked_browser_modules",
++    "//chrome/browser/ui/blocked:blocked_ui",
++    # End Blocked modules
+     "//chrome/browser/background",
+     "//chrome/browser/background_fetch",
+     "//chrome/browser/background_sync",
+
+diff --git a/chrome/browser/chrome_browser_main.cc b/chrome/browser/chrome_browser_main.cc
+index 2345678..bcdefgh 100644
+--- a/chrome/browser/chrome_browser_main.cc
++++ b/chrome/browser/chrome_browser_main.cc
+@@ -100,6 +100,11 @@
+ #include "chrome/browser/chrome_browser_main_extra_parts.h"
+ #include "chrome/browser/chrome_browser_main_mac.h"
+
++#ifdef BLOCKED_BROWSER
++#include "chrome/browser/blocked/blocked_security/blocked_security_service.h"
++#include "chrome/browser/ui/blocked/blocked_browser_controller.h"
++#endif
++
+ namespace {
+
+ // Static member initialization
+@@ -500,6 +505,13 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
+   // Initialize browser services
+   InitializeBrowserServices();
+
++#ifdef BLOCKED_BROWSER
++  // Initialize Blocked browser services
++  LOG(INFO) << "Initializing Blocked browser services";
++  blocked_security_service_ = std::make_unique<blocked::BlockedSecurityService>();
++  blocked_browser_controller_ = std::make_unique<blocked::BlockedBrowserController>();
++#endif
++
+   return result_code_;
+ }
+

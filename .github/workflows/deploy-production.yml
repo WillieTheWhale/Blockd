@@ -1,0 +1,358 @@
+name: Deploy to Production (Blue-Green)
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      skip_approval:
+        description: 'Skip manual approval'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository_owner }}/blockd
+  HELM_VERSION: '3.13.0'
+  KUBECTL_VERSION: '1.28.0'
+
+jobs:
+  approval:
+    name: Manual Approval
+    runs-on: ubuntu-latest
+    environment:
+      name: production-approval
+    steps:
+      - name: Request approval
+        run: |
+          echo "Deployment to production requires manual approval"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Author: ${{ github.actor }}"
+
+  deploy-green:
+    name: Deploy Green Environment
+    runs-on: ubuntu-latest
+    needs: [approval]
+    environment:
+      name: production
+      url: https://blockd.io
+
+    outputs:
+      green_version: ${{ steps.version.outputs.green_version }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v${{ env.KUBECTL_VERSION }}
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v${{ env.HELM_VERSION }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Configure kubectl for EKS
+        run: |
+          aws eks update-kubeconfig --name blockd-production-cluster --region us-east-1
+
+      - name: Determine current active environment
+        id: current
+        run: |
+          ACTIVE=$(kubectl get service api-gateway -n production -o jsonpath='{.spec.selector.version}' || echo "blue")
+          echo "Current active environment: $ACTIVE"
+          echo "active=$ACTIVE" >> $GITHUB_OUTPUT
+
+          if [ "$ACTIVE" == "blue" ]; then
+            echo "target=green" >> $GITHUB_OUTPUT
+          else
+            echo "target=blue" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set version identifier
+        id: version
+        run: |
+          VERSION="${{ github.ref_name }}-${{ github.sha }}"
+          echo "green_version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Deploying version: $VERSION"
+
+      - name: Create namespace if not exists
+        run: |
+          kubectl create namespace production --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Deploy green environment with Helm
+        run: |
+          helm upgrade --install blockd-${{ steps.current.outputs.target }} ./k8s/helm/blockd \
+            --namespace production \
+            --values k8s/helm/blockd/values-production.yaml \
+            --set image.tag=${{ steps.version.outputs.green_version }} \
+            --set image.repository=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }} \
+            --set environment=production \
+            --set deployment.version=${{ steps.current.outputs.target }} \
+            --set nameOverride=blockd-${{ steps.current.outputs.target }} \
+            --wait \
+            --timeout 15m \
+            --atomic
+
+      - name: Wait for green deployment to be ready
+        run: |
+          kubectl wait --for=condition=available --timeout=10m \
+            deployment/api-gateway-${{ steps.current.outputs.target }} -n production
+          kubectl wait --for=condition=available --timeout=10m \
+            deployment/auth-service-${{ steps.current.outputs.target }} -n production
+          kubectl wait --for=condition=available --timeout=10m \
+            deployment/session-service-${{ steps.current.outputs.target }} -n production
+          kubectl wait --for=condition=available --timeout=10m \
+            deployment/websocket-service-${{ steps.current.outputs.target }} -n production
+          kubectl wait --for=condition=available --timeout=10m \
+            deployment/ai-detection-${{ steps.current.outputs.target }} -n production
+          kubectl wait --for=condition=available --timeout=10m \
+            deployment/eye-tracking-${{ steps.current.outputs.target }} -n production
+          kubectl wait --for=condition=available --timeout=10m \
+            deployment/response-timing-${{ steps.current.outputs.target }} -n production
+          kubectl wait --for=condition=available --timeout=10m \
+            deployment/video-service-${{ steps.current.outputs.target }} -n production
+          kubectl wait --for=condition=available --timeout=10m \
+            deployment/frontend-${{ steps.current.outputs.target }} -n production
+
+      - name: Run smoke tests on green environment
+        run: |
+          echo "Running smoke tests on green environment..."
+
+          # Get green service endpoints (internal cluster IPs)
+          GREEN_API_URL="http://api-gateway-${{ steps.current.outputs.target }}.production.svc.cluster.local"
+
+          # Create a test pod to run smoke tests from within the cluster
+          kubectl run smoke-test-${{ github.run_id }} \
+            --image=curlimages/curl:latest \
+            --rm -i --restart=Never \
+            --namespace production \
+            -- sh -c "
+              echo 'Testing API Gateway health...'
+              curl -f $GREEN_API_URL/health || exit 1
+
+              echo 'Testing Auth Service...'
+              curl -f $GREEN_API_URL/auth/health || exit 1
+
+              echo 'Testing Session Service...'
+              curl -f $GREEN_API_URL/sessions/health || exit 1
+
+              echo 'All smoke tests passed!'
+            "
+
+      - name: Run full integration tests on green
+        run: |
+          npm install -g newman
+
+          # Port-forward to green environment for testing
+          kubectl port-forward service/api-gateway-${{ steps.current.outputs.target }} 8080:80 -n production &
+          PF_PID=$!
+          sleep 10
+
+          # Run Newman tests
+          newman run tests/api/postman-collections/auth-api.postman_collection.json \
+            --env-var baseUrl=http://localhost:8080 \
+            --bail
+
+          kill $PF_PID
+
+  switch-traffic:
+    name: Switch Traffic to Green
+    runs-on: ubuntu-latest
+    needs: [deploy-green]
+    environment:
+      name: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v${{ env.KUBECTL_VERSION }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Configure kubectl for EKS
+        run: |
+          aws eks update-kubeconfig --name blockd-production-cluster --region us-east-1
+
+      - name: Determine environments
+        id: envs
+        run: |
+          ACTIVE=$(kubectl get service api-gateway -n production -o jsonpath='{.spec.selector.version}' || echo "blue")
+          echo "Current active: $ACTIVE"
+          echo "active=$ACTIVE" >> $GITHUB_OUTPUT
+
+          if [ "$ACTIVE" == "blue" ]; then
+            echo "new=green" >> $GITHUB_OUTPUT
+            echo "old=blue" >> $GITHUB_OUTPUT
+          else
+            echo "new=blue" >> $GITHUB_OUTPUT
+            echo "old=green" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Switch service selectors to green
+        run: |
+          # Update service selectors to point to green deployment
+          kubectl patch service api-gateway -n production -p '{"spec":{"selector":{"version":"${{ steps.envs.outputs.new }}"}}}'
+          kubectl patch service auth-service -n production -p '{"spec":{"selector":{"version":"${{ steps.envs.outputs.new }}"}}}'
+          kubectl patch service session-service -n production -p '{"spec":{"selector":{"version":"${{ steps.envs.outputs.new }}"}}}'
+          kubectl patch service websocket-service -n production -p '{"spec":{"selector":{"version":"${{ steps.envs.outputs.new }}"}}}'
+          kubectl patch service ai-detection -n production -p '{"spec":{"selector":{"version":"${{ steps.envs.outputs.new }}"}}}'
+          kubectl patch service eye-tracking -n production -p '{"spec":{"selector":{"version":"${{ steps.envs.outputs.new }}"}}}'
+          kubectl patch service response-timing -n production -p '{"spec":{"selector":{"version":"${{ steps.envs.outputs.new }}"}}}'
+          kubectl patch service video-service -n production -p '{"spec":{"selector":{"version":"${{ steps.envs.outputs.new }}"}}}'
+          kubectl patch service frontend -n production -p '{"spec":{"selector":{"version":"${{ steps.envs.outputs.new }}"}}}'
+
+          echo "Traffic switched to ${{ steps.envs.outputs.new }} environment"
+
+      - name: Monitor metrics for 10 minutes
+        run: |
+          echo "Monitoring application health for 10 minutes..."
+          START_TIME=$(date +%s)
+          END_TIME=$((START_TIME + 600))
+
+          while [ $(date +%s) -lt $END_TIME ]; do
+            # Check if all pods are running
+            FAILED_PODS=$(kubectl get pods -n production -l version=${{ steps.envs.outputs.new }} --field-selector=status.phase!=Running --no-headers | wc -l)
+
+            if [ $FAILED_PODS -gt 0 ]; then
+              echo "ERROR: Found $FAILED_PODS failed pods!"
+              kubectl get pods -n production -l version=${{ steps.envs.outputs.new }}
+              exit 1
+            fi
+
+            # Check error rate (would integrate with Prometheus here)
+            # For now, just check pod status
+            echo "Health check passed at $(date)"
+
+            sleep 60
+          done
+
+          echo "Monitoring period completed successfully"
+
+      - name: Verify deployment health
+        run: |
+          # Test production URL
+          PROD_URL="https://blockd.io"
+
+          echo "Testing production endpoints..."
+          curl -f $PROD_URL/api/health || exit 1
+          curl -f $PROD_URL/api/auth/health || exit 1
+          curl -f $PROD_URL/api/sessions/health || exit 1
+
+          echo "Production health check passed!"
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          echo "ERROR: Deployment failed, rolling back to ${{ steps.envs.outputs.old }}..."
+
+          # Switch back to old environment
+          kubectl patch service api-gateway -n production -p '{"spec":{"selector":{"version":"${{ steps.envs.outputs.old }}"}}}'
+          kubectl patch service auth-service -n production -p '{"spec":{"selector":{"version":"${{ steps.envs.outputs.old }}"}}}'
+          kubectl patch service session-service -n production -p '{"spec":{"selector":{"version":"${{ steps.envs.outputs.old }}"}}}'
+          kubectl patch service websocket-service -n production -p '{"spec":{"selector":{"version":"${{ steps.envs.outputs.old }}"}}}'
+          kubectl patch service ai-detection -n production -p '{"spec":{"selector":{"version":"${{ steps.envs.outputs.old }}"}}}'
+          kubectl patch service eye-tracking -n production -p '{"spec":{"selector":{"version":"${{ steps.envs.outputs.old }}"}}}'
+          kubectl patch service response-timing -n production -p '{"spec":{"selector":{"version":"${{ steps.envs.outputs.old }}"}}}'
+          kubectl patch service video-service -n production -p '{"spec":{"selector":{"version":"${{ steps.envs.outputs.old }}"}}}'
+          kubectl patch service frontend -n production -p '{"spec":{"selector":{"version":"${{ steps.envs.outputs.old }}"}}}'
+
+          echo "Rollback completed"
+
+  cleanup-old:
+    name: Cleanup Old Environment
+    runs-on: ubuntu-latest
+    needs: [switch-traffic]
+
+    steps:
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v${{ env.KUBECTL_VERSION }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Configure kubectl for EKS
+        run: |
+          aws eks update-kubeconfig --name blockd-production-cluster --region us-east-1
+
+      - name: Scale down old deployment
+        run: |
+          # Keep old deployment for quick rollback, but scale down to save resources
+          echo "Scaling down old blue deployment to 1 replica..."
+          kubectl scale deployment --all -n production -l version=blue --replicas=1 || true
+
+          echo "Old environment scaled down (kept for quick rollback)"
+
+  notify:
+    name: Notify Deployment Status
+    runs-on: ubuntu-latest
+    needs: [switch-traffic]
+    if: always()
+
+    steps:
+      - name: Send success notification
+        if: needs.switch-traffic.result == 'success'
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "Production deployment successful",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": ":rocket: *Production Deployment Successful*\n*Version:* ${{ needs.deploy-green.outputs.green_version }}\n*Branch:* ${{ github.ref_name }}\n*Commit:* ${{ github.sha }}\n*Author:* ${{ github.actor }}\n*URL:* https://blockd.io"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Send failure notification
+        if: needs.switch-traffic.result == 'failure'
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "Production deployment failed and was rolled back",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": ":x: *Production Deployment Failed*\n*Branch:* ${{ github.ref_name }}\n*Commit:* ${{ github.sha }}\n*Author:* ${{ github.actor }}\n*Status:* Rolled back to previous version\n*URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

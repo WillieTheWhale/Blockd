@@ -1,0 +1,89 @@
+// Blockd Auth Service - Prisma Schema
+// PostgreSQL 18.1 with pgvector and TimescaleDB
+
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  extensions = [uuidOssp(map: "uuid-ossp"), pgcrypto]
+}
+
+enum UserRole {
+  admin
+  interviewer
+  interviewee
+
+  @@map("user_role")
+}
+
+enum SubscriptionTier {
+  free
+  professional
+  enterprise
+
+  @@map("subscription_tier")
+}
+
+model Organization {
+  id                      String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name                    String           @db.VarChar(255)
+  subscriptionTier        SubscriptionTier @default(free) @map("subscription_tier")
+  settings                Json             @default("{}")
+  maxConcurrentSessions   Int              @default(5) @map("max_concurrent_sessions")
+  monthlySessionLimit     Int              @default(100) @map("monthly_session_limit")
+  createdAt               DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt               DateTime?        @map("deleted_at") @db.Timestamptz(6)
+
+  users                   User[]
+
+  @@index([subscriptionTier], where: { deletedAt: null })
+  @@map("organizations")
+}
+
+model User {
+  id              String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  email           String        @unique @db.VarChar(255)
+  passwordHash    String        @map("password_hash") @db.VarChar(255)
+  role            UserRole      @default(interviewee)
+  organizationId  String?       @map("organization_id") @db.Uuid
+  firstName       String?       @map("first_name") @db.VarChar(100)
+  lastName        String?       @map("last_name") @db.VarChar(100)
+  mfaEnabled      Boolean       @default(false) @map("mfa_enabled")
+  mfaSecret       String?       @map("mfa_secret") @db.VarChar(255)
+  emailVerified   Boolean       @default(false) @map("email_verified")
+  lastLoginAt     DateTime?     @map("last_login_at") @db.Timestamptz(6)
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt       DateTime?     @map("deleted_at") @db.Timestamptz(6)
+
+  organization    Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  @@index([email], where: { deletedAt: null })
+  @@index([organizationId], where: { deletedAt: null })
+  @@index([role])
+  @@map("users")
+}
+
+model AuditLog {
+  id           String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId       String?   @map("user_id") @db.Uuid
+  action       String    @db.VarChar(100)
+  resourceType String    @map("resource_type") @db.VarChar(100)
+  resourceId   String?   @map("resource_id") @db.Uuid
+  ipAddress    String?   @map("ip_address") @db.Inet
+  userAgent    String?   @map("user_agent")
+  metadata     Json      @default("{}")
+  timestamp    DateTime  @default(now()) @db.Timestamptz(6)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([userId])
+  @@index([resourceType, resourceId])
+  @@index([timestamp(sort: Desc)])
+  @@index([action])
+  @@map("audit_logs")
+}

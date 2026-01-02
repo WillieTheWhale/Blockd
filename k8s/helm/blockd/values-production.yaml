@@ -1,0 +1,206 @@
+# Production environment values for blockd
+# Override values.yaml for production deployments
+
+global:
+  imageRegistry: "registry.blockd.com"
+  imagePullSecrets:
+    - name: registry-credentials
+  storageClass: "fast-ssd"
+
+namespace: blockd
+
+# Use specific version tags for production
+images:
+  apiGateway:
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+  authService:
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+  sessionService:
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+  aiDetection:
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+  eyeTracking:
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+  responseTiming:
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+  videoService:
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+  frontend:
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+
+# Production-scale resources
+apiGateway:
+  replicas: 3
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 20
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+
+authService:
+  replicas: 2
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+
+sessionService:
+  replicas: 2
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+
+aiDetection:
+  replicas: 3
+  resources:
+    requests:
+      memory: "2Gi"
+      cpu: "1000m"
+    limits:
+      memory: "4Gi"
+      cpu: "2000m"
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 20
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+
+eyeTracking:
+  replicas: 2
+  resources:
+    requests:
+      memory: "1Gi"
+      cpu: "1000m"
+    limits:
+      memory: "2Gi"
+      cpu: "2000m"
+
+responseTiming:
+  replicas: 2
+  resources:
+    requests:
+      memory: "1Gi"
+      cpu: "1000m"
+    limits:
+      memory: "2Gi"
+      cpu: "2000m"
+
+videoService:
+  replicas: 2
+  resources:
+    requests:
+      memory: "2Gi"
+      cpu: "1000m"
+    limits:
+      memory: "4Gi"
+      cpu: "2000m"
+
+frontend:
+  replicas: 3
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 20
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+
+# Production persistence
+postgresql:
+  replicas: 1
+  resources:
+    requests:
+      memory: "4Gi"
+      cpu: "2000m"
+    limits:
+      memory: "8Gi"
+      cpu: "4000m"
+  persistence:
+    enabled: true
+    size: 100Gi
+
+redis:
+  replicas: 3
+  resources:
+    requests:
+      memory: "1Gi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+  persistence:
+    enabled: true
+    size: 20Gi
+
+rabbitmq:
+  replicas: 3
+  resources:
+    requests:
+      memory: "2Gi"
+      cpu: "1000m"
+    limits:
+      memory: "4Gi"
+      cpu: "2000m"
+  persistence:
+    enabled: true
+    size: 50Gi
+
+# Production ingress
+ingress:
+  hosts:
+    - host: blockd.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: frontend
+          port: 80
+    - host: api.blockd.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: api-gateway
+          port: 3000
+  tls:
+    - secretName: blockd-production-tls-cert
+      hosts:
+        - blockd.com
+        - api.blockd.com
+
+# ConfigMap for production
+configMap:
+  s3Bucket: blockd-videos-production
+  logLevel: info
+
+# Secrets MUST be provided via external secret manager (Vault, AWS Secrets Manager, etc.)
+secrets:
+  create: false

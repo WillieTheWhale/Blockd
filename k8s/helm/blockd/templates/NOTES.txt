@@ -1,0 +1,46 @@
+Thank you for installing {{ .Chart.Name }}!
+
+Your release is named {{ .Release.Name }}.
+Namespace: {{ .Values.namespace }}
+
+To learn more about the release, try:
+
+  $ helm status {{ .Release.Name }} -n {{ .Values.namespace }}
+  $ helm get all {{ .Release.Name }} -n {{ .Values.namespace }}
+
+{{ if .Values.ingress.enabled }}
+The application is accessible via:
+{{- range .Values.ingress.hosts }}
+  - https://{{ .host }}
+{{- end }}
+{{ else }}
+To access the application, you need to configure an Ingress or use port-forwarding:
+
+  $ kubectl port-forward -n {{ .Values.namespace }} svc/api-gateway 3000:3000
+  $ kubectl port-forward -n {{ .Values.namespace }} svc/frontend 8080:80
+{{ end }}
+
+Services deployed:
+  - API Gateway: {{ .Values.apiGateway.replicas }} replicas
+  - Auth Service: {{ .Values.authService.replicas }} replicas
+  - Session Service: {{ .Values.sessionService.replicas }} replicas
+  - AI Detection: {{ .Values.aiDetection.replicas }} replicas
+  - Eye Tracking: {{ .Values.eyeTracking.replicas }} replicas
+  - Response Timing: {{ .Values.responseTiming.replicas }} replicas
+  - Video Service: {{ .Values.videoService.replicas }} replicas
+  - Frontend: {{ .Values.frontend.replicas }} replicas
+
+Database services:
+  - PostgreSQL: {{ .Values.postgresql.replicas }} replica(s)
+  - Redis: {{ .Values.redis.replicas }} replica(s)
+  - RabbitMQ: {{ .Values.rabbitmq.replicas }} replica(s)
+
+{{ if .Values.secrets.create }}
+WARNING: You are using default secrets defined in values.yaml.
+For production deployments, please use external secret management!
+{{ end }}
+
+Monitor your deployment:
+  $ kubectl get pods -n {{ .Values.namespace }}
+  $ kubectl get svc -n {{ .Values.namespace }}
+  $ kubectl logs -n {{ .Values.namespace }} -l app=api-gateway -f

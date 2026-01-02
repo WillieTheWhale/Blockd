@@ -1,0 +1,206 @@
+version: '3.8'
+
+services:
+  # Redis Cluster - 6 Nodes (3 Primaries + 3 Replicas)
+
+  redis-node-1:
+    image: redis:8.4-alpine
+    container_name: blockd-redis-node-1
+    command: redis-server /usr/local/etc/redis/redis.conf --cluster-announce-ip redis-node-1
+    ports:
+      - "6379:6379"
+      - "16379:16379"
+    volumes:
+      - ./redis.conf:/usr/local/etc/redis/redis.conf
+      - redis-node-1-data:/data
+    networks:
+      redis-cluster:
+        ipv4_address: 172.28.0.11
+    environment:
+      - REDIS_CLUSTER_ANNOUNCE_IP=redis-node-1
+      - REDIS_CLUSTER_ANNOUNCE_PORT=6379
+      - REDIS_CLUSTER_ANNOUNCE_BUS_PORT=16379
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+
+  redis-node-2:
+    image: redis:8.4-alpine
+    container_name: blockd-redis-node-2
+    command: redis-server /usr/local/etc/redis/redis.conf --cluster-announce-ip redis-node-2
+    ports:
+      - "6380:6379"
+      - "16380:16379"
+    volumes:
+      - ./redis.conf:/usr/local/etc/redis/redis.conf
+      - redis-node-2-data:/data
+    networks:
+      redis-cluster:
+        ipv4_address: 172.28.0.12
+    environment:
+      - REDIS_CLUSTER_ANNOUNCE_IP=redis-node-2
+      - REDIS_CLUSTER_ANNOUNCE_PORT=6379
+      - REDIS_CLUSTER_ANNOUNCE_BUS_PORT=16379
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+
+  redis-node-3:
+    image: redis:8.4-alpine
+    container_name: blockd-redis-node-3
+    command: redis-server /usr/local/etc/redis/redis.conf --cluster-announce-ip redis-node-3
+    ports:
+      - "6381:6379"
+      - "16381:16379"
+    volumes:
+      - ./redis.conf:/usr/local/etc/redis/redis.conf
+      - redis-node-3-data:/data
+    networks:
+      redis-cluster:
+        ipv4_address: 172.28.0.13
+    environment:
+      - REDIS_CLUSTER_ANNOUNCE_IP=redis-node-3
+      - REDIS_CLUSTER_ANNOUNCE_PORT=6379
+      - REDIS_CLUSTER_ANNOUNCE_BUS_PORT=16379
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+
+  redis-node-4:
+    image: redis:8.4-alpine
+    container_name: blockd-redis-node-4
+    command: redis-server /usr/local/etc/redis/redis.conf --cluster-announce-ip redis-node-4
+    ports:
+      - "6382:6379"
+      - "16382:16379"
+    volumes:
+      - ./redis.conf:/usr/local/etc/redis/redis.conf
+      - redis-node-4-data:/data
+    networks:
+      redis-cluster:
+        ipv4_address: 172.28.0.14
+    environment:
+      - REDIS_CLUSTER_ANNOUNCE_IP=redis-node-4
+      - REDIS_CLUSTER_ANNOUNCE_PORT=6379
+      - REDIS_CLUSTER_ANNOUNCE_BUS_PORT=16379
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+
+  redis-node-5:
+    image: redis:8.4-alpine
+    container_name: blockd-redis-node-5
+    command: redis-server /usr/local/etc/redis/redis.conf --cluster-announce-ip redis-node-5
+    ports:
+      - "6383:6379"
+      - "16383:16379"
+    volumes:
+      - ./redis.conf:/usr/local/etc/redis/redis.conf
+      - redis-node-5-data:/data
+    networks:
+      redis-cluster:
+        ipv4_address: 172.28.0.15
+    environment:
+      - REDIS_CLUSTER_ANNOUNCE_IP=redis-node-5
+      - REDIS_CLUSTER_ANNOUNCE_PORT=6379
+      - REDIS_CLUSTER_ANNOUNCE_BUS_PORT=16379
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+
+  redis-node-6:
+    image: redis:8.4-alpine
+    container_name: blockd-redis-node-6
+    command: redis-server /usr/local/etc/redis/redis.conf --cluster-announce-ip redis-node-6
+    ports:
+      - "6384:6379"
+      - "16384:16379"
+    volumes:
+      - ./redis.conf:/usr/local/etc/redis/redis.conf
+      - redis-node-6-data:/data
+    networks:
+      redis-cluster:
+        ipv4_address: 172.28.0.16
+    environment:
+      - REDIS_CLUSTER_ANNOUNCE_IP=redis-node-6
+      - REDIS_CLUSTER_ANNOUNCE_PORT=6379
+      - REDIS_CLUSTER_ANNOUNCE_BUS_PORT=16379
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+
+  # Cluster Initialization Service
+  redis-cluster-init:
+    image: redis:8.4-alpine
+    container_name: blockd-redis-cluster-init
+    depends_on:
+      - redis-node-1
+      - redis-node-2
+      - redis-node-3
+      - redis-node-4
+      - redis-node-5
+      - redis-node-6
+    networks:
+      - redis-cluster
+    command: >
+      sh -c "
+        echo 'Waiting for Redis nodes to be ready...' &&
+        sleep 10 &&
+        redis-cli --cluster create
+          172.28.0.11:6379
+          172.28.0.12:6379
+          172.28.0.13:6379
+          172.28.0.14:6379
+          172.28.0.15:6379
+          172.28.0.16:6379
+          --cluster-replicas 1
+          --cluster-yes &&
+        echo 'Redis cluster created successfully!' &&
+        redis-cli -h 172.28.0.11 cluster info
+      "
+    restart: on-failure
+
+networks:
+  redis-cluster:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+volumes:
+  redis-node-1-data:
+    driver: local
+  redis-node-2-data:
+    driver: local
+  redis-node-3-data:
+    driver: local
+  redis-node-4-data:
+    driver: local
+  redis-node-5-data:
+    driver: local
+  redis-node-6-data:
+    driver: local

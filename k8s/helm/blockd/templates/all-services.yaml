@@ -1,0 +1,171 @@
+{{- $services := dict
+  "auth-service" (dict "enabled" .Values.authService.enabled "port" 3001 "replicas" .Values.authService.replicas "resources" .Values.authService.resources "image" .Values.images.authService "autoscaling" .Values.authService.autoscaling)
+  "session-service" (dict "enabled" .Values.sessionService.enabled "port" 3002 "replicas" .Values.sessionService.replicas "resources" .Values.sessionService.resources "image" .Values.images.sessionService "autoscaling" .Values.sessionService.autoscaling)
+  "websocket-service" (dict "enabled" true "port" 3004 "replicas" 2 "resources" (dict "requests" (dict "memory" "512Mi" "cpu" "500m") "limits" (dict "memory" "1Gi" "cpu" "1000m")) "image" (dict "repository" "blockd/websocket-service" "tag" "latest" "pullPolicy" "IfNotPresent") "autoscaling" (dict "enabled" false))
+  "ai-detection" (dict "enabled" .Values.aiDetection.enabled "port" 5000 "replicas" .Values.aiDetection.replicas "resources" .Values.aiDetection.resources "image" .Values.images.aiDetection "autoscaling" .Values.aiDetection.autoscaling)
+  "eye-tracking" (dict "enabled" .Values.eyeTracking.enabled "port" 5001 "replicas" .Values.eyeTracking.replicas "resources" .Values.eyeTracking.resources "image" .Values.images.eyeTracking "autoscaling" .Values.eyeTracking.autoscaling)
+  "response-timing" (dict "enabled" .Values.responseTiming.enabled "port" 5002 "replicas" .Values.responseTiming.replicas "resources" .Values.responseTiming.resources "image" .Values.images.responseTiming "autoscaling" .Values.responseTiming.autoscaling)
+  "video-service" (dict "enabled" .Values.videoService.enabled "port" 3003 "replicas" .Values.videoService.replicas "resources" .Values.videoService.resources "image" .Values.images.videoService "autoscaling" .Values.videoService.autoscaling)
+  "frontend" (dict "enabled" .Values.frontend.enabled "port" 80 "replicas" .Values.frontend.replicas "resources" .Values.frontend.resources "image" .Values.images.frontend "autoscaling" .Values.frontend.autoscaling)
+}}
+{{- range $name, $config := $services }}
+{{- if $config.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}{{ if $.Values.deployment.version }}-{{ $.Values.deployment.version }}{{ end }}
+  namespace: {{ $.Values.namespace }}
+  labels:
+    app: {{ $name }}
+    version: {{ $.Values.deployment.version | default "blue" }}
+    {{- include "blockd.labels" $ | nindent 4 }}
+spec:
+  {{- if not $config.autoscaling.enabled }}
+  replicas: {{ $config.replicas }}
+  {{- end }}
+  selector:
+    matchLabels:
+      app: {{ $name }}
+      version: {{ $.Values.deployment.version | default "blue" }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: {{ $name }}
+        version: {{ $.Values.deployment.version | default "blue" }}
+        {{- include "blockd.selectorLabels" $ | nindent 8 }}
+    spec:
+      {{- if $.Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml $.Values.global.imagePullSecrets | nindent 8 }}
+      {{- end }}
+      containers:
+      - name: {{ $name }}
+        image: "{{ $.Values.global.imageRegistry | default $config.image.repository }}:{{ $config.image.tag | default $.Values.image.tag | default $.Chart.AppVersion }}"
+        imagePullPolicy: {{ $config.image.pullPolicy }}
+        ports:
+        - name: http
+          containerPort: {{ $config.port }}
+          protocol: TCP
+        env:
+        - name: NODE_ENV
+          value: {{ $.Values.environment | default "production" }}
+        - name: PORT
+          value: "{{ $config.port }}"
+        {{- if or (eq $name "auth-service") (eq $name "session-service") }}
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: blockd-secrets
+              key: database-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: blockd-secrets
+              key: redis-url
+        {{- end }}
+        {{- if eq $name "auth-service" }}
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: blockd-secrets
+              key: jwt-secret
+        {{- end }}
+        {{- if or (eq $name "ai-detection") (eq $name "eye-tracking") (eq $name "response-timing") }}
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: blockd-secrets
+              key: openai-api-key
+        {{- end }}
+        {{- if eq $name "video-service" }}
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: blockd-secrets
+              key: aws-access-key-id
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: blockd-secrets
+              key: aws-secret-access-key
+        - name: S3_BUCKET
+          value: {{ $.Values.configMap.s3Bucket }}
+        {{- end }}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        resources:
+          {{- toYaml $config.resources | nindent 10 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  namespace: {{ $.Values.namespace }}
+  labels:
+    app: {{ $name }}
+    {{- include "blockd.labels" $ | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app: {{ $name }}
+    {{- if $.Values.deployment.version }}
+    version: {{ $.Values.deployment.version }}
+    {{- end }}
+  ports:
+  - name: http
+    port: {{ $config.port }}
+    targetPort: http
+    protocol: TCP
+{{- if $config.autoscaling.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $name }}
+  namespace: {{ $.Values.namespace }}
+  labels:
+    app: {{ $name }}
+    {{- include "blockd.labels" $ | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ $name }}{{ if $.Values.deployment.version }}-{{ $.Values.deployment.version }}{{ end }}
+  minReplicas: {{ $config.autoscaling.minReplicas }}
+  maxReplicas: {{ $config.autoscaling.maxReplicas }}
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: {{ $config.autoscaling.targetCPUUtilizationPercentage }}
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: {{ $config.autoscaling.targetMemoryUtilizationPercentage }}
+{{- end }}
+{{- end }}
+{{- end }}

@@ -1,0 +1,175 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches:
+      - develop
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository_owner }}/blockd
+  HELM_VERSION: '3.13.0'
+  KUBECTL_VERSION: '1.28.0'
+
+jobs:
+  deploy-staging:
+    name: Deploy to Staging Environment
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: https://staging.blockd.io
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v${{ env.KUBECTL_VERSION }}
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v${{ env.HELM_VERSION }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Configure kubectl for EKS
+        run: |
+          aws eks update-kubeconfig --name blockd-staging-cluster --region us-east-1
+
+      - name: Verify cluster connection
+        run: |
+          kubectl cluster-info
+          kubectl get nodes
+
+      - name: Create namespace if not exists
+        run: |
+          kubectl create namespace staging --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Lint Helm chart
+        run: |
+          helm lint k8s/helm/blockd -f k8s/helm/blockd/values-staging.yaml
+
+      - name: Run Helm diff
+        run: |
+          helm plugin install https://github.com/databus23/helm-diff || true
+          helm diff upgrade blockd ./k8s/helm/blockd \
+            --namespace staging \
+            --values k8s/helm/blockd/values-staging.yaml \
+            --set image.tag=${{ github.ref_name }}-${{ github.sha }} \
+            --allow-unreleased || true
+
+      - name: Deploy with Helm
+        run: |
+          helm upgrade --install blockd ./k8s/helm/blockd \
+            --namespace staging \
+            --values k8s/helm/blockd/values-staging.yaml \
+            --set image.tag=${{ github.ref_name }}-${{ github.sha }} \
+            --set image.repository=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }} \
+            --set environment=staging \
+            --wait \
+            --timeout 10m \
+            --atomic
+
+      - name: Wait for rollout to complete
+        run: |
+          kubectl rollout status deployment/api-gateway -n staging --timeout=5m
+          kubectl rollout status deployment/auth-service -n staging --timeout=5m
+          kubectl rollout status deployment/session-service -n staging --timeout=5m
+          kubectl rollout status deployment/websocket-service -n staging --timeout=5m
+          kubectl rollout status deployment/ai-detection -n staging --timeout=5m
+          kubectl rollout status deployment/eye-tracking -n staging --timeout=5m
+          kubectl rollout status deployment/response-timing -n staging --timeout=5m
+          kubectl rollout status deployment/video-service -n staging --timeout=5m
+          kubectl rollout status deployment/frontend -n staging --timeout=5m
+
+      - name: Get deployment status
+        if: always()
+        run: |
+          kubectl get deployments -n staging
+          kubectl get pods -n staging
+          kubectl get services -n staging
+          kubectl get ingress -n staging
+
+      - name: Run smoke tests
+        run: |
+          echo "Waiting for ingress to be ready..."
+          sleep 30
+
+          STAGING_URL="https://staging.blockd.io"
+
+          # Test API Gateway health
+          echo "Testing API Gateway..."
+          curl -f $STAGING_URL/api/health || exit 1
+
+          # Test Auth Service
+          echo "Testing Auth Service..."
+          curl -f $STAGING_URL/api/auth/health || exit 1
+
+          # Test Session Service
+          echo "Testing Session Service..."
+          curl -f $STAGING_URL/api/sessions/health || exit 1
+
+          echo "Smoke tests passed!"
+
+      - name: Run integration tests against staging
+        run: |
+          npm install -g newman
+          newman run tests/api/postman-collections/auth-api.postman_collection.json \
+            -e tests/api/environments/staging.json \
+            --bail
+
+      - name: Notify deployment success
+        if: success()
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "Staging deployment successful",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": ":rocket: *Staging Deployment Successful*\n*Branch:* ${{ github.ref_name }}\n*Commit:* ${{ github.sha }}\n*Author:* ${{ github.actor }}\n*URL:* https://staging.blockd.io"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Notify deployment failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "Staging deployment failed",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": ":x: *Staging Deployment Failed*\n*Branch:* ${{ github.ref_name }}\n*Commit:* ${{ github.sha }}\n*Author:* ${{ github.actor }}\n*URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          echo "Rolling back to previous version..."
+          helm rollback blockd --namespace staging
+          kubectl rollout status deployment/api-gateway -n staging
