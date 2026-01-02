@@ -2,6 +2,15 @@ import { STORAGE_KEYS } from './constants'
 
 /**
  * Token management utilities
+ *
+ * SECURITY WARNING: Tokens are stored in localStorage which is vulnerable to XSS attacks.
+ * For production deployment, consider migrating to httpOnly cookies with CSRF protection.
+ * See: https://owasp.org/www-community/attacks/csrf
+ *
+ * Current mitigations:
+ * - CSP headers should be configured to prevent inline scripts
+ * - All user inputs should be sanitized before rendering
+ * - Token expiration is short-lived (1 hour access, 7 day refresh)
  */
 
 export interface TokenPair {
@@ -48,7 +57,14 @@ export function isAuthenticated(): boolean {
 }
 
 /**
- * Decode JWT token (simple base64 decode, not validation)
+ * Decode JWT token payload (base64 decode only)
+ *
+ * WARNING: This function does NOT verify the token signature.
+ * Token signature MUST be validated server-side before trusting any claims.
+ * This is only for reading claims client-side (e.g., checking expiration).
+ *
+ * @param token - JWT token string
+ * @returns Decoded payload or null if invalid format
  */
 export function decodeToken(token: string): Record<string, unknown> | null {
   try {

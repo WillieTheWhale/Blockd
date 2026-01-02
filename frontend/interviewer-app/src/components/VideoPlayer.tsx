@@ -68,6 +68,7 @@ export function VideoPlayer({
   const [volume, setVolume] = useState(1)
   const [isPipEnabled, setIsPipEnabled] = useState(false)
   const [availableDevices, setAvailableDevices] = useState<MediaDeviceInfo[]>([])
+  const [localError, setLocalError] = useState<string | null>(null)
 
   const {
     localStream,
@@ -99,7 +100,16 @@ export function VideoPlayer({
     const stream = isProducer ? localStream : remoteStream
     if (stream) {
       videoRef.current.srcObject = stream
-      videoRef.current.play().catch(console.error)
+      videoRef.current.play().catch((err: Error) => {
+        // AbortError is expected when stream changes rapidly - ignore it
+        if (err.name === 'AbortError') return
+        // NotAllowedError is expected if autoplay is blocked - user will click to play
+        if (err.name === 'NotAllowedError') {
+          setLocalError('Click to start video playback')
+          return
+        }
+        setLocalError(`Video playback failed: ${err.message}`)
+      })
     }
   }, [localStream, remoteStream, isProducer])
 
@@ -108,7 +118,9 @@ export function VideoPlayer({
    */
   useEffect(() => {
     if (!isProducer && producerId) {
-      startConsuming(producerId).catch(console.error)
+      startConsuming(producerId).catch((err: Error) => {
+        setLocalError(`Failed to connect to video stream: ${err.message}`)
+      })
     }
   }, [isProducer, producerId, startConsuming])
 
@@ -138,13 +150,27 @@ export function VideoPlayer({
     if (!containerRef.current) return
 
     if (!document.fullscreenElement) {
-      containerRef.current.requestFullscreen().then(() => {
-        setIsFullscreen(true)
-      })
+      containerRef.current.requestFullscreen()
+        .then(() => {
+          setIsFullscreen(true)
+        })
+        .catch((err: Error) => {
+          // Fullscreen may fail due to browser restrictions or user settings
+          if (process.env.NODE_ENV === 'development') {
+            console.debug('Fullscreen request failed:', err.message)
+          }
+        })
     } else {
-      document.exitFullscreen().then(() => {
-        setIsFullscreen(false)
-      })
+      document.exitFullscreen()
+        .then(() => {
+          setIsFullscreen(false)
+        })
+        .catch((err: Error) => {
+          // Exit fullscreen failure is rare but possible
+          if (process.env.NODE_ENV === 'development') {
+            console.debug('Exit fullscreen failed:', err.message)
+          }
+        })
     }
   }, [])
 
@@ -265,11 +291,26 @@ export function VideoPlayer({
       />
 
       {/* Connection Status Overlay */}
-      {connectionState !== 'connected' && (
+      {(connectionState !== 'connected' || localError) && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/50">
           <div className="text-center text-white">
-            <div className="mb-2 text-lg font-semibold capitalize">{connectionState}</div>
-            {error && <div className="text-sm text-red-300">{error}</div>}
+            {connectionState !== 'connected' && (
+              <div className="mb-2 text-lg font-semibold capitalize">{connectionState}</div>
+            )}
+            {(error || localError) && (
+              <div className="text-sm text-red-300">{error || localError}</div>
+            )}
+            {localError && connectionState === 'connected' && (
+              <button
+                className="mt-2 rounded bg-white/20 px-4 py-2 text-sm hover:bg-white/30"
+                onClick={() => {
+                  setLocalError(null)
+                  videoRef.current?.play().catch(() => {})
+                }}
+              >
+                Try Again
+              </button>
+            )}
           </div>
         </div>
       )}

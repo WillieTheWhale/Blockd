@@ -12,6 +12,22 @@ export interface ApiError {
 }
 
 /**
+ * Token refresh state management
+ * Prevents multiple simultaneous refresh requests (race condition)
+ */
+let isRefreshing = false
+let refreshSubscribers: Array<(token: string | null) => void> = []
+
+function subscribeTokenRefresh(callback: (token: string | null) => void): void {
+  refreshSubscribers.push(callback)
+}
+
+function onTokenRefreshed(token: string | null): void {
+  refreshSubscribers.forEach((callback) => callback(token))
+  refreshSubscribers = []
+}
+
+/**
  * Create axios instance with default configuration
  */
 const apiClient: AxiosInstance = axios.create({
@@ -32,6 +48,20 @@ apiClient.interceptors.request.use(
     if (token) {
       // Check if token is expired
       if (isTokenExpired(token)) {
+        // If already refreshing, wait for the refresh to complete
+        if (isRefreshing) {
+          return new Promise((resolve, reject) => {
+            subscribeTokenRefresh((newToken) => {
+              if (newToken && config.headers) {
+                config.headers.Authorization = `Bearer ${newToken}`
+                resolve(config)
+              } else {
+                reject(new Error('Session expired'))
+              }
+            })
+          })
+        }
+
         try {
           // Try to refresh the token
           const refreshed = await refreshAccessToken()
@@ -81,13 +111,22 @@ apiClient.interceptors.response.use(
       }
     }
 
-    // Transform error to custom format
+    // Transform error to custom format with safe message extraction
+    const extractErrorMessage = (): string => {
+      const responseData = error.response?.data
+      if (responseData && typeof responseData === 'object' && 'message' in responseData) {
+        const msg = (responseData as { message: unknown }).message
+        // Sanitize message - only return string type, prevent object injection
+        return typeof msg === 'string' ? msg : 'An error occurred'
+      }
+      return error.message || 'An error occurred'
+    }
+
     const apiError: ApiError = {
-      message: error.response?.data
-        ? (error.response.data as { message?: string }).message || 'An error occurred'
-        : error.message,
+      message: extractErrorMessage(),
       status: error.response?.status || 500,
-      data: error.response?.data,
+      // Don't expose raw response data in production to prevent info leaks
+      data: process.env.NODE_ENV === 'development' ? error.response?.data : undefined,
     }
 
     return Promise.reject(apiError)
@@ -95,12 +134,24 @@ apiClient.interceptors.response.use(
 )
 
 /**
- * Refresh access token
+ * Refresh access token with mutex to prevent race conditions
  */
 async function refreshAccessToken(): Promise<string | null> {
+  if (isRefreshing) {
+    // Return a promise that resolves when the refresh completes
+    return new Promise((resolve) => {
+      subscribeTokenRefresh(resolve)
+    })
+  }
+
+  isRefreshing = true
+
   try {
     const refreshToken = localStorage.getItem('blockd_refresh_token')
-    if (!refreshToken) return null
+    if (!refreshToken) {
+      onTokenRefreshed(null)
+      return null
+    }
 
     const response = await axios.post(`${API_URL}/api/v1/auth/refresh`, {
       refreshToken,
@@ -109,9 +160,13 @@ async function refreshAccessToken(): Promise<string | null> {
     const { accessToken, refreshToken: newRefreshToken } = response.data
     setTokens({ accessToken, refreshToken: newRefreshToken })
 
+    onTokenRefreshed(accessToken)
     return accessToken
   } catch {
+    onTokenRefreshed(null)
     return null
+  } finally {
+    isRefreshing = false
   }
 }
 

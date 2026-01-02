@@ -85,6 +85,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
 
   /**
    * Play notification sound for critical events
+   *
+   * Note: Audio playback may fail due to browser autoplay policies
+   * requiring user interaction before audio can play. This is expected
+   * behavior and not a bug.
    */
   const playNotificationSound = useCallback(() => {
     if (!soundEnabled) return
@@ -92,11 +96,20 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     try {
       const audio = new Audio('/sounds/notification.mp3')
       audio.volume = 0.5
-      audio.play().catch(() => {
-        // Ignore errors if sound cannot be played
+      audio.play().catch((error: Error) => {
+        // Log in development - common causes:
+        // - Browser autoplay policy (user hasn't interacted with page)
+        // - Audio file not found
+        // - Audio format not supported
+        if (process.env.NODE_ENV === 'development') {
+          console.debug('Audio playback failed (expected if no user interaction):', error.message)
+        }
       })
-    } catch {
-      // Ignore errors
+    } catch (error) {
+      // Audio API not available or file creation failed
+      if (process.env.NODE_ENV === 'development') {
+        console.debug('Audio notification unavailable:', error instanceof Error ? error.message : 'Unknown error')
+      }
     }
   }, [soundEnabled])
 

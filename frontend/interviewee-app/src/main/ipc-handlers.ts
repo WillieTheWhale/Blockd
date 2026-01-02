@@ -7,6 +7,24 @@ import { ipcMain, BrowserWindow, desktopCapturer, shell } from 'electron';
 import { SessionManager } from './session-manager';
 import { SecurityMonitor } from './security-monitor';
 
+/**
+ * Safely extract error message from unknown error type
+ * Handles Error objects, strings, objects with message property, and other types
+ */
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (typeof error === 'string') {
+    return error;
+  }
+  if (error && typeof error === 'object' && 'message' in error) {
+    const msg = (error as { message: unknown }).message;
+    return typeof msg === 'string' ? msg : 'An unknown error occurred';
+  }
+  return 'An unknown error occurred';
+}
+
 export function setupIpcHandlers(
   mainWindow: BrowserWindow,
   sessionManager: SessionManager,
@@ -21,7 +39,7 @@ export function setupIpcHandlers(
       const result = await sessionManager.login(credentials.email, credentials.password);
       return { success: true, data: result };
     } catch (error) {
-      return { success: false, error: (error as Error).message };
+      return { success: false, error: getErrorMessage(error) };
     }
   });
 
@@ -34,7 +52,7 @@ export function setupIpcHandlers(
       const result = await sessionManager.register(data.email, data.password, data.fullName);
       return { success: true, data: result };
     } catch (error) {
-      return { success: false, error: (error as Error).message };
+      return { success: false, error: getErrorMessage(error) };
     }
   });
 
@@ -43,7 +61,7 @@ export function setupIpcHandlers(
       await sessionManager.logout();
       return { success: true };
     } catch (error) {
-      return { success: false, error: (error as Error).message };
+      return { success: false, error: getErrorMessage(error) };
     }
   });
 
@@ -52,7 +70,7 @@ export function setupIpcHandlers(
       const result = await sessionManager.refreshAccessToken();
       return { success: true, data: result };
     } catch (error) {
-      return { success: false, error: (error as Error).message };
+      return { success: false, error: getErrorMessage(error) };
     }
   });
 
@@ -61,7 +79,7 @@ export function setupIpcHandlers(
       const user = sessionManager.getCurrentUser();
       return { success: true, data: user };
     } catch (error) {
-      return { success: false, error: (error as Error).message };
+      return { success: false, error: getErrorMessage(error) };
     }
   });
 
@@ -80,7 +98,7 @@ export function setupIpcHandlers(
       securityMonitor.start();
       return { success: true, data: result };
     } catch (error) {
-      return { success: false, error: (error as Error).message };
+      return { success: false, error: getErrorMessage(error) };
     }
   });
 
@@ -90,7 +108,7 @@ export function setupIpcHandlers(
       securityMonitor.stop();
       return { success: true };
     } catch (error) {
-      return { success: false, error: (error as Error).message };
+      return { success: false, error: getErrorMessage(error) };
     }
   });
 
@@ -120,7 +138,7 @@ export function setupIpcHandlers(
         })),
       };
     } catch (error) {
-      return { success: false, error: (error as Error).message };
+      return { success: false, error: getErrorMessage(error) };
     }
   });
 
@@ -129,7 +147,7 @@ export function setupIpcHandlers(
       await sessionManager.startMediaCapture(sourceId);
       return { success: true };
     } catch (error) {
-      return { success: false, error: (error as Error).message };
+      return { success: false, error: getErrorMessage(error) };
     }
   });
 
@@ -138,7 +156,7 @@ export function setupIpcHandlers(
       await sessionManager.stopMediaCapture();
       return { success: true };
     } catch (error) {
-      return { success: false, error: (error as Error).message };
+      return { success: false, error: getErrorMessage(error) };
     }
   });
 
@@ -151,7 +169,7 @@ export function setupIpcHandlers(
       securityMonitor.start();
       return { success: true };
     } catch (error) {
-      return { success: false, error: (error as Error).message };
+      return { success: false, error: getErrorMessage(error) };
     }
   });
 
@@ -160,7 +178,7 @@ export function setupIpcHandlers(
       securityMonitor.stop();
       return { success: true };
     } catch (error) {
-      return { success: false, error: (error as Error).message };
+      return { success: false, error: getErrorMessage(error) };
     }
   });
 
@@ -178,7 +196,7 @@ export function setupIpcHandlers(
       await securityMonitor.reportEvent(securityEvent);
       return { success: true };
     } catch (error) {
-      return { success: false, error: (error as Error).message };
+      return { success: false, error: getErrorMessage(error) };
     }
   });
 
@@ -191,7 +209,7 @@ export function setupIpcHandlers(
       await sessionManager.connectWebSocket();
       return { success: true };
     } catch (error) {
-      return { success: false, error: (error as Error).message };
+      return { success: false, error: getErrorMessage(error) };
     }
   });
 
@@ -200,7 +218,7 @@ export function setupIpcHandlers(
       sessionManager.disconnectWebSocket();
       return { success: true };
     } catch (error) {
-      return { success: false, error: (error as Error).message };
+      return { success: false, error: getErrorMessage(error) };
     }
   });
 
@@ -209,7 +227,7 @@ export function setupIpcHandlers(
       sessionManager.sendWebSocketEvent(eventName, data);
       return { success: true };
     } catch (error) {
-      return { success: false, error: (error as Error).message };
+      return { success: false, error: getErrorMessage(error) };
     }
   });
 
@@ -253,7 +271,7 @@ export function setupIpcHandlers(
       await sessionManager.sendGazeData(gazeData);
       return { success: true };
     } catch (error) {
-      return { success: false, error: (error as Error).message };
+      return { success: false, error: getErrorMessage(error) };
     }
   });
 }

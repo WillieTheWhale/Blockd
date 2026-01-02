@@ -3,6 +3,48 @@ import { AlertTriangle, RefreshCw, Home } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 
+/**
+ * Error reporting utility
+ * Sends errors to monitoring service (Sentry, custom endpoint, etc.)
+ *
+ * In production, configure Sentry by installing @sentry/react and calling:
+ * Sentry.init({ dsn: 'YOUR_DSN' }) in your app entry point
+ */
+function reportError(error: Error, errorInfo: ErrorInfo): void {
+  // Check if Sentry is available (dynamically, to avoid hard dependency)
+  const Sentry = (window as unknown as { Sentry?: { captureException: (e: Error, context: object) => void } }).Sentry
+
+  if (Sentry && typeof Sentry.captureException === 'function') {
+    Sentry.captureException(error, {
+      extra: {
+        componentStack: errorInfo.componentStack,
+        timestamp: new Date().toISOString(),
+      },
+    })
+    return
+  }
+
+  // Fallback: Send to custom error endpoint if configured
+  const errorEndpoint = import.meta.env.VITE_ERROR_REPORTING_URL
+  if (errorEndpoint && process.env.NODE_ENV === 'production') {
+    fetch(errorEndpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: error.name,
+        message: error.message,
+        stack: error.stack,
+        componentStack: errorInfo.componentStack,
+        timestamp: new Date().toISOString(),
+        url: window.location.href,
+        userAgent: navigator.userAgent,
+      }),
+    }).catch(() => {
+      // Silently fail - we don't want error reporting to cause more errors
+    })
+  }
+}
+
 interface ErrorBoundaryProps {
   children: ReactNode
   fallback?: ReactNode
@@ -47,12 +89,12 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     this.setState({ errorInfo })
 
     // Log error to console in development
-    console.error('ErrorBoundary caught an error:', error, errorInfo)
+    if (process.env.NODE_ENV === 'development') {
+      console.error('ErrorBoundary caught an error:', error, errorInfo)
+    }
 
-    // TODO: Send to error tracking service (Sentry, etc.)
-    // if (process.env.NODE_ENV === 'production') {
-    //   Sentry.captureException(error, { extra: { componentStack: errorInfo.componentStack } })
-    // }
+    // Report error to monitoring service
+    reportError(error, errorInfo)
   }
 
   handleReset = (): void => {
