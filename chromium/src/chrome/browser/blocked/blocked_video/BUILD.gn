@@ -8,7 +8,7 @@ source_set("video_capture") {
 
   deps = [
     "//base",
-    "//chrome/browser/blocked/blocked_ipc",
+    "//chrome/browser/blocked/blocked_ipc:blocked_ipc",
     "//components/keyed_service/core",
     "//content/public/common/blocked_mojom",
     "//media/capture",

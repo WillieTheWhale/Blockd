@@ -8,7 +8,8 @@ proto_library("blocked_protocol_proto") {
   extra_configs = [ "//build/config/compiler:wexit_time_destructors" ]
 }
 
-source_set("ipc") {
+# Backend connector for WebSocket communication (no circular deps).
+source_set("blocked_ipc") {
   sources = [
     "blocked_backend_connector.cc",
     "blocked_backend_connector.h",
@@ -27,4 +28,31 @@ source_set("ipc") {
   ]
 
   configs += [ "//chrome/browser/blocked:blocked_config" ]
+}
+
+# Session host implementation (depends on video_capture).
+source_set("session_host") {
+  sources = [
+    "blocked_session_host_impl.cc",
+    "blocked_session_host_impl.h",
+  ]
+
+  deps = [
+    ":blocked_ipc",
+    "//base",
+    "//chrome/browser/blocked/blocked_video:video_capture",
+    "//components/keyed_service/core",
+    "//content/public/common/blocked_mojom",
+    "//mojo/public/cpp/bindings",
+  ]
+
+  configs += [ "//chrome/browser/blocked:blocked_config" ]
+}
+
+# Combined target for convenience (legacy alias).
+group("ipc") {
+  public_deps = [
+    ":blocked_ipc",
+    ":session_host",
+  ]
 }

@@ -73,7 +73,7 @@ void BlockedVideoCaptureService::StartCapture(const std::string& session_id) {
   settings->width = capture_width_;
   settings->height = capture_height_;
   settings->frame_rate = capture_fps_;
-  settings->format = mojom::VideoFormat::kI420;
+  settings->format = mojom::VideoFormat::I420;
   settings->device_id = device_id_;
   settings->enable_encoding = enable_encoding_;
 
@@ -110,7 +110,7 @@ void BlockedVideoCaptureService::SetResolution(int width, int height) {
     settings->width = capture_width_;
     settings->height = capture_height_;
     settings->frame_rate = capture_fps_;
-    settings->format = mojom::VideoFormat::kI420;
+    settings->format = mojom::VideoFormat::I420;
     settings->device_id = device_id_;
     settings->enable_encoding = enable_encoding_;
     client_->UpdateSettings(std::move(settings));
