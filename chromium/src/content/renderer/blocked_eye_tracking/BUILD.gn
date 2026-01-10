@@ -23,10 +23,14 @@ source_set("blocked_eye_tracking") {
   deps = [
     "//base",
     "//content/renderer/blocked_ipc",
+    "//content/renderer/blocked_video",
+    "//media/base",
     "//mojo/public/cpp/bindings",
     "//skia",
     "//third_party/blink/public:blink",
+    "//third_party/libyuv",
     "//third_party/mediapipe:blocked_mediapipe",
+    "//ui/gfx/geometry",
   ]
 
   # Allow access from content/renderer and tests.
