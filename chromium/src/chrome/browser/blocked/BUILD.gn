@@ -7,10 +7,12 @@ import("//chrome/browser/blocked/blocked_features.gni")
 # Main Blocked browser modules aggregation
 group("blocked_browser_modules") {
   deps = [
+    "//chrome/browser/blocked/blocked_audio:blocked_audio",
+    "//chrome/browser/blocked/blocked_ipc:ipc",
     "//chrome/browser/blocked/blocked_security:security_monitoring",
+    "//chrome/browser/blocked/blocked_session_detection:session_detection",
     "//chrome/browser/blocked/blocked_startup:blocked_startup",
     "//chrome/browser/blocked/blocked_telemetry:telemetry",
-    "//chrome/browser/blocked/blocked_ipc:ipc",
     "//chrome/browser/blocked/blocked_video:video_capture",
     "//chrome/browser/ui/webui/blocked_home:blocked_home",
   ]

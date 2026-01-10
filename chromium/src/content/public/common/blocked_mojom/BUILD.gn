@@ -1,0 +1,51 @@
+# Copyright 2025 The Blockd Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# Mojo interfaces for Blocked browser-renderer communication.
+
+import("//mojo/public/tools/bindings/mojom.gni")
+
+mojom("blocked_mojom") {
+  sources = [
+    "audio_capture.mojom",
+    "eye_tracking.mojom",
+    "session.mojom",
+    "video_capture.mojom",
+  ]
+
+  public_deps = [
+    "//mojo/public/mojom/base",
+  ]
+
+  cpp_typemaps = [
+    {
+      types = [
+        {
+          mojom = "blocked.mojom.VideoFrameMetadata"
+          cpp = "::blocked::VideoFrameMetadata"
+        },
+        {
+          mojom = "blocked.mojom.AudioFrameMetadata"
+          cpp = "::blocked::AudioFrameMetadata"
+        },
+      ]
+      traits_headers = [ "blocked_mojom_traits.h" ]
+      traits_sources = [ "blocked_mojom_traits.cc" ]
+      traits_public_deps = [ "//base" ]
+    },
+  ]
+}
+
+# Type traits for custom C++ types.
+source_set("blocked_mojom_traits") {
+  sources = [
+    "blocked_mojom_traits.cc",
+    "blocked_mojom_traits.h",
+  ]
+
+  deps = [
+    ":blocked_mojom",
+    "//base",
+  ]
+}

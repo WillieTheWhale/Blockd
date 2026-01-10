@@ -1,0 +1,28 @@
+# Copyright 2025 The Blockd Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# Audio capture service for Blocked browser process.
+
+import("//build/config/features.gni")
+
+source_set("blocked_audio") {
+  sources = [
+    "blocked_audio_capture_service.cc",
+    "blocked_audio_capture_service.h",
+  ]
+
+  deps = [
+    "//base",
+    "//chrome/browser/blocked/blocked_ipc:ipc",
+    "//components/keyed_service/core",
+    "//content/public/common/blocked_mojom",
+    "//mojo/public/cpp/bindings",
+  ]
+
+  # Allow access from blocked browser modules.
+  visibility = [
+    ":*",
+    "//chrome/browser/blocked:*",
+  ]
+}

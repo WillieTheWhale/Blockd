@@ -1,0 +1,91 @@
+// Copyright 2025 The Blockd Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+// Mojo interface for audio capture communication between renderer and browser.
+
+module blocked.mojom;
+
+import "mojo/public/mojom/base/time.mojom";
+import "mojo/public/mojom/base/big_buffer.mojom";
+
+// Audio format/codec type.
+enum AudioCodec {
+  PCM,    // Raw PCM (16-bit signed LE)
+  OPUS,   // Opus encoded
+  AAC,    // AAC encoded (future)
+};
+
+// Audio source type.
+enum AudioSourceType {
+  MICROPHONE,     // User microphone input
+  TAB_AUDIO,      // Tab/system audio capture
+  MIXED,          // Both sources mixed
+};
+
+// Audio frame metadata.
+struct AudioFrameMetadata {
+  AudioCodec codec;
+  AudioSourceType source_type;
+  int32 sample_rate;       // e.g., 48000
+  int32 channels;          // 1 (mono) or 2 (stereo)
+  int32 bits_per_sample;   // 16 for PCM
+  int64 frame_number;
+  mojo_base.mojom.TimeTicks timestamp;
+  int32 duration_ms;       // Frame duration (typically 20ms for Opus)
+};
+
+// Browser-side interface (implemented in browser process).
+// Receives audio frames from renderer.
+interface AudioCaptureHost {
+  // Renderer sends raw audio frame to browser.
+  OnAudioFrame(mojo_base.mojom.BigBuffer frame_data,
+               AudioFrameMetadata metadata);
+
+  // Renderer sends encoded audio frame (Opus).
+  OnEncodedAudioFrame(mojo_base.mojom.BigBuffer encoded_data,
+                      AudioFrameMetadata metadata);
+
+  // Renderer reports audio capture started.
+  OnCaptureStarted(AudioCaptureSettings settings);
+
+  // Renderer reports audio capture stopped.
+  OnCaptureStopped();
+
+  // Renderer reports capture error.
+  OnCaptureError(string error_message);
+
+  // Renderer reports audio level (for UI meters).
+  OnAudioLevel(float level_db, AudioSourceType source_type);
+};
+
+// Renderer-side interface (implemented in renderer process).
+// Receives commands from browser.
+interface AudioCaptureClient {
+  // Browser requests to start audio capture.
+  StartCapture(AudioCaptureSettings settings);
+
+  // Browser requests to stop audio capture.
+  StopCapture();
+
+  // Browser requests to change capture settings.
+  UpdateSettings(AudioCaptureSettings settings);
+
+  // Browser requests to mute/unmute a source.
+  SetSourceMuted(AudioSourceType source_type, bool muted);
+};
+
+// Audio capture settings.
+struct AudioCaptureSettings {
+  int32 sample_rate;          // Default 48000
+  int32 channels;             // Default 1 (mono)
+  int32 bits_per_sample;      // Default 16
+  AudioCodec codec;           // Default OPUS
+  int32 opus_bitrate;         // Default 64000 (64kbps)
+  int32 frame_duration_ms;    // Default 20 (20ms frames)
+  bool enable_microphone;     // Capture from microphone
+  bool enable_tab_audio;      // Capture tab/system audio
+  bool enable_noise_suppression;   // Apply noise suppression
+  bool enable_echo_cancellation;   // Apply echo cancellation
+  bool enable_auto_gain_control;   // Apply AGC
+};
