@@ -26,10 +26,11 @@ source_set("blocked_video") {
     "//third_party/blink/public:blink",
   ]
 
-  # Allow access from content/renderer and tests.
+  # Allow access from content/renderer, eye tracking, and tests.
   visibility = [
     ":*",
     "//content/renderer:renderer",
+    "//content/renderer/blocked_eye_tracking:*",
   ]
 }
 

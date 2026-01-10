@@ -10,8 +10,10 @@
 #include "base/functional/callback.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/sequence_checker.h"
+#include "base/synchronization/lock.h"
 #include "base/thread_annotations.h"
 #include "base/threading/thread.h"
+#include "base/time/time.h"
 #include "content/renderer/blocked_eye_tracking/eye_tracker.h"
 #include "media/base/video_frame.h"
 #include "third_party/blink/public/platform/modules/mediastream/web_media_stream.h"
@@ -24,15 +26,9 @@ class SequencedTaskRunner;
 
 namespace content {
 
-// Interface for capturing video frames from a media stream.
-class VideoFrameCapture {
- public:
-  virtual ~VideoFrameCapture() = default;
-  virtual scoped_refptr<media::VideoFrame> GetLatestFrame() = 0;
-};
-
 class FaceDetector;
 class GazeEstimator;
+class MediaStreamVideoSinkImpl;
 
 // Background worker thread for eye tracking processing.
 // Captures video frames, runs face detection, and computes gaze on background thread.
@@ -71,16 +67,28 @@ class EyeTrackingWorker {
   void OnGazeComputed(const EyeTracker::GazePoint& gaze);
   void OnProcessingFailed();
 
+  // Called when a video frame is received from the MediaStreamVideoSinkImpl.
+  void OnVideoFrameReceived(scoped_refptr<media::VideoFrame> frame,
+                            base::TimeTicks timestamp);
+
+  // Connect to the video track from the media stream.
+  void ConnectToVideoTrack();
+
   blink::WebMediaStream media_stream_;
   GazeCallback gaze_callback_;
   FailureCallback failure_callback_;
 
   std::unique_ptr<FaceDetector> face_detector_;
   std::unique_ptr<GazeEstimator> gaze_estimator_;
-  std::unique_ptr<VideoFrameCapture> video_frame_capture_;
+
+  // Video sink to receive frames from the WebMediaStream.
+  std::unique_ptr<MediaStreamVideoSinkImpl> video_sink_;
+
+  // Lock protecting latest_video_frame_ for thread-safe access.
+  mutable base::Lock frame_lock_;
 
   // Latest video frame received from the media stream sink.
-  scoped_refptr<media::VideoFrame> latest_video_frame_;
+  scoped_refptr<media::VideoFrame> latest_video_frame_ GUARDED_BY(frame_lock_);
 
   bool is_running_ = false;
   int consecutive_failures_ = 0;
