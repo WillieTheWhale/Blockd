@@ -5,6 +5,10 @@
     "lib": ["ES2022"],
     "outDir": "./dist",
     "rootDir": "./",
+    "baseUrl": ".",
+    "paths": {
+      "@blockd/shared/*": ["../shared/*"]
+    },
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,

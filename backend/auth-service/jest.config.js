@@ -19,5 +19,8 @@ module.exports = {
   coverageDirectory: 'coverage',
   coverageReporters: ['text', 'lcov', 'html'],
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
+  moduleNameMapper: {
+    '^@blockd/shared/(.*)$': '<rootDir>/../shared/$1'
+  },
   verbose: true
 };
