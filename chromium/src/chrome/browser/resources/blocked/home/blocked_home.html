@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<!--
+Copyright 2025 The Blocked Authors. All rights reserved.
+Use of this source code is governed by a BSD-style license that can be
+found in the LICENSE file.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Blocked Interview Browser</title>
+  <link rel="stylesheet" href="blocked_home.css">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <div class="logo">
+        <svg class="logo-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="logo-text">Blocked</span>
+      </div>
+      <h1 class="title">Interview Browser</h1>
+      <p class="subtitle">Select your interview platform to get started</p>
+    </header>
+
+    <main class="button-grid">
+      <button id="google-meet-btn" class="platform-button google-meet" data-url="https://meet.google.com">
+        <svg class="button-icon" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 0C8.47 0 5.15 1.58 2.77 4.15L5.42 6.8C7.07 5.05 9.4 4 12 4C17.52 4 22 8.48 22 14H18L22.8 18.8L23 19L27.74 14H24C24 7.37 18.63 2 12 2V0ZM1.26 10L-3.48 14H0C0 20.63 5.37 26 12 26C15.53 26 18.85 24.42 21.23 21.85L18.58 19.2C16.93 20.95 14.6 22 12 22C6.48 22 2 17.52 2 12H6L1.2 7.2L1 7L1.26 10Z" transform="scale(0.5) translate(12, 12)"/>
+        </svg>
+        <span class="button-text">Google Meet</span>
+        <span class="button-hint">Video conferencing by Google</span>
+      </button>
+
+      <button id="zoom-btn" class="platform-button zoom" data-url="https://zoom.us/join">
+        <svg class="button-icon" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M4 4h10a4 4 0 0 1 4 4v8a4 4 0 0 1-4 4H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zm14 4l4-2v12l-4-2V8z"/>
+        </svg>
+        <span class="button-text">Zoom</span>
+        <span class="button-hint">Join or start a meeting</span>
+      </button>
+
+      <button id="teams-btn" class="platform-button teams" data-url="https://teams.microsoft.com">
+        <svg class="button-icon" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M19.2 6.4h-3.2V4.8c0-.9-.7-1.6-1.6-1.6h-4.8c-.9 0-1.6.7-1.6 1.6v1.6H4.8c-.9 0-1.6.7-1.6 1.6v9.6c0 .9.7 1.6 1.6 1.6h14.4c.9 0 1.6-.7 1.6-1.6V8c0-.9-.7-1.6-1.6-1.6zM9.6 4.8h4.8v1.6H9.6V4.8zM12 16.8c-2.2 0-4-1.8-4-4s1.8-4 4-4 4 1.8 4 4-1.8 4-4 4z"/>
+          <circle cx="12" cy="12.8" r="2"/>
+        </svg>
+        <span class="button-text">Microsoft Teams</span>
+        <span class="button-hint">Collaboration and meetings</span>
+      </button>
+    </main>
+
+    <footer class="footer">
+      <p class="footer-text">Secure interview environment powered by Blocked</p>
+    </footer>
+  </div>
+
+  <script src="blocked_home.js"></script>
+</body>
+</html>
