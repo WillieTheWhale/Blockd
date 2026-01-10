@@ -43,6 +43,23 @@ export interface AuthResponse {
   refreshToken: string
 }
 
+/**
+ * OAuth types
+ */
+export type OAuthProvider = 'google' | 'microsoft'
+
+export interface OAuthCallbackData {
+  code: string
+  codeVerifier: string
+  provider: OAuthProvider
+}
+
+export interface OAuthCallbackResponse {
+  user: User
+  accessToken: string
+  refreshToken: string
+}
+
 export interface ProfileUpdateFormData {
   name: string
   email: string

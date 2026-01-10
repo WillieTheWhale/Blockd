@@ -19,6 +19,7 @@ import { CreateSessionPage } from '@/pages/CreateSessionPage'
 import { SettingsPage } from '@/pages/SettingsPage'
 import { AnalyticsPage } from '@/pages/AnalyticsPage'
 import { ReportsPage } from '@/pages/ReportsPage'
+import { OAuthCallbackPage } from '@/pages/OAuthCallbackPage'
 
 // Create a client
 const queryClient = new QueryClient({
@@ -49,6 +50,9 @@ function App() {
               <Route path="/forgot-password" element={<ForgotPasswordPage />} />
               <Route path="/reset-password" element={<ResetPasswordPage />} />
             </Route>
+
+            {/* OAuth callback - standalone page without layout */}
+            <Route path="/auth/callback" element={<OAuthCallbackPage />} />
 
             {/* Protected routes */}
             <Route
