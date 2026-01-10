@@ -25,6 +25,14 @@ mediapipe>=0.10.9,<1.0.0
 numpy>=1.26.0,<3.0.0
 scipy>=1.12.0,<2.0.0
 
+# Deep Learning for LSTM Anomaly Detection
+# TensorFlow 2.16+ requires separate keras package
+tensorflow>=2.16.0,<3.0.0
+keras>=3.0.0,<4.0.0
+# For model serialization and optimization
+h5py>=3.10.0,<4.0.0
+tensorboard>=2.16.0,<3.0.0
+
 # Signal Processing and Filtering
 filterpy>=1.4.5,<2.0.0
 

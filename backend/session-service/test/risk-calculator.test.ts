@@ -1,3 +1,5 @@
+/// <reference types="jest" />
+
 import { RiskCalculator } from '../lib/risk-calculator';
 
 describe('RiskCalculator', () => {

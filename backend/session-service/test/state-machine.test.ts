@@ -1,3 +1,5 @@
+/// <reference types="jest" />
+
 import { SessionStateMachine } from '../lib/state-machine';
 import { SessionStatus } from '@prisma/client';
 import { InvalidSessionStateError } from '../lib/errors';
