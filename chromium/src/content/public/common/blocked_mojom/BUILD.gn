@@ -22,6 +22,10 @@ mojom("blocked_mojom") {
     {
       types = [
         {
+          mojom = "blocked.mojom.GazeData"
+          cpp = "::blocked::GazeData"
+        },
+        {
           mojom = "blocked.mojom.VideoFrameMetadata"
           cpp = "::blocked::VideoFrameMetadata"
         },

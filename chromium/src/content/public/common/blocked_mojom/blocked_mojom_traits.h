@@ -10,9 +10,29 @@
 
 #include "base/time/time.h"
 #include "content/public/common/blocked_mojom/audio_capture.mojom.h"
+#include "content/public/common/blocked_mojom/eye_tracking.mojom.h"
 #include "content/public/common/blocked_mojom/video_capture.mojom.h"
 
 namespace blocked {
+
+// C++ representation of GazeData for use in renderer/browser code.
+struct GazeData {
+  GazeData();
+  GazeData(float x, float y, float confidence, bool is_off_screen,
+           const std::string& off_screen_direction, base::TimeTicks timestamp);
+  ~GazeData();
+  GazeData(const GazeData&);
+  GazeData& operator=(const GazeData&);
+  GazeData(GazeData&&) noexcept;
+  GazeData& operator=(GazeData&&) noexcept;
+
+  float x = 0.0f;
+  float y = 0.0f;
+  float confidence = 0.0f;
+  bool is_off_screen = false;
+  std::string off_screen_direction;
+  base::TimeTicks timestamp;
+};
 
 // C++ representation of VideoFrameMetadata for use in renderer/browser code.
 struct VideoFrameMetadata {
@@ -110,6 +130,26 @@ struct StructTraits<blocked::mojom::AudioFrameMetadataDataView,
 
   static bool Read(blocked::mojom::AudioFrameMetadataDataView data,
                    blocked::AudioFrameMetadata* out);
+};
+
+// GazeData traits.
+template <>
+struct StructTraits<blocked::mojom::GazeDataDataView, blocked::GazeData> {
+  static float x(const blocked::GazeData& g) { return g.x; }
+  static float y(const blocked::GazeData& g) { return g.y; }
+  static float confidence(const blocked::GazeData& g) { return g.confidence; }
+  static bool is_off_screen(const blocked::GazeData& g) {
+    return g.is_off_screen;
+  }
+  static const std::string& off_screen_direction(const blocked::GazeData& g) {
+    return g.off_screen_direction;
+  }
+  static base::TimeTicks timestamp(const blocked::GazeData& g) {
+    return g.timestamp;
+  }
+
+  static bool Read(blocked::mojom::GazeDataDataView data,
+                   blocked::GazeData* out);
 };
 
 }  // namespace mojo
