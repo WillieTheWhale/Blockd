@@ -62,8 +62,9 @@ export const requestLoggingOptions = {
 
 /**
  * Custom request ID generator
+ * Note: Fastify's genReqId receives IncomingMessage, not FastifyRequest
  */
-export function genReqId(request: FastifyRequest): string {
+export function genReqId(request: { headers: Record<string, unknown> }): string {
   const existingId = request.headers['x-request-id'] as string;
   if (existingId) {
     return existingId;

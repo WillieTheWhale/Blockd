@@ -51,6 +51,26 @@ class CacheStatus(BaseModel):
     ttl: Optional[int] = Field(None, description="Time to live in seconds")
 
 
+class CircuitBreakerStats(BaseModel):
+    """Circuit breaker statistics"""
+    total_calls: int = Field(0, description="Total number of calls")
+    successful_calls: int = Field(0, description="Number of successful calls")
+    failed_calls: int = Field(0, description="Number of failed calls")
+    rejected_calls: int = Field(0, description="Number of rejected calls (circuit open)")
+    consecutive_failures: int = Field(0, description="Current consecutive failure count")
+    consecutive_successes: int = Field(0, description="Current consecutive success count")
+    last_failure_time: Optional[float] = Field(None, description="Unix timestamp of last failure")
+    last_success_time: Optional[float] = Field(None, description="Unix timestamp of last success")
+
+
+class CircuitBreakerStatus(BaseModel):
+    """Circuit breaker status for an LLM provider"""
+    name: str = Field(..., description="Circuit breaker name")
+    state: str = Field(..., description="Current state: closed, open, half_open")
+    stats: CircuitBreakerStats = Field(default_factory=CircuitBreakerStats, description="Statistics")
+    config: Dict[str, Any] = Field(default_factory=dict, description="Configuration")
+
+
 class HealthCheckResponse(BaseModel):
     """Health check response"""
     status: str = Field(..., description="Service status")
@@ -58,3 +78,4 @@ class HealthCheckResponse(BaseModel):
     timestamp: str = Field(..., description="Current timestamp")
     dependencies: Dict[str, str] = Field(default_factory=dict, description="Dependency statuses")
     models_loaded: Dict[str, bool] = Field(default_factory=dict, description="Model loading status")
+    circuit_breakers: Dict[str, Any] = Field(default_factory=dict, description="LLM circuit breaker status")

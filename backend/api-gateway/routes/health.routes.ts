@@ -3,7 +3,7 @@
  */
 
 import { FastifyInstance } from 'fastify';
-import { getRedisClient } from '../../shared/cache/redis-client';
+import { getRedisClient } from '../lib/redis-client';
 import prisma from '../lib/prisma';
 import { sendSuccess } from '../lib/response';
 
@@ -36,6 +36,27 @@ export default async function healthRoutes(fastify: FastifyInstance) {
             },
           },
         },
+        503: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            data: {
+              type: 'object',
+              properties: {
+                status: { type: 'string' },
+                timestamp: { type: 'string' },
+                uptime: { type: 'number' },
+                services: {
+                  type: 'object',
+                  properties: {
+                    database: { type: 'string' },
+                    redis: { type: 'string' },
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     },
     handler: async (request, reply) => {
@@ -47,7 +68,7 @@ export default async function healthRoutes(fastify: FastifyInstance) {
         await prisma.$queryRaw`SELECT 1`;
       } catch (error) {
         dbStatus = 'unhealthy';
-        request.log.error('Database health check failed:', error);
+        request.log.error({ err: error }, 'Database health check failed');
       }
 
       // Check Redis connection
@@ -57,7 +78,7 @@ export default async function healthRoutes(fastify: FastifyInstance) {
         await redis.ping();
       } catch (error) {
         redisStatus = 'unhealthy';
-        request.log.error('Redis health check failed:', error);
+        request.log.error({ err: error }, 'Redis health check failed');
       }
 
       const responseTime = Date.now() - startTime;
@@ -106,7 +127,7 @@ export default async function healthRoutes(fastify: FastifyInstance) {
 
         return sendSuccess(reply, { ready: true });
       } catch (error) {
-        request.log.error('Readiness check failed:', error);
+        request.log.error({ err: error }, 'Readiness check failed');
         return reply.code(503).send({
           success: false,
           error: {

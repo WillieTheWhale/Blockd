@@ -22,8 +22,8 @@
     "allowSyntheticDefaultImports": true,
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
-    "types": ["node"]
+    "types": ["node", "jest"]
   },
-  "include": ["src/**/*", "types/**/*"],
-  "exclude": ["node_modules", "dist", "**/*.spec.ts", "**/*.test.ts", "test/**/*"]
+  "include": ["src/**/*", "types/**/*", "test/**/*"],
+  "exclude": ["node_modules", "dist"]
 }

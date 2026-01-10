@@ -1,0 +1,281 @@
+# Celery Worker Prometheus Alerts
+# Monitors queue depth, worker health, and task failures
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: celery-worker-alerts
+  namespace: blockd
+  labels:
+    app: celery-worker
+    prometheus: blockd
+spec:
+  groups:
+    - name: celery-worker-health
+      interval: 30s
+      rules:
+        # Worker pod availability
+        - alert: CeleryWorkerDown
+          expr: |
+            kube_deployment_status_replicas_available{
+              namespace="blockd",
+              deployment=~"celery-worker-.*"
+            } == 0
+          for: 2m
+          labels:
+            severity: critical
+            component: celery
+          annotations:
+            summary: "Celery worker deployment {{ $labels.deployment }} has no available replicas"
+            description: "All pods for {{ $labels.deployment }} are down. Message processing is halted for this queue type."
+            runbook_url: "https://docs.blockd.com/runbooks/celery-worker-down"
+
+        - alert: CeleryWorkerDegraded
+          expr: |
+            (
+              kube_deployment_status_replicas_available{
+                namespace="blockd",
+                deployment=~"celery-worker-.*"
+              }
+              /
+              kube_deployment_spec_replicas{
+                namespace="blockd",
+                deployment=~"celery-worker-.*"
+              }
+            ) < 0.5
+          for: 5m
+          labels:
+            severity: warning
+            component: celery
+          annotations:
+            summary: "Celery worker deployment {{ $labels.deployment }} is degraded"
+            description: "Less than 50% of desired replicas are available for {{ $labels.deployment }}."
+
+        # Worker pod restarts
+        - alert: CeleryWorkerCrashLooping
+          expr: |
+            increase(kube_pod_container_status_restarts_total{
+              namespace="blockd",
+              pod=~"celery-worker-.*"
+            }[1h]) > 5
+          for: 5m
+          labels:
+            severity: warning
+            component: celery
+          annotations:
+            summary: "Celery worker pod {{ $labels.pod }} is crash looping"
+            description: "Pod {{ $labels.pod }} has restarted more than 5 times in the last hour."
+
+    - name: celery-queue-health
+      interval: 30s
+      rules:
+        # RabbitMQ queue depth monitoring
+        - alert: RabbitMQQueueDepthHigh
+          expr: |
+            rabbitmq_queue_messages{
+              vhost="blockd",
+              queue=~"video_encode|video_thumbnail|video_upload|ai_analyze|embedding_generate|cache_warmup|security_alert|security_log|gaze_process|anomaly_detect"
+            } > 100
+          for: 5m
+          labels:
+            severity: warning
+            component: rabbitmq
+          annotations:
+            summary: "RabbitMQ queue {{ $labels.queue }} has high message depth"
+            description: "Queue {{ $labels.queue }} has {{ $value }} messages pending. Consider scaling workers."
+
+        - alert: RabbitMQQueueDepthCritical
+          expr: |
+            rabbitmq_queue_messages{
+              vhost="blockd",
+              queue=~"video_encode|video_thumbnail|video_upload|ai_analyze|embedding_generate|cache_warmup|security_alert|security_log|gaze_process|anomaly_detect"
+            } > 1000
+          for: 5m
+          labels:
+            severity: critical
+            component: rabbitmq
+          annotations:
+            summary: "RabbitMQ queue {{ $labels.queue }} has critical message depth"
+            description: "Queue {{ $labels.queue }} has {{ $value }} messages pending. Workers may be unable to keep up with load."
+            runbook_url: "https://docs.blockd.com/runbooks/rabbitmq-queue-critical"
+
+        # Security queue special monitoring (lower threshold)
+        - alert: SecurityQueueBacklog
+          expr: |
+            rabbitmq_queue_messages{
+              vhost="blockd",
+              queue=~"security_alert|security_log"
+            } > 50
+          for: 2m
+          labels:
+            severity: critical
+            component: security
+          annotations:
+            summary: "Security queue {{ $labels.queue }} has backlog"
+            description: "Security queue {{ $labels.queue }} has {{ $value }} messages. Security events may be delayed."
+            runbook_url: "https://docs.blockd.com/runbooks/security-queue-backlog"
+
+        # Queue consumers check
+        - alert: RabbitMQQueueNoConsumers
+          expr: |
+            rabbitmq_queue_consumers{
+              vhost="blockd",
+              queue=~"video_encode|video_thumbnail|video_upload|ai_analyze|embedding_generate|cache_warmup|security_alert|security_log|gaze_process|anomaly_detect"
+            } == 0
+          for: 2m
+          labels:
+            severity: critical
+            component: rabbitmq
+          annotations:
+            summary: "RabbitMQ queue {{ $labels.queue }} has no consumers"
+            description: "Queue {{ $labels.queue }} has no consumers connected. Messages will accumulate indefinitely."
+            runbook_url: "https://docs.blockd.com/runbooks/rabbitmq-no-consumers"
+
+    - name: celery-task-metrics
+      interval: 30s
+      rules:
+        # Task failure rate
+        - alert: CeleryTaskFailureRateHigh
+          expr: |
+            (
+              sum(rate(celery_task_failed_total{namespace="blockd"}[5m])) by (task)
+              /
+              sum(rate(celery_task_received_total{namespace="blockd"}[5m])) by (task)
+            ) > 0.1
+          for: 5m
+          labels:
+            severity: warning
+            component: celery
+          annotations:
+            summary: "Celery task {{ $labels.task }} has high failure rate"
+            description: "Task {{ $labels.task }} has a failure rate of {{ $value | humanizePercentage }}."
+
+        - alert: CeleryTaskFailureRateCritical
+          expr: |
+            (
+              sum(rate(celery_task_failed_total{namespace="blockd"}[5m])) by (task)
+              /
+              sum(rate(celery_task_received_total{namespace="blockd"}[5m])) by (task)
+            ) > 0.25
+          for: 5m
+          labels:
+            severity: critical
+            component: celery
+          annotations:
+            summary: "Celery task {{ $labels.task }} has critical failure rate"
+            description: "Task {{ $labels.task }} has a failure rate of {{ $value | humanizePercentage }}. Investigate immediately."
+            runbook_url: "https://docs.blockd.com/runbooks/celery-task-failures"
+
+        # Task latency
+        - alert: CeleryTaskLatencyHigh
+          expr: |
+            histogram_quantile(0.95,
+              sum(rate(celery_task_runtime_seconds_bucket{namespace="blockd"}[5m])) by (task, le)
+            ) > 60
+          for: 10m
+          labels:
+            severity: warning
+            component: celery
+          annotations:
+            summary: "Celery task {{ $labels.task }} has high latency"
+            description: "Task {{ $labels.task }} p95 latency is {{ $value | humanizeDuration }}."
+
+        # Video processing specific
+        - alert: VideoEncodingBacklog
+          expr: |
+            rabbitmq_queue_messages{vhost="blockd", queue="video_encode"} > 20
+          for: 5m
+          labels:
+            severity: warning
+            component: video
+          annotations:
+            summary: "Video encoding queue has backlog"
+            description: "{{ $value }} videos waiting to be encoded. Users may experience delays in video availability."
+
+    - name: celery-resource-usage
+      interval: 30s
+      rules:
+        # CPU usage
+        - alert: CeleryWorkerHighCPU
+          expr: |
+            (
+              sum(rate(container_cpu_usage_seconds_total{
+                namespace="blockd",
+                pod=~"celery-worker-.*"
+              }[5m])) by (pod)
+              /
+              sum(kube_pod_container_resource_limits{
+                namespace="blockd",
+                pod=~"celery-worker-.*",
+                resource="cpu"
+              }) by (pod)
+            ) > 0.9
+          for: 10m
+          labels:
+            severity: warning
+            component: celery
+          annotations:
+            summary: "Celery worker pod {{ $labels.pod }} has high CPU usage"
+            description: "Pod {{ $labels.pod }} is using {{ $value | humanizePercentage }} of CPU limit."
+
+        # Memory usage
+        - alert: CeleryWorkerHighMemory
+          expr: |
+            (
+              sum(container_memory_working_set_bytes{
+                namespace="blockd",
+                pod=~"celery-worker-.*"
+              }) by (pod)
+              /
+              sum(kube_pod_container_resource_limits{
+                namespace="blockd",
+                pod=~"celery-worker-.*",
+                resource="memory"
+              }) by (pod)
+            ) > 0.85
+          for: 10m
+          labels:
+            severity: warning
+            component: celery
+          annotations:
+            summary: "Celery worker pod {{ $labels.pod }} has high memory usage"
+            description: "Pod {{ $labels.pod }} is using {{ $value | humanizePercentage }} of memory limit. OOM risk."
+
+        # Memory approaching OOM
+        - alert: CeleryWorkerOOMRisk
+          expr: |
+            (
+              sum(container_memory_working_set_bytes{
+                namespace="blockd",
+                pod=~"celery-worker-.*"
+              }) by (pod)
+              /
+              sum(kube_pod_container_resource_limits{
+                namespace="blockd",
+                pod=~"celery-worker-.*",
+                resource="memory"
+              }) by (pod)
+            ) > 0.95
+          for: 5m
+          labels:
+            severity: critical
+            component: celery
+          annotations:
+            summary: "Celery worker pod {{ $labels.pod }} at OOM risk"
+            description: "Pod {{ $labels.pod }} is using {{ $value | humanizePercentage }} of memory limit. Imminent OOM kill."
+            runbook_url: "https://docs.blockd.com/runbooks/celery-oom-risk"
+
+    - name: celery-flower-health
+      interval: 30s
+      rules:
+        # Flower availability
+        - alert: CeleryFlowerDown
+          expr: |
+            up{job="celery-flower", namespace="blockd"} == 0
+          for: 5m
+          labels:
+            severity: warning
+            component: celery
+          annotations:
+            summary: "Celery Flower monitoring is down"
+            description: "Celery Flower monitoring dashboard is unavailable. Worker visibility is limited."

@@ -46,20 +46,19 @@
     "noPropertyAccessFromIndexSignature": false,
 
     /* Completeness */
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "types": ["node", "jest"]
   },
   "include": [
     "src/**/*",
     "handlers/**/*",
     "middleware/**/*",
     "lib/**/*",
-    "types/**/*"
+    "types/**/*",
+    "test/**/*"
   ],
   "exclude": [
     "node_modules",
-    "dist",
-    "test",
-    "**/*.test.ts",
-    "**/*.spec.ts"
+    "dist"
   ]
 }

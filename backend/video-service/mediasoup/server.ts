@@ -33,12 +33,14 @@ const mediaCodecs: RtpCodecCapability[] = [
   {
     kind: 'audio',
     mimeType: 'audio/opus',
+    preferredPayloadType: 111,
     clockRate: 48000,
     channels: 2,
   },
   {
     kind: 'video',
     mimeType: 'video/VP8',
+    preferredPayloadType: 96,
     clockRate: 90000,
     parameters: {
       'x-google-start-bitrate': 1000,
@@ -47,6 +49,7 @@ const mediaCodecs: RtpCodecCapability[] = [
   {
     kind: 'video',
     mimeType: 'video/VP9',
+    preferredPayloadType: 98,
     clockRate: 90000,
     parameters: {
       'profile-id': 2,
@@ -56,6 +59,7 @@ const mediaCodecs: RtpCodecCapability[] = [
   {
     kind: 'video',
     mimeType: 'video/h264',
+    preferredPayloadType: 125,
     clockRate: 90000,
     parameters: {
       'packetization-mode': 1,

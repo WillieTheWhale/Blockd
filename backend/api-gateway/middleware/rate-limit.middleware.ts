@@ -4,7 +4,7 @@
  */
 
 import { FastifyRequest, FastifyReply } from 'fastify';
-import { getRedisClient } from '../../shared/cache/redis-client';
+import { getRedisClient } from '../lib/redis-client';
 import { TooManyRequestsError } from '../lib/errors';
 import config from '../src/config';
 
@@ -61,7 +61,7 @@ export function createRateLimiter(options: RateLimitOptions) {
       }
 
       // Log error but don't block request if Redis is down
-      request.log.error('Rate limiting error:', error);
+      request.log.error({ err: error }, 'Rate limiting error');
 
       // Fail open - allow request if Redis is unavailable
       reply.header('X-RateLimit-Limit', options.max.toString());

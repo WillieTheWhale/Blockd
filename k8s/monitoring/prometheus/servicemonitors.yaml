@@ -1,0 +1,351 @@
+# ServiceMonitors for Prometheus Operator
+# Enables automatic metrics scraping from all Blockd services
+#
+# Prerequisites:
+# 1. Prometheus Operator installed in the monitoring namespace
+# 2. Services must expose /metrics endpoint (see metrics middleware)
+# 3. Prometheus must have rbac access to the blockd namespace
+---
+# API Gateway ServiceMonitor
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: api-gateway
+  namespace: monitoring
+  labels:
+    app: api-gateway
+    release: prometheus
+spec:
+  namespaceSelector:
+    matchNames:
+      - blockd
+  selector:
+    matchLabels:
+      app: api-gateway
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s
+      honorLabels: true
+  jobLabel: api-gateway
+
+---
+# Auth Service ServiceMonitor
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: auth-service
+  namespace: monitoring
+  labels:
+    app: auth-service
+    release: prometheus
+spec:
+  namespaceSelector:
+    matchNames:
+      - blockd
+  selector:
+    matchLabels:
+      app: auth-service
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s
+      honorLabels: true
+  jobLabel: auth-service
+
+---
+# Session Service ServiceMonitor
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: session-service
+  namespace: monitoring
+  labels:
+    app: session-service
+    release: prometheus
+spec:
+  namespaceSelector:
+    matchNames:
+      - blockd
+  selector:
+    matchLabels:
+      app: session-service
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s
+      honorLabels: true
+  jobLabel: session-service
+
+---
+# WebSocket Service ServiceMonitor
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: websocket-service
+  namespace: monitoring
+  labels:
+    app: websocket-service
+    release: prometheus
+spec:
+  namespaceSelector:
+    matchNames:
+      - blockd
+  selector:
+    matchLabels:
+      app: websocket-service
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s
+      honorLabels: true
+  jobLabel: websocket-service
+
+---
+# AI Detection Service ServiceMonitor
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: ai-detection
+  namespace: monitoring
+  labels:
+    app: ai-detection
+    release: prometheus
+spec:
+  namespaceSelector:
+    matchNames:
+      - blockd
+  selector:
+    matchLabels:
+      app: ai-detection
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s
+      honorLabels: true
+  jobLabel: ai-detection
+
+---
+# Eye Tracking Service ServiceMonitor
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: eye-tracking
+  namespace: monitoring
+  labels:
+    app: eye-tracking
+    release: prometheus
+spec:
+  namespaceSelector:
+    matchNames:
+      - blockd
+  selector:
+    matchLabels:
+      app: eye-tracking
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s
+      honorLabels: true
+  jobLabel: eye-tracking
+
+---
+# Response Timing Service ServiceMonitor
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: response-timing
+  namespace: monitoring
+  labels:
+    app: response-timing
+    release: prometheus
+spec:
+  namespaceSelector:
+    matchNames:
+      - blockd
+  selector:
+    matchLabels:
+      app: response-timing
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s
+      honorLabels: true
+  jobLabel: response-timing
+
+---
+# Video Service ServiceMonitor
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: video-service
+  namespace: monitoring
+  labels:
+    app: video-service
+    release: prometheus
+spec:
+  namespaceSelector:
+    matchNames:
+      - blockd
+  selector:
+    matchLabels:
+      app: video-service
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s
+      honorLabels: true
+  jobLabel: video-service
+
+---
+# Frontend ServiceMonitor (nginx metrics)
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: frontend
+  namespace: monitoring
+  labels:
+    app: frontend
+    release: prometheus
+spec:
+  namespaceSelector:
+    matchNames:
+      - blockd
+  selector:
+    matchLabels:
+      app: frontend
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+  jobLabel: frontend
+
+---
+# Celery Workers ServiceMonitor
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: celery-workers
+  namespace: monitoring
+  labels:
+    app: celery-worker
+    release: prometheus
+spec:
+  namespaceSelector:
+    matchNames:
+      - blockd
+  selector:
+    matchLabels:
+      app: celery-worker
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s
+      honorLabels: true
+  jobLabel: celery-workers
+
+---
+# PgBouncer ServiceMonitor
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: pgbouncer
+  namespace: monitoring
+  labels:
+    app: pgbouncer
+    release: prometheus
+spec:
+  namespaceSelector:
+    matchNames:
+      - blockd
+  selector:
+    matchLabels:
+      app: pgbouncer
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s
+  jobLabel: pgbouncer
+
+---
+# Redis ServiceMonitor
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: redis
+  namespace: monitoring
+  labels:
+    app: redis
+    release: prometheus
+spec:
+  namespaceSelector:
+    matchNames:
+      - blockd
+  selector:
+    matchLabels:
+      app: redis
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s
+  jobLabel: redis
+
+---
+# RabbitMQ ServiceMonitor
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: rabbitmq
+  namespace: monitoring
+  labels:
+    app: rabbitmq
+    release: prometheus
+spec:
+  namespaceSelector:
+    matchNames:
+      - blockd
+  selector:
+    matchLabels:
+      app: rabbitmq
+  endpoints:
+    - port: prometheus
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s
+  jobLabel: rabbitmq
+
+---
+# PostgreSQL ServiceMonitor (via postgres_exporter sidecar)
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: postgresql
+  namespace: monitoring
+  labels:
+    app: postgresql
+    release: prometheus
+spec:
+  namespaceSelector:
+    matchNames:
+      - blockd
+  selector:
+    matchLabels:
+      app: postgresql
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s
+  jobLabel: postgresql

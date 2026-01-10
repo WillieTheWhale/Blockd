@@ -1,0 +1,419 @@
+# PostgreSQL High Availability StatefulSet with Patroni
+# Provides automatic failover, streaming replication, and read replicas
+#
+# Architecture:
+# - 1 Primary (read-write)
+# - 2 Replicas (read-only, streaming replication)
+# - Patroni for leader election and automatic failover
+# - WAL archiving to S3 for PITR
+#
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgresql-ha-config
+  namespace: blockd
+  labels:
+    app: postgresql-ha
+data:
+  # Patroni configuration
+  patroni.yml: |
+    scope: blockd-postgres
+    namespace: blockd
+    name: ${POD_NAME}
+
+    restapi:
+      listen: 0.0.0.0:8008
+      connect_address: ${POD_IP}:8008
+
+    etcd3:
+      hosts: etcd-0.etcd:2379,etcd-1.etcd:2379,etcd-2.etcd:2379
+
+    bootstrap:
+      dcs:
+        ttl: 30
+        loop_wait: 10
+        retry_timeout: 10
+        maximum_lag_on_failover: 1048576
+        postgresql:
+          use_pg_rewind: true
+          use_slots: true
+          parameters:
+            # Performance settings for 1000+ concurrent sessions
+            max_connections: 500
+            shared_buffers: 2GB
+            effective_cache_size: 6GB
+            maintenance_work_mem: 512MB
+            work_mem: 16MB
+
+            # WAL settings for replication and PITR
+            wal_level: replica
+            max_wal_senders: 10
+            max_replication_slots: 10
+            hot_standby: 'on'
+            wal_keep_size: 1GB
+
+            # WAL archiving for PITR
+            archive_mode: 'on'
+            archive_command: '/scripts/archive_wal.sh %p %f'
+            archive_timeout: 300
+
+            # Logging
+            log_destination: stderr
+            logging_collector: 'off'
+            log_min_duration_statement: 1000
+            log_checkpoints: 'on'
+            log_lock_waits: 'on'
+
+            # Checkpoints
+            checkpoint_completion_target: 0.9
+            checkpoint_timeout: 10min
+
+            # Autovacuum
+            autovacuum_max_workers: 4
+            autovacuum_naptime: 30s
+
+      initdb:
+        - encoding: UTF8
+        - data-checksums
+
+      pg_hba:
+        - local   all             all                                trust
+        - host    all             all             127.0.0.1/32       trust
+        - host    all             all             ::1/128            trust
+        - host    all             all             0.0.0.0/0          md5
+        - host    replication     replication     0.0.0.0/0          md5
+
+    postgresql:
+      listen: 0.0.0.0:5432
+      connect_address: ${POD_IP}:5432
+      data_dir: /var/lib/postgresql/data/pgdata
+      bin_dir: /usr/lib/postgresql/17/bin
+      authentication:
+        replication:
+          username: replication
+          password: ${REPLICATION_PASSWORD}
+        superuser:
+          username: postgres
+          password: ${POSTGRES_PASSWORD}
+      parameters:
+        unix_socket_directories: /var/run/postgresql
+
+    tags:
+      nofailover: false
+      noloadbalance: false
+      clonefrom: false
+      nosync: false
+
+  # WAL archive script
+  archive_wal.sh: |
+    #!/bin/bash
+    # Archive WAL files to S3 for PITR
+    set -e
+
+    WAL_PATH=$1
+    WAL_FILE=$2
+    S3_BUCKET="${S3_BACKUP_BUCKET:-blockd-backups-production}"
+    S3_PREFIX="wal-archive/$(hostname)"
+
+    # Upload WAL file to S3 with compression
+    gzip -c "$WAL_PATH" | aws s3 cp - "s3://${S3_BUCKET}/${S3_PREFIX}/${WAL_FILE}.gz" \
+      --expected-size 16777216 \
+      --storage-class STANDARD_IA
+
+    # Verify upload
+    aws s3 ls "s3://${S3_BUCKET}/${S3_PREFIX}/${WAL_FILE}.gz" > /dev/null
+
+    echo "Archived ${WAL_FILE} to S3"
+
+  # WAL restore script for PITR
+  restore_wal.sh: |
+    #!/bin/bash
+    # Restore WAL files from S3 for PITR
+    set -e
+
+    WAL_FILE=$1
+    WAL_PATH=$2
+    S3_BUCKET="${S3_BACKUP_BUCKET:-blockd-backups-production}"
+    S3_PREFIX="wal-archive"
+
+    # Try to restore from S3 (compressed)
+    if aws s3 cp "s3://${S3_BUCKET}/${S3_PREFIX}/${WAL_FILE}.gz" - 2>/dev/null | gunzip -c > "$WAL_PATH"; then
+      echo "Restored ${WAL_FILE} from S3"
+      exit 0
+    fi
+
+    # File not found - this is expected during normal operation
+    exit 1
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgresql-ha-secrets
+  namespace: blockd
+  labels:
+    app: postgresql-ha
+type: Opaque
+stringData:
+  # These should be managed by External Secrets Operator in production
+  postgres-password: "${POSTGRES_PASSWORD}"
+  replication-password: "${REPLICATION_PASSWORD}"
+  blockd-user-password: "${BLOCKD_USER_PASSWORD}"
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgresql-ha
+  namespace: blockd
+  labels:
+    app: postgresql-ha
+    component: database
+spec:
+  serviceName: postgresql-ha
+  replicas: 3  # 1 primary + 2 replicas
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app: postgresql-ha
+  template:
+    metadata:
+      labels:
+        app: postgresql-ha
+        component: database
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9187"
+    spec:
+      serviceAccountName: postgresql-ha-sa
+      securityContext:
+        fsGroup: 999
+        runAsUser: 999
+        runAsGroup: 999
+      terminationGracePeriodSeconds: 60
+
+      initContainers:
+        # Initialize data directory permissions
+        - name: init-permissions
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              mkdir -p /var/lib/postgresql/data/pgdata
+              chown -R 999:999 /var/lib/postgresql/data
+              chmod 700 /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: postgresql-data
+              mountPath: /var/lib/postgresql/data
+          securityContext:
+            runAsUser: 0
+
+      containers:
+        # PostgreSQL with Patroni
+        - name: postgresql
+          image: registry.opensource.zalan.do/acid/spilo-16:3.2-p2
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5432
+              name: postgresql
+              protocol: TCP
+            - containerPort: 8008
+              name: patroni
+              protocol: TCP
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: PGPASSWORD_SUPERUSER
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-ha-secrets
+                  key: postgres-password
+            - name: PGPASSWORD_STANDBY
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-ha-secrets
+                  key: replication-password
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-ha-secrets
+                  key: postgres-password
+            - name: REPLICATION_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-ha-secrets
+                  key: replication-password
+            - name: SCOPE
+              value: blockd-postgres
+            - name: PGROOT
+              value: /var/lib/postgresql
+            - name: PATRONI_KUBERNETES_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: PATRONI_KUBERNETES_LABELS
+              value: "{app: postgresql-ha}"
+            - name: PATRONI_KUBERNETES_USE_ENDPOINTS
+              value: "true"
+            - name: S3_BACKUP_BUCKET
+              value: blockd-backups-production
+            - name: AWS_DEFAULT_REGION
+              value: us-east-1
+            # AWS credentials for WAL archiving
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: blockd-secrets
+                  key: aws-access-key-id
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: blockd-secrets
+                  key: aws-secret-access-key
+          volumeMounts:
+            - name: postgresql-data
+              mountPath: /var/lib/postgresql/data
+            - name: postgresql-config
+              mountPath: /etc/patroni
+            - name: scripts
+              mountPath: /scripts
+          resources:
+            requests:
+              memory: "4Gi"
+              cpu: "2000m"
+            limits:
+              memory: "8Gi"
+              cpu: "4000m"
+          livenessProbe:
+            httpGet:
+              path: /liveness
+              port: patroni
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readiness
+              port: patroni
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - patronictl pause && sleep 10
+
+        # PostgreSQL Exporter for Prometheus metrics
+        - name: postgres-exporter
+          image: prometheuscommunity/postgres-exporter:v0.15.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 9187
+              name: metrics
+              protocol: TCP
+          env:
+            - name: DATA_SOURCE_NAME
+              value: "host=localhost port=5432 user=postgres sslmode=disable"
+            - name: PG_EXPORTER_DISABLE_DEFAULT_METRICS
+              value: "false"
+            - name: PG_EXPORTER_DISABLE_SETTINGS_METRICS
+              value: "false"
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+
+      volumes:
+        - name: postgresql-config
+          configMap:
+            name: postgresql-ha-config
+            defaultMode: 0755
+        - name: scripts
+          configMap:
+            name: postgresql-ha-config
+            defaultMode: 0755
+            items:
+              - key: archive_wal.sh
+                path: archive_wal.sh
+              - key: restore_wal.sh
+                path: restore_wal.sh
+
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: postgresql-ha
+              topologyKey: kubernetes.io/hostname
+
+  volumeClaimTemplates:
+    - metadata:
+        name: postgresql-data
+        labels:
+          app: postgresql-ha
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: fast-ssd
+        resources:
+          requests:
+            storage: 100Gi
+---
+# ServiceAccount for PostgreSQL pods
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: postgresql-ha-sa
+  namespace: blockd
+  labels:
+    app: postgresql-ha
+  annotations:
+    # EKS IRSA for S3 access (WAL archiving)
+    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/blockd-postgresql-backup-role
+---
+# Role for Patroni to manage endpoints
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: postgresql-ha-patroni
+  namespace: blockd
+  labels:
+    app: postgresql-ha
+rules:
+  - apiGroups: [""]
+    resources: ["endpoints", "pods"]
+    verbs: ["get", "list", "watch", "patch", "update", "create"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: postgresql-ha-patroni
+  namespace: blockd
+  labels:
+    app: postgresql-ha
+subjects:
+  - kind: ServiceAccount
+    name: postgresql-ha-sa
+    namespace: blockd
+roleRef:
+  kind: Role
+  name: postgresql-ha-patroni
+  apiGroup: rbac.authorization.k8s.io
