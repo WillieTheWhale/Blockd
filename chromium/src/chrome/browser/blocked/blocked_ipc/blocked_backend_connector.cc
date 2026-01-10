@@ -8,6 +8,7 @@
 #include <cmath>
 #include <utility>
 
+#include "base/base64.h"
 #include "base/functional/bind.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
@@ -372,6 +373,40 @@ bool BlockedBackendConnector::SendTelemetry(double cpu_percent,
   }
 
   VLOG(2) << "Sending telemetry data";
+
+  return SendMessage(json);
+}
+
+bool BlockedBackendConnector::SendAudioData(
+    const std::vector<uint8_t>& audio_data,
+    const std::string& session_id,
+    int source_type) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  if (audio_data.empty()) {
+    return true;  // Nothing to send
+  }
+
+  base::Value::Dict message;
+  message.Set("type", "audio_data");
+  message.Set("session_id", session_id.empty() ? session_id_ : session_id);
+  message.Set("source_type", source_type);  // 0=mic, 1=tab, 2=mixed
+  message.Set("timestamp",
+              base::NumberToString(base::Time::Now().InMillisecondsSinceUnixEpoch()));
+
+  // For binary audio data, we need to encode it as base64.
+  // In production, you would use a binary WebSocket frame instead.
+  std::string encoded_data = base::Base64Encode(audio_data);
+  message.Set("data", encoded_data);
+  message.Set("size", static_cast<int>(audio_data.size()));
+
+  std::string json;
+  if (!base::JSONWriter::Write(message, &json)) {
+    LOG(ERROR) << "Failed to serialize audio data";
+    return false;
+  }
+
+  VLOG(3) << "Sending audio data: " << audio_data.size() << " bytes";
 
   return SendMessage(json);
 }

@@ -67,6 +67,9 @@ class BlockedBackendConnector : public KeyedService,
                          const std::string& metadata);
   bool SendGazeData(const std::vector<float>& gaze_points);
   bool SendTelemetry(double cpu_percent, int64_t memory_mb, int active_processes);
+  bool SendAudioData(const std::vector<uint8_t>& audio_data,
+                     const std::string& session_id,
+                     int source_type);
 
   void AddObserver(Observer* observer);
   void RemoveObserver(Observer* observer);

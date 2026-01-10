@@ -9,6 +9,8 @@ import("//mojo/public/tools/bindings/mojom.gni")
 
 source_set("blocked_ipc") {
   sources = [
+    "audio_frame_sender.cc",
+    "audio_frame_sender.h",
     "gaze_data_sender.cc",
     "gaze_data_sender.h",
     "renderer_host_connector.cc",
@@ -26,6 +28,7 @@ source_set("blocked_ipc") {
   # Allow access from other blocked modules.
   visibility = [
     ":*",
+    "//content/renderer/blocked_audio:*",
     "//content/renderer/blocked_eye_tracking:*",
     "//content/renderer/blocked_video:*",
     "//content/renderer:renderer",

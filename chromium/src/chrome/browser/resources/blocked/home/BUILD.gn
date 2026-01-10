@@ -1,0 +1,22 @@
+# Copyright 2025 The Blocked Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//ui/webui/resources/tools/build_webui.gni")
+
+build_webui("build") {
+  grd_prefix = "blocked_home"
+
+  static_files = [
+    "blocked_home.html",
+    "blocked_home.css",
+    "blocked_home.js",
+  ]
+
+  non_web_component_files = [
+    "blocked_home.js",
+  ]
+
+  # Output directory for generated resources
+  out_folder = "$target_gen_dir"
+}

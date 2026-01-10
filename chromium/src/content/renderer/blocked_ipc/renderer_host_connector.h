@@ -12,6 +12,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/no_destructor.h"
+#include "content/public/common/blocked_mojom/audio_capture.mojom.h"
 #include "content/public/common/blocked_mojom/eye_tracking.mojom.h"
 #include "content/public/common/blocked_mojom/session.mojom.h"
 #include "content/public/common/blocked_mojom/video_capture.mojom.h"
@@ -81,6 +82,12 @@ class RendererHostConnector : public blocked::mojom::BlockedSessionClient {
       mojo::PendingReceiver<blocked::mojom::VideoCaptureClient>
           client_receiver);
 
+  // Audio capture interface access.
+  blocked::mojom::AudioCaptureHost* GetAudioCaptureHost();
+  void BindAudioCapture(
+      mojo::PendingReceiver<blocked::mojom::AudioCaptureClient>
+          client_receiver);
+
   // Observer management.
   void AddObserver(Observer* observer);
   void RemoveObserver(Observer* observer);
@@ -117,6 +124,9 @@ class RendererHostConnector : public blocked::mojom::BlockedSessionClient {
 
   // Video capture interfaces.
   mojo::Remote<blocked::mojom::VideoCaptureHost> video_capture_host_;
+
+  // Audio capture interfaces.
+  mojo::Remote<blocked::mojom::AudioCaptureHost> audio_capture_host_;
 
   // Observers.
   std::vector<raw_ptr<Observer>> observers_;
