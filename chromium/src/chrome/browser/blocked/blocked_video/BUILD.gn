@@ -8,8 +8,11 @@ source_set("video_capture") {
 
   deps = [
     "//base",
+    "//chrome/browser/blocked/blocked_ipc",
     "//components/keyed_service/core",
+    "//content/public/common/blocked_mojom",
     "//media/capture",
+    "//mojo/public/cpp/bindings",
   ]
 
   configs += [ "//chrome/browser/blocked:blocked_config" ]
