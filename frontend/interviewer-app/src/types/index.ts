@@ -68,6 +68,8 @@ export interface Session {
   duration?: number
   position?: string
   department?: string
+  riskScore?: number
+  alertCount?: number
   createdAt: string
   updatedAt: string
 }
