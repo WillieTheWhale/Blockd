@@ -194,6 +194,10 @@ export async function getUsersByRole(role: string): Promise<UserProfile[]> {
  * Map Prisma User to UserProfile
  */
 function mapUserToProfile(user: User): UserProfile {
+  const firstName = user.firstName || '';
+  const lastName = user.lastName || '';
+  const fullName = [firstName, lastName].filter(Boolean).join(' ') || null;
+
   return {
     id: user.id,
     email: user.email,
@@ -201,6 +205,8 @@ function mapUserToProfile(user: User): UserProfile {
     organization_id: user.organizationId,
     first_name: user.firstName,
     last_name: user.lastName,
+    full_name: fullName,
+    avatar_url: (user as any).avatarUrl || null,
     mfa_enabled: user.mfaEnabled,
     email_verified: user.emailVerified,
     last_login_at: user.lastLoginAt,

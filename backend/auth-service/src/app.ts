@@ -12,7 +12,15 @@ import { config } from './config';
 // Controllers
 import { register, login, verifyEmail, requestPasswordReset, confirmPasswordReset, logout } from '../controllers/auth.controller';
 import { setupMFA, verifyMFASetup, verifyMFALogin, disableMFA, getMFAStatus } from '../controllers/mfa.controller';
-import { initiateGoogleOAuth, handleGoogleCallback, initiateMicrosoftOAuth, handleMicrosoftCallback } from '../controllers/oauth.controller';
+import {
+  handleOAuthCallback,
+  initiateOAuth,
+  initiateGoogleOAuth,
+  handleGoogleCallback,
+  initiateMicrosoftOAuth,
+  handleMicrosoftCallback,
+  getOAuthProviders
+} from '../controllers/oauth.controller';
 import { refreshToken, revokeToken, revokeAllTokens, getActiveSessions, verifyAccessToken } from '../controllers/token.controller';
 
 // Middleware
@@ -133,6 +141,16 @@ export async function createApp(): Promise<FastifyInstance> {
   // OAUTH ROUTES
   // ============================================================================
 
+  // Primary PKCE-based OAuth endpoint (recommended)
+  app.post('/auth/oauth/callback', handleOAuthCallback);
+
+  // Optional server-side state initialization
+  app.post('/auth/oauth/initiate', initiateOAuth);
+
+  // Get available OAuth providers
+  app.get('/auth/oauth/providers', getOAuthProviders);
+
+  // Legacy redirect-based OAuth (deprecated, kept for backwards compatibility)
   app.get('/auth/oauth/google', initiateGoogleOAuth);
   app.get('/auth/oauth/google/callback', handleGoogleCallback);
 

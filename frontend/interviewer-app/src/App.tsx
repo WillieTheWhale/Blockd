@@ -6,6 +6,8 @@ import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { MainLayout } from '@/layouts/MainLayout'
 import { AuthLayout } from '@/layouts/AuthLayout'
+import { PublicLayout } from '@/layouts/PublicLayout'
+import { LandingPage } from '@/pages/LandingPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { RegisterPage } from '@/pages/RegisterPage'
 import { ForgotPasswordPage } from '@/pages/ForgotPasswordPage'
@@ -15,6 +17,9 @@ import { SessionsPage } from '@/pages/SessionsPage'
 import { SessionDetailPage } from '@/pages/SessionDetailPage'
 import { CreateSessionPage } from '@/pages/CreateSessionPage'
 import { SettingsPage } from '@/pages/SettingsPage'
+import { AnalyticsPage } from '@/pages/AnalyticsPage'
+import { ReportsPage } from '@/pages/ReportsPage'
+import { OAuthCallbackPage } from '@/pages/OAuthCallbackPage'
 
 // Create a client
 const queryClient = new QueryClient({
@@ -33,8 +38,10 @@ function App() {
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
           <Routes>
-            {/* Redirect root to dashboard or login */}
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            {/* Public landing page */}
+            <Route element={<PublicLayout />}>
+              <Route path="/" element={<LandingPage />} />
+            </Route>
 
             {/* Auth routes */}
             <Route element={<AuthLayout />}>
@@ -43,6 +50,9 @@ function App() {
               <Route path="/forgot-password" element={<ForgotPasswordPage />} />
               <Route path="/reset-password" element={<ResetPasswordPage />} />
             </Route>
+
+            {/* OAuth callback - standalone page without layout */}
+            <Route path="/auth/callback" element={<OAuthCallbackPage />} />
 
             {/* Protected routes */}
             <Route
@@ -56,11 +66,13 @@ function App() {
               <Route path="/sessions" element={<SessionsPage />} />
               <Route path="/sessions/create" element={<CreateSessionPage />} />
               <Route path="/sessions/:id" element={<SessionDetailPage />} />
+              <Route path="/analytics" element={<AnalyticsPage />} />
+              <Route path="/reports" element={<ReportsPage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Route>
 
             {/* Catch all - 404 */}
-            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>
 
