@@ -1,0 +1,323 @@
+# PgBouncer Connection Pooler
+# Provides connection pooling to handle 1000+ concurrent users efficiently
+#
+# Architecture:
+# - Transaction pooling mode (most efficient for web apps)
+# - Separate pools for primary (read-write) and replicas (read-only)
+# - HPA for automatic scaling under load
+# - Prometheus metrics for monitoring
+#
+# Connection flow:
+# App -> PgBouncer (5432) -> PostgreSQL Primary (read-write)
+# App -> PgBouncer-Replica (5433) -> PostgreSQL Replicas (read-only)
+#
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pgbouncer-config
+  namespace: blockd
+  labels:
+    app: pgbouncer
+data:
+  pgbouncer.ini: |
+    [databases]
+    ; Primary database for read-write operations
+    blockd = host=postgresql-ha-primary port=5432 dbname=blockd pool_mode=transaction pool_size=50
+
+    ; Read-only database routed to replicas
+    blockd_readonly = host=postgresql-ha-replica port=5432 dbname=blockd pool_mode=transaction pool_size=100
+
+    ; Direct connection to primary (bypasses pooling) for migrations/admin
+    blockd_direct = host=postgresql-ha-primary port=5432 dbname=blockd pool_mode=session pool_size=5
+
+    [pgbouncer]
+    ; Listening configuration
+    listen_addr = 0.0.0.0
+    listen_port = 5432
+    unix_socket_dir =
+
+    ; Authentication
+    auth_type = md5
+    auth_file = /etc/pgbouncer/userlist.txt
+
+    ; Pool configuration
+    ; Transaction pooling: connections returned to pool after each transaction
+    pool_mode = transaction
+    default_pool_size = 50
+    min_pool_size = 10
+    reserve_pool_size = 10
+    reserve_pool_timeout = 5
+
+    ; Connection limits
+    ; Max connections from clients (1000+ concurrent sessions)
+    max_client_conn = 2000
+    ; Max connections to PostgreSQL per database
+    max_db_connections = 200
+    ; Max connections to PostgreSQL per user
+    max_user_connections = 100
+
+    ; Timeouts
+    server_connect_timeout = 15
+    server_idle_timeout = 60
+    server_lifetime = 3600
+    client_idle_timeout = 0
+    client_login_timeout = 60
+    query_timeout = 0
+    query_wait_timeout = 120
+
+    ; Query routing
+    ignore_startup_parameters = extra_float_digits
+
+    ; Logging
+    log_connections = 0
+    log_disconnections = 0
+    log_pooler_errors = 1
+    stats_period = 60
+
+    ; Admin interface
+    admin_users = pgbouncer_admin
+    stats_users = pgbouncer_stats
+
+    ; TLS (optional, enable for production)
+    ; server_tls_sslmode = prefer
+    ; server_tls_ca_file = /etc/pgbouncer/ca.crt
+
+  # User authentication file
+  # Format: "username" "password_hash"
+  userlist.txt: |
+    ; Application user (same credentials as PostgreSQL)
+    "blockd_user" "SCRAM-SHA-256$4096:..."
+    ; Admin user for PgBouncer management
+    "pgbouncer_admin" "SCRAM-SHA-256$4096:..."
+    ; Stats user for monitoring
+    "pgbouncer_stats" "SCRAM-SHA-256$4096:..."
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pgbouncer
+  namespace: blockd
+  labels:
+    app: pgbouncer
+    component: database-proxy
+spec:
+  replicas: 3  # Multiple instances for HA
+  selector:
+    matchLabels:
+      app: pgbouncer
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: pgbouncer
+        component: database-proxy
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9127"
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+
+      containers:
+        - name: pgbouncer
+          image: bitnami/pgbouncer:1.22.1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5432
+              name: pgbouncer
+              protocol: TCP
+            - containerPort: 6432
+              name: admin
+              protocol: TCP
+          env:
+            - name: PGBOUNCER_DATABASE
+              value: "blockd"
+            - name: PGBOUNCER_SET_DATABASE_USER
+              value: "yes"
+            - name: PGBOUNCER_SET_DATABASE_PASSWORD
+              value: "yes"
+            - name: POSTGRESQL_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: blockd-secrets
+                  key: postgres_user
+            - name: POSTGRESQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: blockd-secrets
+                  key: postgres_password
+            - name: POSTGRESQL_HOST
+              value: "postgresql-ha-primary"
+            - name: POSTGRESQL_PORT
+              value: "5432"
+            - name: PGBOUNCER_PORT
+              value: "5432"
+            - name: PGBOUNCER_POOL_MODE
+              value: "transaction"
+            - name: PGBOUNCER_MAX_CLIENT_CONN
+              value: "2000"
+            - name: PGBOUNCER_DEFAULT_POOL_SIZE
+              value: "50"
+            - name: PGBOUNCER_MIN_POOL_SIZE
+              value: "10"
+            - name: PGBOUNCER_RESERVE_POOL_SIZE
+              value: "10"
+            - name: PGBOUNCER_MAX_DB_CONNECTIONS
+              value: "200"
+            - name: PGBOUNCER_IGNORE_STARTUP_PARAMETERS
+              value: "extra_float_digits"
+          volumeMounts:
+            - name: pgbouncer-config
+              mountPath: /bitnami/pgbouncer/conf
+              readOnly: true
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+          livenessProbe:
+            tcpSocket:
+              port: pgbouncer
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  PGPASSWORD=$POSTGRESQL_PASSWORD psql -h localhost -p 5432 -U $POSTGRESQL_USERNAME -d pgbouncer -c "SHOW DATABASES" > /dev/null
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+
+        # PgBouncer Exporter for Prometheus metrics
+        - name: pgbouncer-exporter
+          image: prometheuscommunity/pgbouncer-exporter:v0.7.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 9127
+              name: metrics
+              protocol: TCP
+          env:
+            - name: PGBOUNCER_EXPORTER_HOST
+              value: "localhost"
+            - name: PGBOUNCER_EXPORTER_PORT
+              value: "6432"
+            - name: PGBOUNCER_EXPORTER_USER
+              value: "pgbouncer_stats"
+            - name: PGBOUNCER_EXPORTER_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: blockd-secrets
+                  key: pgbouncer_stats_password
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "25m"
+            limits:
+              memory: "64Mi"
+              cpu: "50m"
+
+      volumes:
+        - name: pgbouncer-config
+          configMap:
+            name: pgbouncer-config
+
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: pgbouncer
+                topologyKey: kubernetes.io/hostname
+---
+# PgBouncer service - main entry point for database connections
+apiVersion: v1
+kind: Service
+metadata:
+  name: pgbouncer
+  namespace: blockd
+  labels:
+    app: pgbouncer
+  annotations:
+    description: "Connection pooler for PostgreSQL - use this instead of direct PostgreSQL connection"
+spec:
+  type: ClusterIP
+  selector:
+    app: pgbouncer
+  ports:
+    - name: pgbouncer
+      port: 5432
+      targetPort: pgbouncer
+      protocol: TCP
+    - name: admin
+      port: 6432
+      targetPort: admin
+      protocol: TCP
+---
+# Horizontal Pod Autoscaler for PgBouncer
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: pgbouncer
+  namespace: blockd
+  labels:
+    app: pgbouncer
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: pgbouncer
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 10
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+        - type: Pods
+          value: 4
+          periodSeconds: 15
+      selectPolicy: Max

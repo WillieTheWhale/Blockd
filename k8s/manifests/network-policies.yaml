@@ -1,0 +1,1197 @@
+# Network Policies for Blockd Platform
+# Implements zero-trust networking within the cluster
+#
+# Policy Strategy:
+# 1. Default deny all ingress/egress for the namespace
+# 2. Explicitly allow required traffic between services
+# 3. Allow ingress from ingress controller to frontend/api-gateway
+# 4. Allow egress to external services (AWS, monitoring, DNS)
+---
+# Default deny all ingress traffic in the blockd namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+
+---
+# Default deny all egress traffic in the blockd namespace
+# NOTE: This is strict - explicitly allow DNS and required external services
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+
+---
+# Allow DNS resolution for all pods
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+---
+# Ingress Controller -> Frontend
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-frontend
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: security
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 80
+
+---
+# Ingress Controller -> API Gateway
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-api-gateway
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: security
+spec:
+  podSelector:
+    matchLabels:
+      app: api-gateway
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 3000
+
+---
+# API Gateway -> All Backend Services
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-gateway-egress
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: security
+spec:
+  podSelector:
+    matchLabels:
+      app: api-gateway
+  policyTypes:
+    - Egress
+  egress:
+    # Allow to auth-service
+    - to:
+        - podSelector:
+            matchLabels:
+              app: auth-service
+      ports:
+        - protocol: TCP
+          port: 3001
+    # Allow to session-service
+    - to:
+        - podSelector:
+            matchLabels:
+              app: session-service
+      ports:
+        - protocol: TCP
+          port: 3002
+    # Allow to websocket-service
+    - to:
+        - podSelector:
+            matchLabels:
+              app: websocket-service
+      ports:
+        - protocol: TCP
+          port: 3007
+    # Allow to ai-detection
+    - to:
+        - podSelector:
+            matchLabels:
+              app: ai-detection
+      ports:
+        - protocol: TCP
+          port: 3003
+    # Allow to eye-tracking
+    - to:
+        - podSelector:
+            matchLabels:
+              app: eye-tracking
+      ports:
+        - protocol: TCP
+          port: 3004
+    # Allow to response-timing
+    - to:
+        - podSelector:
+            matchLabels:
+              app: response-timing
+      ports:
+        - protocol: TCP
+          port: 3005
+    # Allow to video-service
+    - to:
+        - podSelector:
+            matchLabels:
+              app: video-service
+      ports:
+        - protocol: TCP
+          port: 3006
+    # Allow to Redis
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    # Allow to PostgreSQL via PgBouncer
+    - to:
+        - podSelector:
+            matchLabels:
+              app: pgbouncer
+      ports:
+        - protocol: TCP
+          port: 5432
+
+---
+# Auth Service Ingress
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: auth-service-ingress
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: security
+spec:
+  podSelector:
+    matchLabels:
+      app: auth-service
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: api-gateway
+      ports:
+        - protocol: TCP
+          port: 3001
+
+---
+# Auth Service Egress
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: auth-service-egress
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: security
+spec:
+  podSelector:
+    matchLabels:
+      app: auth-service
+  policyTypes:
+    - Egress
+  egress:
+    # PostgreSQL via PgBouncer
+    - to:
+        - podSelector:
+            matchLabels:
+              app: pgbouncer
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Redis
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    # External OAuth providers (Google, Microsoft)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+
+---
+# Session Service Ingress
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: session-service-ingress
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: security
+spec:
+  podSelector:
+    matchLabels:
+      app: session-service
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: api-gateway
+        - podSelector:
+            matchLabels:
+              app: websocket-service
+        - podSelector:
+            matchLabels:
+              app: celery-worker
+      ports:
+        - protocol: TCP
+          port: 3002
+
+---
+# Session Service Egress
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: session-service-egress
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: security
+spec:
+  podSelector:
+    matchLabels:
+      app: session-service
+  policyTypes:
+    - Egress
+  egress:
+    # PostgreSQL via PgBouncer
+    - to:
+        - podSelector:
+            matchLabels:
+              app: pgbouncer
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Redis
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    # RabbitMQ
+    - to:
+        - podSelector:
+            matchLabels:
+              app: rabbitmq
+      ports:
+        - protocol: TCP
+          port: 5672
+
+---
+# WebSocket Service Ingress
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: websocket-service-ingress
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: security
+spec:
+  podSelector:
+    matchLabels:
+      app: websocket-service
+  policyTypes:
+    - Ingress
+  ingress:
+    # From API Gateway
+    - from:
+        - podSelector:
+            matchLabels:
+              app: api-gateway
+      ports:
+        - protocol: TCP
+          port: 3007
+    # From Ingress (WebSocket connections)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 3007
+
+---
+# WebSocket Service Egress
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: websocket-service-egress
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: security
+spec:
+  podSelector:
+    matchLabels:
+      app: websocket-service
+  policyTypes:
+    - Egress
+  egress:
+    # Redis
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    # Session Service
+    - to:
+        - podSelector:
+            matchLabels:
+              app: session-service
+      ports:
+        - protocol: TCP
+          port: 3002
+
+---
+# AI Detection Service Ingress
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ai-detection-ingress
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: security
+spec:
+  podSelector:
+    matchLabels:
+      app: ai-detection
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: api-gateway
+        - podSelector:
+            matchLabels:
+              app: celery-worker
+      ports:
+        - protocol: TCP
+          port: 3003
+
+---
+# AI Detection Service Egress
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ai-detection-egress
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: security
+spec:
+  podSelector:
+    matchLabels:
+      app: ai-detection
+  policyTypes:
+    - Egress
+  egress:
+    # PostgreSQL via PgBouncer
+    - to:
+        - podSelector:
+            matchLabels:
+              app: pgbouncer
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Redis
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    # External LLM APIs (OpenAI, Anthropic, Google)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+
+---
+# Eye Tracking Service Ingress
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: eye-tracking-ingress
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: security
+spec:
+  podSelector:
+    matchLabels:
+      app: eye-tracking
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: api-gateway
+        - podSelector:
+            matchLabels:
+              app: celery-worker
+      ports:
+        - protocol: TCP
+          port: 3004
+
+---
+# Eye Tracking Service Egress
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: eye-tracking-egress
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: security
+spec:
+  podSelector:
+    matchLabels:
+      app: eye-tracking
+  policyTypes:
+    - Egress
+  egress:
+    # PostgreSQL via PgBouncer
+    - to:
+        - podSelector:
+            matchLabels:
+              app: pgbouncer
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Redis
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+
+---
+# Response Timing Service Ingress
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: response-timing-ingress
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: security
+spec:
+  podSelector:
+    matchLabels:
+      app: response-timing
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: api-gateway
+        - podSelector:
+            matchLabels:
+              app: celery-worker
+      ports:
+        - protocol: TCP
+          port: 3005
+
+---
+# Response Timing Service Egress
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: response-timing-egress
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: security
+spec:
+  podSelector:
+    matchLabels:
+      app: response-timing
+  policyTypes:
+    - Egress
+  egress:
+    # PostgreSQL via PgBouncer
+    - to:
+        - podSelector:
+            matchLabels:
+              app: pgbouncer
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Redis
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    # External Whisper API (if using OpenAI)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+
+---
+# Video Service Ingress
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: video-service-ingress
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: security
+spec:
+  podSelector:
+    matchLabels:
+      app: video-service
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: api-gateway
+        - podSelector:
+            matchLabels:
+              app: celery-worker
+      ports:
+        - protocol: TCP
+          port: 3006
+    # WebRTC from ingress (for media)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: UDP
+          port: 40000
+          endPort: 49999
+
+---
+# Video Service Egress
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: video-service-egress
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: security
+spec:
+  podSelector:
+    matchLabels:
+      app: video-service
+  policyTypes:
+    - Egress
+  egress:
+    # PostgreSQL via PgBouncer
+    - to:
+        - podSelector:
+            matchLabels:
+              app: pgbouncer
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Redis
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    # S3 (AWS)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+
+---
+# Celery Workers Ingress (from RabbitMQ for message consumption)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: celery-worker-ingress
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: security
+spec:
+  podSelector:
+    matchLabels:
+      app: celery-worker
+  policyTypes:
+    - Ingress
+  ingress: []  # Workers don't receive inbound connections
+
+---
+# Celery Workers Egress
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: celery-worker-egress
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: security
+spec:
+  podSelector:
+    matchLabels:
+      app: celery-worker
+  policyTypes:
+    - Egress
+  egress:
+    # RabbitMQ
+    - to:
+        - podSelector:
+            matchLabels:
+              app: rabbitmq
+      ports:
+        - protocol: TCP
+          port: 5672
+    # Redis
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    # Backend services
+    - to:
+        - podSelector:
+            matchLabels:
+              app: session-service
+      ports:
+        - protocol: TCP
+          port: 3002
+    - to:
+        - podSelector:
+            matchLabels:
+              app: ai-detection
+      ports:
+        - protocol: TCP
+          port: 3003
+    - to:
+        - podSelector:
+            matchLabels:
+              app: eye-tracking
+      ports:
+        - protocol: TCP
+          port: 3004
+    - to:
+        - podSelector:
+            matchLabels:
+              app: video-service
+      ports:
+        - protocol: TCP
+          port: 3006
+    # S3 for video uploads
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+
+---
+# Redis Ingress
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis-ingress
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: security
+spec:
+  podSelector:
+    matchLabels:
+      app: redis
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: api-gateway
+        - podSelector:
+            matchLabels:
+              app: auth-service
+        - podSelector:
+            matchLabels:
+              app: session-service
+        - podSelector:
+            matchLabels:
+              app: websocket-service
+        - podSelector:
+            matchLabels:
+              app: ai-detection
+        - podSelector:
+            matchLabels:
+              app: eye-tracking
+        - podSelector:
+            matchLabels:
+              app: response-timing
+        - podSelector:
+            matchLabels:
+              app: video-service
+        - podSelector:
+            matchLabels:
+              app: celery-worker
+      ports:
+        - protocol: TCP
+          port: 6379
+
+---
+# Redis Cluster Internal Communication
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis-cluster-internal
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: security
+spec:
+  podSelector:
+    matchLabels:
+      app: redis
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+        - protocol: TCP
+          port: 16379
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+        - protocol: TCP
+          port: 16379
+
+---
+# RabbitMQ Ingress
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: rabbitmq-ingress
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: security
+spec:
+  podSelector:
+    matchLabels:
+      app: rabbitmq
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: session-service
+        - podSelector:
+            matchLabels:
+              app: celery-worker
+      ports:
+        - protocol: TCP
+          port: 5672
+
+---
+# RabbitMQ Cluster Internal Communication
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: rabbitmq-cluster-internal
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: security
+spec:
+  podSelector:
+    matchLabels:
+      app: rabbitmq
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: rabbitmq
+      ports:
+        - protocol: TCP
+          port: 4369
+        - protocol: TCP
+          port: 25672
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: rabbitmq
+      ports:
+        - protocol: TCP
+          port: 4369
+        - protocol: TCP
+          port: 25672
+
+---
+# PgBouncer Ingress
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: pgbouncer-ingress
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: security
+spec:
+  podSelector:
+    matchLabels:
+      app: pgbouncer
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: api-gateway
+        - podSelector:
+            matchLabels:
+              app: auth-service
+        - podSelector:
+            matchLabels:
+              app: session-service
+        - podSelector:
+            matchLabels:
+              app: ai-detection
+        - podSelector:
+            matchLabels:
+              app: eye-tracking
+        - podSelector:
+            matchLabels:
+              app: response-timing
+        - podSelector:
+            matchLabels:
+              app: video-service
+      ports:
+        - protocol: TCP
+          port: 5432
+
+---
+# PgBouncer Egress (to PostgreSQL)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: pgbouncer-egress
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: security
+spec:
+  podSelector:
+    matchLabels:
+      app: pgbouncer
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgresql
+      ports:
+        - protocol: TCP
+          port: 5432
+
+---
+# PostgreSQL Ingress (from PgBouncer only)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgresql-ingress
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: security
+spec:
+  podSelector:
+    matchLabels:
+      app: postgresql
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: pgbouncer
+      ports:
+        - protocol: TCP
+          port: 5432
+
+---
+# PostgreSQL HA Internal Communication (Patroni)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgresql-ha-internal
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: security
+spec:
+  podSelector:
+    matchLabels:
+      app: postgresql
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: postgresql
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 8008  # Patroni REST API
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgresql
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 8008
+    # etcd for leader election
+    - to:
+        - podSelector:
+            matchLabels:
+              app: etcd
+      ports:
+        - protocol: TCP
+          port: 2379
+
+---
+# etcd Ingress (for Patroni)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: etcd-ingress
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: security
+spec:
+  podSelector:
+    matchLabels:
+      app: etcd
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: postgresql
+      ports:
+        - protocol: TCP
+          port: 2379
+
+---
+# etcd Cluster Internal Communication
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: etcd-cluster-internal
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: security
+spec:
+  podSelector:
+    matchLabels:
+      app: etcd
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: etcd
+      ports:
+        - protocol: TCP
+          port: 2379
+        - protocol: TCP
+          port: 2380
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: etcd
+      ports:
+        - protocol: TCP
+          port: 2379
+        - protocol: TCP
+          port: 2380
+
+---
+# Allow Prometheus to scrape all pods with prometheus.io/scrape annotation
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-scrape
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - protocol: TCP
+          port: 9090
+        - protocol: TCP
+          port: 9100
+        - protocol: TCP
+          port: 9808
+        - protocol: TCP
+          port: 3000
+        - protocol: TCP
+          port: 3001
+        - protocol: TCP
+          port: 3002
+        - protocol: TCP
+          port: 3003
+        - protocol: TCP
+          port: 3004
+        - protocol: TCP
+          port: 3005
+        - protocol: TCP
+          port: 3006
+        - protocol: TCP
+          port: 3007

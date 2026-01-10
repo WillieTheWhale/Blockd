@@ -1,0 +1,591 @@
+# Celery Workers Kubernetes Deployment
+# Deploys worker pods to consume RabbitMQ messages
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: celery-worker-config
+  namespace: blockd
+  labels:
+    app: celery-worker
+    component: workers
+data:
+  # RabbitMQ connection
+  RABBITMQ_HOST: "rabbitmq-cluster.blockd.svc.cluster.local"
+  RABBITMQ_PORT: "5672"
+  RABBITMQ_VHOST: "blockd"
+
+  # Redis connection
+  REDIS_HOST: "redis-cluster.blockd.svc.cluster.local"
+  REDIS_PORT: "6379"
+
+  # Service URLs
+  SESSION_SERVICE_URL: "http://session-service.blockd.svc.cluster.local:3002"
+  AI_DETECTION_SERVICE_URL: "http://ai-detection-service.blockd.svc.cluster.local:3003"
+  EYE_TRACKING_SERVICE_URL: "http://eye-tracking-service.blockd.svc.cluster.local:3004"
+  WEBSOCKET_SERVICE_URL: "http://websocket-service.blockd.svc.cluster.local:3007"
+  VIDEO_SERVICE_URL: "http://video-service.blockd.svc.cluster.local:3006"
+
+  # S3 configuration
+  S3_BUCKET: "blockd-recordings"
+  S3_REGION: "us-east-1"
+
+  # Processing configuration
+  VIDEO_OUTPUT_PATH: "/tmp/video"
+  THUMBNAIL_OUTPUT_PATH: "/tmp/thumbnails"
+
+  # Celery configuration
+  CELERY_TASK_ACKS_LATE: "true"
+  CELERY_TASK_REJECT_ON_WORKER_LOST: "true"
+  CELERY_WORKER_PREFETCH_MULTIPLIER: "1"
+
+---
+# Video Processing Workers
+# Handles video encoding, thumbnail generation, and S3 uploads
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-worker-video
+  namespace: blockd
+  labels:
+    app: celery-worker
+    component: video
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: celery-worker
+      component: video
+  template:
+    metadata:
+      labels:
+        app: celery-worker
+        component: video
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9808"
+    spec:
+      serviceAccountName: celery-worker
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: worker
+          image: blockd/celery-worker:latest
+          imagePullPolicy: Always
+          command:
+            - celery
+            - -A
+            - celery_app
+            - worker
+            - --loglevel=info
+            - --queues=video_encode,video_thumbnail,video_upload
+            - --concurrency=2
+            - --hostname=video-worker@%h
+          envFrom:
+            - configMapRef:
+                name: celery-worker-config
+          env:
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-credentials
+                  key: username
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-credentials
+                  key: password
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: aws-credentials
+                  key: access-key-id
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aws-credentials
+                  key: secret-access-key
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2000m"
+              memory: "4Gi"
+          volumeMounts:
+            - name: tmp-video
+              mountPath: /tmp/video
+            - name: tmp-thumbnails
+              mountPath: /tmp/thumbnails
+          livenessProbe:
+            exec:
+              command:
+                - celery
+                - -A
+                - celery_app
+                - inspect
+                - ping
+                - -d
+                - celery@$HOSTNAME
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            timeoutSeconds: 10
+          readinessProbe:
+            exec:
+              command:
+                - celery
+                - -A
+                - celery_app
+                - inspect
+                - active
+                - -d
+                - celery@$HOSTNAME
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 10
+      volumes:
+        - name: tmp-video
+          emptyDir:
+            sizeLimit: 10Gi
+        - name: tmp-thumbnails
+          emptyDir:
+            sizeLimit: 1Gi
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: celery-worker
+                    component: video
+                topologyKey: kubernetes.io/hostname
+
+---
+# AI Detection Workers
+# Handles AI analysis, embedding generation, and cache warming
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-worker-ai
+  namespace: blockd
+  labels:
+    app: celery-worker
+    component: ai
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: celery-worker
+      component: ai
+  template:
+    metadata:
+      labels:
+        app: celery-worker
+        component: ai
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9808"
+    spec:
+      serviceAccountName: celery-worker
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: worker
+          image: blockd/celery-worker:latest
+          imagePullPolicy: Always
+          command:
+            - celery
+            - -A
+            - celery_app
+            - worker
+            - --loglevel=info
+            - --queues=ai_analyze,embedding_generate,cache_warmup
+            - --concurrency=4
+            - --hostname=ai-worker@%h
+          envFrom:
+            - configMapRef:
+                name: celery-worker-config
+          env:
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-credentials
+                  key: username
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-credentials
+                  key: password
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "2Gi"
+          livenessProbe:
+            exec:
+              command:
+                - celery
+                - -A
+                - celery_app
+                - inspect
+                - ping
+                - -d
+                - celery@$HOSTNAME
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            timeoutSeconds: 10
+          readinessProbe:
+            exec:
+              command:
+                - celery
+                - -A
+                - celery_app
+                - inspect
+                - active
+                - -d
+                - celery@$HOSTNAME
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 10
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: celery-worker
+                    component: ai
+                topologyKey: kubernetes.io/hostname
+
+---
+# Security Workers
+# Handles security alerts, logging, and notifications
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-worker-security
+  namespace: blockd
+  labels:
+    app: celery-worker
+    component: security
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: celery-worker
+      component: security
+  template:
+    metadata:
+      labels:
+        app: celery-worker
+        component: security
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9808"
+    spec:
+      serviceAccountName: celery-worker
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: worker
+          image: blockd/celery-worker:latest
+          imagePullPolicy: Always
+          command:
+            - celery
+            - -A
+            - celery_app
+            - worker
+            - --loglevel=info
+            - --queues=security_alert,security_log
+            - --concurrency=4
+            - --hostname=security-worker@%h
+          envFrom:
+            - configMapRef:
+                name: celery-worker-config
+          env:
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-credentials
+                  key: username
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-credentials
+                  key: password
+            - name: SLACK_WEBHOOK_URL
+              valueFrom:
+                secretKeyRef:
+                  name: notification-credentials
+                  key: slack-webhook-url
+                  optional: true
+            - name: PAGERDUTY_ROUTING_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: notification-credentials
+                  key: pagerduty-routing-key
+                  optional: true
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          livenessProbe:
+            exec:
+              command:
+                - celery
+                - -A
+                - celery_app
+                - inspect
+                - ping
+                - -d
+                - celery@$HOSTNAME
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            timeoutSeconds: 10
+          readinessProbe:
+            exec:
+              command:
+                - celery
+                - -A
+                - celery_app
+                - inspect
+                - active
+                - -d
+                - celery@$HOSTNAME
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 10
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: celery-worker
+                    component: security
+                topologyKey: kubernetes.io/hostname
+
+---
+# Gaze Analysis Workers
+# Handles gaze data processing and anomaly detection
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-worker-gaze
+  namespace: blockd
+  labels:
+    app: celery-worker
+    component: gaze
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: celery-worker
+      component: gaze
+  template:
+    metadata:
+      labels:
+        app: celery-worker
+        component: gaze
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9808"
+    spec:
+      serviceAccountName: celery-worker
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: worker
+          image: blockd/celery-worker:latest
+          imagePullPolicy: Always
+          command:
+            - celery
+            - -A
+            - celery_app
+            - worker
+            - --loglevel=info
+            - --queues=gaze_process,anomaly_detect
+            - --concurrency=4
+            - --hostname=gaze-worker@%h
+          envFrom:
+            - configMapRef:
+                name: celery-worker-config
+          env:
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-credentials
+                  key: username
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-credentials
+                  key: password
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          livenessProbe:
+            exec:
+              command:
+                - celery
+                - -A
+                - celery_app
+                - inspect
+                - ping
+                - -d
+                - celery@$HOSTNAME
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            timeoutSeconds: 10
+          readinessProbe:
+            exec:
+              command:
+                - celery
+                - -A
+                - celery_app
+                - inspect
+                - active
+                - -d
+                - celery@$HOSTNAME
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 10
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: celery-worker
+                    component: gaze
+                topologyKey: kubernetes.io/hostname
+
+---
+# ServiceAccount for Celery workers
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: celery-worker
+  namespace: blockd
+  labels:
+    app: celery-worker
+
+---
+# Celery Flower for monitoring (optional but recommended)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-flower
+  namespace: blockd
+  labels:
+    app: celery-flower
+    component: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: celery-flower
+  template:
+    metadata:
+      labels:
+        app: celery-flower
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "5555"
+    spec:
+      serviceAccountName: celery-worker
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: flower
+          image: blockd/celery-worker:latest
+          imagePullPolicy: Always
+          command:
+            - celery
+            - -A
+            - celery_app
+            - flower
+            - --port=5555
+            - --broker_api=http://$(RABBITMQ_USER):$(RABBITMQ_PASSWORD)@rabbitmq-cluster.blockd.svc.cluster.local:15672/api/
+          envFrom:
+            - configMapRef:
+                name: celery-worker-config
+          env:
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-credentials
+                  key: username
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-credentials
+                  key: password
+            - name: FLOWER_BASIC_AUTH
+              valueFrom:
+                secretKeyRef:
+                  name: flower-credentials
+                  key: basic-auth
+          ports:
+            - containerPort: 5555
+              name: http
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+          livenessProbe:
+            httpGet:
+              path: /healthcheck
+              port: 5555
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /healthcheck
+              port: 5555
+            initialDelaySeconds: 5
+            periodSeconds: 10
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: celery-flower
+  namespace: blockd
+  labels:
+    app: celery-flower
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5555
+      targetPort: 5555
+      protocol: TCP
+      name: http
+  selector:
+    app: celery-flower

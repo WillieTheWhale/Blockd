@@ -1,0 +1,167 @@
+##
+# JWT Configuration
+#
+# Centralized JWT configuration for all Blockd services.
+# All services use the same issuer, audience, and keys.
+##
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jwt-config
+  namespace: blockd
+  labels:
+    app.kubernetes.io/name: blockd
+    app.kubernetes.io/component: auth-config
+data:
+  # JWT Algorithm (RS256 recommended for production)
+  JWT_ALGORITHM: "RS256"
+
+  # Token issuer (single source of truth)
+  JWT_ISSUER: "blockd"
+
+  # Token audience
+  JWT_AUDIENCE: "blockd-platform"
+
+  # Valid issuers for token verification (comma-separated)
+  # Includes legacy issuers for migration period
+  JWT_VALID_ISSUERS: "blockd,blockd-auth,blockd-api-gateway"
+
+  # Valid audiences for token verification (comma-separated)
+  JWT_VALID_AUDIENCES: "blockd-platform,blockd-api"
+
+  # Access token TTL (1 hour)
+  JWT_ACCESS_TOKEN_TTL: "3600"
+
+  # Refresh token TTL (7 days)
+  JWT_REFRESH_TOKEN_TTL: "604800"
+
+---
+##
+# JWT Keys Secret
+#
+# RSA key pair for JWT signing and verification.
+# In production, use External Secrets Operator to fetch from vault.
+##
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: jwt-keys
+  namespace: blockd
+  labels:
+    app.kubernetes.io/name: blockd
+    app.kubernetes.io/component: auth-secrets
+type: Opaque
+stringData:
+  # PLACEHOLDER - Replace with actual keys from secrets manager
+  # Generate keys with:
+  # openssl genrsa -out private.pem 4096
+  # openssl rsa -in private.pem -pubout -out public.pem
+  JWT_PRIVATE_KEY: |
+    -----BEGIN RSA PRIVATE KEY-----
+    PLACEHOLDER_PRIVATE_KEY_REPLACE_WITH_EXTERNAL_SECRET
+    -----END RSA PRIVATE KEY-----
+  JWT_PUBLIC_KEY: |
+    -----BEGIN PUBLIC KEY-----
+    PLACEHOLDER_PUBLIC_KEY_REPLACE_WITH_EXTERNAL_SECRET
+    -----END PUBLIC KEY-----
+
+---
+##
+# External Secret for JWT Keys (Production)
+#
+# Uses External Secrets Operator to fetch keys from AWS Secrets Manager
+# or HashiCorp Vault.
+##
+
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: jwt-keys-external
+  namespace: blockd
+  labels:
+    app.kubernetes.io/name: blockd
+    app.kubernetes.io/component: auth-secrets
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: aws-secrets-manager
+    kind: ClusterSecretStore
+  target:
+    name: jwt-keys
+    creationPolicy: Owner
+    template:
+      type: Opaque
+      data:
+        JWT_PRIVATE_KEY: "{{ .privateKey }}"
+        JWT_PUBLIC_KEY: "{{ .publicKey }}"
+  data:
+    - secretKey: privateKey
+      remoteRef:
+        key: blockd/jwt-keys
+        property: private_key
+    - secretKey: publicKey
+      remoteRef:
+        key: blockd/jwt-keys
+        property: public_key
+
+---
+##
+# Service Account for JWT Key Access
+#
+# Only services that need to sign tokens (auth-service, api-gateway)
+# should have access to the private key.
+##
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: jwt-signer-role
+  namespace: blockd
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["jwt-keys"]
+    verbs: ["get"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jwt-signer-binding
+  namespace: blockd
+subjects:
+  - kind: ServiceAccount
+    name: auth-service
+    namespace: blockd
+  - kind: ServiceAccount
+    name: api-gateway
+    namespace: blockd
+roleRef:
+  kind: Role
+  name: jwt-signer-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+##
+# JWT Public Key ConfigMap
+#
+# Public key can be distributed more widely for verification-only services.
+##
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jwt-public-key
+  namespace: blockd
+  labels:
+    app.kubernetes.io/name: blockd
+    app.kubernetes.io/component: auth-config
+data:
+  # This is populated by an init job or external secret
+  # Public key can be safely distributed to all services
+  JWT_PUBLIC_KEY: |
+    -----BEGIN PUBLIC KEY-----
+    PLACEHOLDER_PUBLIC_KEY_REPLACE_WITH_ACTUAL_KEY
+    -----END PUBLIC KEY-----

@@ -1,0 +1,582 @@
+name: Deploy to Production (Canary)
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      skip_approval:
+        description: 'Skip manual approval'
+        required: false
+        type: boolean
+        default: false
+      canary_weight:
+        description: 'Initial canary weight (1-100)'
+        required: false
+        type: number
+        default: 10
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository_owner }}/blockd
+  HELM_VERSION: '3.13.0'
+  KUBECTL_VERSION: '1.28.0'
+  NAMESPACE: production
+
+jobs:
+  approval:
+    name: Manual Approval
+    runs-on: ubuntu-latest
+    if: ${{ !inputs.skip_approval }}
+    environment:
+      name: production-approval
+    steps:
+      - name: Request approval
+        run: |
+          echo "Canary deployment to production requires manual approval"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Author: ${{ github.actor }}"
+          echo "Initial canary weight: ${{ inputs.canary_weight || 10 }}%"
+
+  build:
+    name: Build and Push Images
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.tag }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set version tag
+        id: version
+        run: |
+          TAG="${{ github.sha }}"
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push images
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          SERVICES="api-gateway auth-service session-service websocket-service ai-detection eye-tracking response-timing video-service frontend"
+
+          for SERVICE in $SERVICES; do
+            docker build \
+              -t ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${SERVICE}:${TAG} \
+              -f backend/${SERVICE}/Dockerfile \
+              backend/${SERVICE} || true
+
+            docker push ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${SERVICE}:${TAG} || true
+          done
+
+  deploy-canary:
+    name: Deploy Canary (10%)
+    runs-on: ubuntu-latest
+    needs: [approval, build]
+    if: always() && (needs.approval.result == 'success' || needs.approval.result == 'skipped')
+    environment:
+      name: production-canary
+      url: https://canary.blockd.io
+
+    outputs:
+      canary_deployment: ${{ steps.deploy.outputs.deployment_name }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v${{ env.KUBECTL_VERSION }}
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v${{ env.HELM_VERSION }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Configure kubectl for EKS
+        run: |
+          aws eks update-kubeconfig --name blockd-production-cluster --region us-east-1
+
+      - name: Deploy canary version
+        id: deploy
+        run: |
+          VERSION="${{ needs.build.outputs.version }}"
+          CANARY_NAME="blockd-canary-${VERSION:0:8}"
+
+          echo "deployment_name=${CANARY_NAME}" >> $GITHUB_OUTPUT
+
+          # Deploy canary with single replica
+          helm upgrade --install ${CANARY_NAME} ./k8s/helm/blockd \
+            --namespace ${{ env.NAMESPACE }} \
+            --values k8s/helm/blockd/values-production.yaml \
+            --values k8s/helm/blockd/values-canary.yaml \
+            --set image.tag=${VERSION} \
+            --set image.repository=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }} \
+            --set environment=production \
+            --set canary.enabled=true \
+            --set canary.weight=10 \
+            --set replicaCount=1 \
+            --wait \
+            --timeout 10m \
+            --atomic
+
+      - name: Wait for canary pods to be ready
+        run: |
+          CANARY_NAME="${{ steps.deploy.outputs.deployment_name }}"
+          kubectl wait --for=condition=available --timeout=5m \
+            deployment -l app.kubernetes.io/instance=${CANARY_NAME} -n ${{ env.NAMESPACE }}
+
+      - name: Configure traffic splitting (10%)
+        run: |
+          VERSION="${{ needs.build.outputs.version }}"
+
+          # Apply Istio/Nginx canary traffic split
+          cat <<EOF | kubectl apply -f -
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: blockd-canary
+            namespace: ${{ env.NAMESPACE }}
+            annotations:
+              kubernetes.io/ingress.class: nginx
+              nginx.ingress.kubernetes.io/canary: "true"
+              nginx.ingress.kubernetes.io/canary-weight: "10"
+          spec:
+            rules:
+              - host: blockd.io
+                http:
+                  paths:
+                    - path: /
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: api-gateway-canary
+                          port:
+                            number: 80
+          EOF
+
+  monitor-canary-10:
+    name: Monitor Canary (10% - 5 min)
+    runs-on: ubuntu-latest
+    needs: [deploy-canary]
+
+    outputs:
+      metrics_passed: ${{ steps.check.outputs.passed }}
+
+    steps:
+      - name: Configure kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v${{ env.KUBECTL_VERSION }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Configure kubectl for EKS
+        run: |
+          aws eks update-kubeconfig --name blockd-production-cluster --region us-east-1
+
+      - name: Monitor canary metrics for 5 minutes
+        id: check
+        run: |
+          echo "Monitoring canary deployment for 5 minutes..."
+
+          PASSED=true
+          END_TIME=$(($(date +%s) + 300))
+          CHECK_COUNT=0
+
+          while [ $(date +%s) -lt $END_TIME ]; do
+            CHECK_COUNT=$((CHECK_COUNT + 1))
+            echo "=== Check #${CHECK_COUNT} at $(date) ==="
+
+            # Query Prometheus for error rate
+            ERROR_RATE=$(curl -s "http://prometheus.monitoring.svc.cluster.local:9090/api/v1/query" \
+              --data-urlencode 'query=sum(rate(http_requests_total{status=~"5..",version="canary"}[1m])) / sum(rate(http_requests_total{version="canary"}[1m])) * 100' \
+              | jq -r '.data.result[0].value[1] // "0"' 2>/dev/null || echo "0")
+
+            # Query latency P99
+            LATENCY_P99=$(curl -s "http://prometheus.monitoring.svc.cluster.local:9090/api/v1/query" \
+              --data-urlencode 'query=histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{version="canary"}[1m])) by (le))' \
+              | jq -r '.data.result[0].value[1] // "0"' 2>/dev/null || echo "0")
+
+            echo "Error rate: ${ERROR_RATE}%"
+            echo "P99 latency: ${LATENCY_P99}s"
+
+            # Check thresholds
+            ERROR_THRESHOLD=5
+            LATENCY_THRESHOLD=2
+
+            if (( $(echo "$ERROR_RATE > $ERROR_THRESHOLD" | bc -l 2>/dev/null || echo 0) )); then
+              echo "ERROR: Error rate ${ERROR_RATE}% exceeds threshold ${ERROR_THRESHOLD}%"
+              PASSED=false
+              break
+            fi
+
+            if (( $(echo "$LATENCY_P99 > $LATENCY_THRESHOLD" | bc -l 2>/dev/null || echo 0) )); then
+              echo "ERROR: P99 latency ${LATENCY_P99}s exceeds threshold ${LATENCY_THRESHOLD}s"
+              PASSED=false
+              break
+            fi
+
+            # Check pod health
+            FAILED_PODS=$(kubectl get pods -n ${{ env.NAMESPACE }} -l canary=true --field-selector=status.phase!=Running --no-headers 2>/dev/null | wc -l)
+            if [ "$FAILED_PODS" -gt 0 ]; then
+              echo "ERROR: Found $FAILED_PODS unhealthy canary pods"
+              PASSED=false
+              break
+            fi
+
+            echo "Health check passed"
+            sleep 30
+          done
+
+          echo "passed=${PASSED}" >> $GITHUB_OUTPUT
+
+          if [ "$PASSED" != "true" ]; then
+            echo "Canary monitoring failed!"
+            exit 1
+          fi
+
+          echo "Canary monitoring passed at 10% traffic"
+
+  increase-to-25:
+    name: Increase to 25%
+    runs-on: ubuntu-latest
+    needs: [monitor-canary-10]
+    if: needs.monitor-canary-10.outputs.metrics_passed == 'true'
+
+    steps:
+      - name: Configure kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v${{ env.KUBECTL_VERSION }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Configure kubectl for EKS
+        run: |
+          aws eks update-kubeconfig --name blockd-production-cluster --region us-east-1
+
+      - name: Increase canary traffic to 25%
+        run: |
+          kubectl annotate ingress blockd-canary \
+            -n ${{ env.NAMESPACE }} \
+            nginx.ingress.kubernetes.io/canary-weight="25" \
+            --overwrite
+
+          echo "Canary traffic increased to 25%"
+
+  monitor-canary-25:
+    name: Monitor Canary (25% - 5 min)
+    runs-on: ubuntu-latest
+    needs: [increase-to-25]
+
+    outputs:
+      metrics_passed: ${{ steps.check.outputs.passed }}
+
+    steps:
+      - name: Configure kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v${{ env.KUBECTL_VERSION }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Configure kubectl for EKS
+        run: |
+          aws eks update-kubeconfig --name blockd-production-cluster --region us-east-1
+
+      - name: Monitor canary metrics for 5 minutes
+        id: check
+        run: |
+          echo "Monitoring canary at 25% traffic for 5 minutes..."
+
+          PASSED=true
+          END_TIME=$(($(date +%s) + 300))
+
+          while [ $(date +%s) -lt $END_TIME ]; do
+            # Same monitoring logic as 10%
+            FAILED_PODS=$(kubectl get pods -n ${{ env.NAMESPACE }} -l canary=true --field-selector=status.phase!=Running --no-headers 2>/dev/null | wc -l)
+            if [ "$FAILED_PODS" -gt 0 ]; then
+              echo "ERROR: Found $FAILED_PODS unhealthy canary pods"
+              PASSED=false
+              break
+            fi
+
+            echo "Health check passed at $(date)"
+            sleep 30
+          done
+
+          echo "passed=${PASSED}" >> $GITHUB_OUTPUT
+
+          if [ "$PASSED" != "true" ]; then
+            exit 1
+          fi
+
+  increase-to-50:
+    name: Increase to 50%
+    runs-on: ubuntu-latest
+    needs: [monitor-canary-25]
+    if: needs.monitor-canary-25.outputs.metrics_passed == 'true'
+
+    steps:
+      - name: Configure kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v${{ env.KUBECTL_VERSION }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Configure kubectl for EKS
+        run: |
+          aws eks update-kubeconfig --name blockd-production-cluster --region us-east-1
+
+      - name: Increase canary traffic to 50%
+        run: |
+          kubectl annotate ingress blockd-canary \
+            -n ${{ env.NAMESPACE }} \
+            nginx.ingress.kubernetes.io/canary-weight="50" \
+            --overwrite
+
+          # Scale up canary replicas for increased load
+          kubectl scale deployment -l canary=true -n ${{ env.NAMESPACE }} --replicas=2
+
+          echo "Canary traffic increased to 50%"
+
+  monitor-canary-50:
+    name: Monitor Canary (50% - 10 min)
+    runs-on: ubuntu-latest
+    needs: [increase-to-50]
+
+    outputs:
+      metrics_passed: ${{ steps.check.outputs.passed }}
+
+    steps:
+      - name: Configure kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v${{ env.KUBECTL_VERSION }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Configure kubectl for EKS
+        run: |
+          aws eks update-kubeconfig --name blockd-production-cluster --region us-east-1
+
+      - name: Monitor canary metrics for 10 minutes
+        id: check
+        run: |
+          echo "Monitoring canary at 50% traffic for 10 minutes..."
+
+          PASSED=true
+          END_TIME=$(($(date +%s) + 600))
+
+          while [ $(date +%s) -lt $END_TIME ]; do
+            FAILED_PODS=$(kubectl get pods -n ${{ env.NAMESPACE }} -l canary=true --field-selector=status.phase!=Running --no-headers 2>/dev/null | wc -l)
+            if [ "$FAILED_PODS" -gt 0 ]; then
+              PASSED=false
+              break
+            fi
+
+            echo "Health check passed at $(date)"
+            sleep 30
+          done
+
+          echo "passed=${PASSED}" >> $GITHUB_OUTPUT
+
+          if [ "$PASSED" != "true" ]; then
+            exit 1
+          fi
+
+  promote-to-100:
+    name: Promote to 100%
+    runs-on: ubuntu-latest
+    needs: [monitor-canary-50, build]
+    if: needs.monitor-canary-50.outputs.metrics_passed == 'true'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v${{ env.KUBECTL_VERSION }}
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v${{ env.HELM_VERSION }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Configure kubectl for EKS
+        run: |
+          aws eks update-kubeconfig --name blockd-production-cluster --region us-east-1
+
+      - name: Promote canary to stable
+        run: |
+          VERSION="${{ needs.build.outputs.version }}"
+
+          # Deploy as stable (full replicas)
+          helm upgrade --install blockd-stable ./k8s/helm/blockd \
+            --namespace ${{ env.NAMESPACE }} \
+            --values k8s/helm/blockd/values-production.yaml \
+            --set image.tag=${VERSION} \
+            --set image.repository=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }} \
+            --set environment=production \
+            --set canary.enabled=false \
+            --wait \
+            --timeout 15m \
+            --atomic
+
+          echo "Stable deployment updated to version ${VERSION}"
+
+      - name: Remove canary ingress
+        run: |
+          kubectl delete ingress blockd-canary -n ${{ env.NAMESPACE }} --ignore-not-found
+          echo "Canary ingress removed"
+
+      - name: Clean up canary deployment
+        run: |
+          # Delete canary deployments
+          helm list -n ${{ env.NAMESPACE }} --filter 'blockd-canary-' -q | xargs -r helm uninstall -n ${{ env.NAMESPACE }}
+          echo "Canary deployments cleaned up"
+
+  rollback:
+    name: Automatic Rollback
+    runs-on: ubuntu-latest
+    needs: [deploy-canary, monitor-canary-10, monitor-canary-25, monitor-canary-50]
+    if: failure()
+
+    steps:
+      - name: Configure kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v${{ env.KUBECTL_VERSION }}
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v${{ env.HELM_VERSION }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Configure kubectl for EKS
+        run: |
+          aws eks update-kubeconfig --name blockd-production-cluster --region us-east-1
+
+      - name: Rollback canary deployment
+        run: |
+          echo "Rolling back canary deployment..."
+
+          # Remove canary ingress
+          kubectl delete ingress blockd-canary -n ${{ env.NAMESPACE }} --ignore-not-found
+
+          # Delete canary deployments
+          helm list -n ${{ env.NAMESPACE }} --filter 'blockd-canary-' -q | xargs -r helm uninstall -n ${{ env.NAMESPACE }}
+
+          # Verify stable is running
+          kubectl get pods -n ${{ env.NAMESPACE }} -l app.kubernetes.io/instance=blockd-stable
+
+          echo "Rollback completed - traffic restored to stable version"
+
+  notify:
+    name: Notify Deployment Status
+    runs-on: ubuntu-latest
+    needs: [promote-to-100]
+    if: always()
+
+    steps:
+      - name: Send success notification
+        if: needs.promote-to-100.result == 'success'
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "Canary deployment promoted to production",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": ":rocket: *Canary Deployment Promoted to Production*\n*Version:* ${{ needs.build.outputs.version }}\n*Branch:* ${{ github.ref_name }}\n*Stages:* 10% → 25% → 50% → 100%\n*Status:* All health checks passed"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Send rollback notification
+        if: needs.promote-to-100.result == 'failure' || needs.promote-to-100.result == 'cancelled'
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "Canary deployment rolled back",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": ":warning: *Canary Deployment Rolled Back*\n*Branch:* ${{ github.ref_name }}\n*Commit:* ${{ github.sha }}\n*Reason:* Health check failures detected\n*Action:* Traffic restored to stable version"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

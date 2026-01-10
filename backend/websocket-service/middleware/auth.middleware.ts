@@ -1,80 +1,54 @@
 /**
- * Authentication Middleware
- * Verifies JWT tokens and attaches user data to socket
+ * Authentication Middleware for WebSocket Service
+ *
+ * Uses the shared auth module for JWT verification.
+ * Verifies tokens and attaches user data to socket.
  */
 
 import { Socket } from 'socket.io';
 import { ExtendedError } from 'socket.io/dist/namespace';
-import * as jwt from 'jsonwebtoken';
-import * as fs from 'fs';
-import { Config } from '../src/config';
+import {
+  verifyAccessToken,
+  extractTokenFromHeader,
+  JWTPayload,
+  TokenExpiredError,
+  InvalidTokenError,
+  isTokenRevoked,
+  TokenRevokedError,
+} from '@blockd/shared/auth';
 import { logger } from '../lib/logger';
-import { AuthenticationError, InvalidTokenError } from '../lib/errors';
 
 /**
- * JWT payload interface
+ * Authentication error for WebSocket
  */
-interface JWTPayload {
-  sub: string;        // user_id
+export class AuthenticationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AuthenticationError';
+  }
+}
+
+/**
+ * Socket user data interface
+ */
+export interface SocketUserData {
+  user_id: string;
   email: string;
   role: 'interviewer' | 'interviewee' | 'admin';
   organization_id?: string;
-  iat: number;
-  exp: number;
-  iss: string;
-  aud: string;
 }
 
 /**
- * Read JWT public key
+ * Extended socket with user data
  */
-let publicKey: string | null = null;
-
-function getPublicKey(config: Config): string {
-  if (publicKey) {
-    return publicKey;
+declare module 'socket.io' {
+  interface Socket {
+    data: {
+      user?: SocketUserData;
+      connectedAt?: Date;
+      lastActivity?: Date;
+    };
   }
-
-  try {
-    publicKey = fs.readFileSync(config.jwt.publicKeyPath, 'utf8');
-    logger.info('JWT public key loaded successfully');
-    return publicKey;
-  } catch (error) {
-    logger.error('Failed to load JWT public key', error);
-    throw new Error('Failed to load JWT public key');
-  }
-}
-
-/**
- * Verify JWT token
- */
-async function verifyToken(token: string, config: Config): Promise<JWTPayload> {
-  return new Promise((resolve, reject) => {
-    const key = getPublicKey(config);
-
-    jwt.verify(
-      token,
-      key,
-      {
-        algorithms: [config.jwt.algorithm as jwt.Algorithm],
-        issuer: config.jwt.issuer,
-        audience: config.jwt.audience,
-      },
-      (err, decoded) => {
-        if (err) {
-          reject(new InvalidTokenError(err.message));
-          return;
-        }
-
-        if (!decoded || typeof decoded === 'string') {
-          reject(new InvalidTokenError('Invalid token payload'));
-          return;
-        }
-
-        resolve(decoded as JWTPayload);
-      }
-    );
-  });
 }
 
 /**
@@ -88,14 +62,9 @@ function extractToken(socket: Socket): string | null {
 
   // Try Authorization header
   const authHeader = socket.handshake.headers.authorization;
-  if (authHeader) {
-    // Support "Bearer <token>" format
-    const match = authHeader.match(/^Bearer\s+(.+)$/i);
-    if (match) {
-      return match[1];
-    }
-    // Support direct token
-    return authHeader;
+  const headerToken = extractTokenFromHeader(authHeader);
+  if (headerToken) {
+    return headerToken;
   }
 
   // Try query parameter (fallback, less secure)
@@ -109,7 +78,7 @@ function extractToken(socket: Socket): string | null {
 /**
  * Authentication middleware
  */
-export function authMiddleware(config: Config) {
+export function authMiddleware() {
   return async (socket: Socket, next: (err?: ExtendedError) => void) => {
     try {
       // Extract token
@@ -120,18 +89,27 @@ export function authMiddleware(config: Config) {
           socketId: socket.id,
           ip: socket.handshake.address,
         });
-        return next(new AuthenticationError('Authentication token required'));
+        return next(new AuthenticationError('Authentication token required') as ExtendedError);
       }
 
-      // Verify token
-      const decoded = await verifyToken(token, config);
+      // Check if token is revoked (for immediate logout support)
+      if (await isTokenRevoked(token)) {
+        logger.warn('Authentication failed: Token revoked', {
+          socketId: socket.id,
+          ip: socket.handshake.address,
+        });
+        return next(new AuthenticationError('Token has been revoked') as ExtendedError);
+      }
+
+      // Verify token using shared auth module
+      const decoded = verifyAccessToken(token);
 
       // Attach user data to socket
       socket.data.user = {
         user_id: decoded.sub,
         email: decoded.email,
-        role: decoded.role,
-        organization_id: decoded.organization_id,
+        role: decoded.role as 'interviewer' | 'interviewee' | 'admin',
+        organization_id: decoded.organizationId,
       };
 
       socket.data.connectedAt = new Date();
@@ -152,11 +130,23 @@ export function authMiddleware(config: Config) {
         error: error instanceof Error ? error.message : 'Unknown error',
       });
 
-      if (error instanceof AuthenticationError || error instanceof InvalidTokenError) {
+      if (error instanceof TokenExpiredError) {
+        return next(new AuthenticationError('Token has expired') as ExtendedError);
+      }
+
+      if (error instanceof InvalidTokenError) {
+        return next(new AuthenticationError('Invalid token') as ExtendedError);
+      }
+
+      if (error instanceof TokenRevokedError) {
+        return next(new AuthenticationError('Token has been revoked') as ExtendedError);
+      }
+
+      if (error instanceof AuthenticationError) {
         return next(error as ExtendedError);
       }
 
-      next(new AuthenticationError('Authentication failed'));
+      next(new AuthenticationError('Authentication failed') as ExtendedError);
     }
   };
 }
@@ -186,10 +176,76 @@ export function requireRole(...allowedRoles: Array<'interviewer' | 'interviewee'
 }
 
 /**
+ * Check if user belongs to the specified organization
+ */
+export function requireOrganization(getOrgId: (socket: Socket) => string | undefined) {
+  return (socket: Socket, next: (err?: ExtendedError) => void) => {
+    const userOrgId = socket.data.user?.organization_id;
+    const requiredOrgId = getOrgId(socket);
+
+    // Admins can access any organization
+    if (socket.data.user?.role === 'admin') {
+      return next();
+    }
+
+    if (!userOrgId || userOrgId !== requiredOrgId) {
+      logger.warn('Authorization failed: Organization mismatch', {
+        socketId: socket.id,
+        userId: socket.data.user?.user_id,
+        userOrgId,
+        requiredOrgId,
+      });
+
+      return next(
+        new AuthenticationError('Not authorized for this organization') as ExtendedError
+      );
+    }
+
+    next();
+  };
+}
+
+/**
  * Update last activity timestamp
  */
 export function updateActivity(socket: Socket): void {
   if (socket.data) {
     socket.data.lastActivity = new Date();
   }
+}
+
+/**
+ * Get user ID from socket
+ */
+export function getUserId(socket: Socket): string {
+  const userId = socket.data.user?.user_id;
+  if (!userId) {
+    throw new AuthenticationError('Socket not authenticated');
+  }
+  return userId;
+}
+
+/**
+ * Get user role from socket
+ */
+export function getUserRole(socket: Socket): string {
+  const role = socket.data.user?.role;
+  if (!role) {
+    throw new AuthenticationError('Socket not authenticated');
+  }
+  return role;
+}
+
+/**
+ * Get organization ID from socket
+ */
+export function getOrganizationId(socket: Socket): string | undefined {
+  return socket.data.user?.organization_id;
+}
+
+/**
+ * Check if socket is authenticated
+ */
+export function isAuthenticated(socket: Socket): boolean {
+  return socket.data.user !== undefined;
 }
