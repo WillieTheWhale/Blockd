@@ -1,9 +1,11 @@
 /**
  * AI Analysis Validation Schemas
+ * Includes input sanitization to prevent XSS and injection attacks
  */
 
 import { z } from 'zod';
 import { uuidSchema } from './common.schema';
+import { sanitizeTransform, sanitizeUrl } from '../lib/sanitize';
 
 // Question difficulty enum
 export const questionDifficultySchema = z.enum(['easy', 'medium', 'hard', 'expert']);
@@ -25,7 +27,7 @@ export type AiModelName = z.infer<typeof aiModelNameSchema>;
 // Analyze question request schema
 export const analyzeQuestionRequestSchema = z.object({
   sessionId: uuidSchema,
-  questionText: z.string().min(1).max(5000),
+  questionText: z.string().min(1).max(5000).transform(sanitizeTransform),
   difficulty: questionDifficultySchema.optional(),
   expectedDuration: z.number().int().min(1).max(3600).optional(), // in seconds
   models: z.array(aiModelNameSchema).optional(),
@@ -36,10 +38,11 @@ export type AnalyzeQuestionRequest = z.infer<typeof analyzeQuestionRequestSchema
 // Analyze answer request schema
 export const analyzeAnswerRequestSchema = z.object({
   questionId: uuidSchema,
-  answerText: z.string().min(1).max(10000),
-  answerAudioUrl: z.string().url().optional(),
-  transcriptionText: z.string().max(10000).optional(),
-  responseTime: z.number().int().min(0).optional(), // in milliseconds
+  answerText: z.string().min(1).max(10000).transform(sanitizeTransform),
+  // URL length limit prevents DoS via excessively long URLs
+  answerAudioUrl: z.string().max(2048).url().optional().transform((val) => val ? sanitizeUrl(val) || undefined : val),
+  transcriptionText: z.string().max(10000).optional().transform((val) => val ? sanitizeTransform(val) : val),
+  responseTime: z.number().int().min(0).max(3600000).optional(), // in milliseconds, max 1 hour
 });
 
 export type AnalyzeAnswerRequest = z.infer<typeof analyzeAnswerRequestSchema>;

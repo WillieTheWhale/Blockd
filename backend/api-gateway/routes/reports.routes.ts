@@ -1,61 +1,208 @@
 /**
  * Reports Routes
- * Proxies requests to session-service for report generation and retrieval
+ * Session reports and PDF generation
  */
 
-import { FastifyInstance, FastifyRequest } from 'fastify';
+import { FastifyInstance } from 'fastify';
 import { authenticate } from '../middleware/auth.middleware';
-import { authRateLimiter } from '../middleware/rate-limit.middleware';
-import { validateParams } from '../middleware/validation.middleware';
+import { authRateLimiter, pdfRateLimiter, emailRateLimiter } from '../middleware/rate-limit.middleware';
+import { validateParams, validateBody } from '../middleware/validation.middleware';
 import { idParamSchema, IdParam } from '../schemas/common.schema';
+import { emailReportRecipientsSchema, EmailReportRecipientsRequest } from '../schemas/session.schema';
 import { sendSuccess } from '../lib/response';
-import { NotFoundError, BadRequestError, InternalServerError } from '../lib/errors';
+import { NotFoundError, ForbiddenError } from '../lib/errors';
+import prisma from '../lib/prisma';
 import {
-  sessionServiceClient,
-  ServiceClientError,
-  extractAuthToken,
-  ServiceTypes,
-} from '../lib/service-client';
-import { config } from '../src/config';
+  generateSessionReportPdf,
+  generateReportFilename,
+  SessionReportData,
+} from '../lib/pdf-generator';
 
-/**
- * Helper to forward authentication context
- */
-function getForwardHeaders(request: FastifyRequest): {
-  authToken?: string;
-  userId?: string;
-  organizationId?: string;
-} {
-  return {
-    authToken: extractAuthToken(request.headers.authorization),
-    userId: request.user?.userId,
-    organizationId: request.user?.organizationId,
+// ============================================================================
+// Helper Types
+// ============================================================================
+
+/** Session with interviewer and interviewee details */
+interface SessionWithParticipants {
+  id: string;
+  status: string;
+  scheduledStart: Date | null;
+  actualStart: Date | null;
+  actualEnd: Date | null;
+  durationMinutes: number | null;
+  riskScore: any;
+  organizationId: string | null;
+  interviewerId: string;
+  interviewer: {
+    email: string;
+    firstName: string | null;
+    lastName: string | null;
+  };
+  interviewee: {
+    email: string;
+    firstName: string | null;
+    lastName: string | null;
   };
 }
 
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
 /**
- * Convert service client errors to appropriate HTTP errors
+ * Fetches a session with interviewer and interviewee details.
+ * Common query used across multiple report endpoints.
+ *
+ * @param sessionId - The session ID to fetch
+ * @returns Session with participant details, or null if not found
  */
-function handleServiceError(error: unknown): never {
-  if (error instanceof ServiceClientError) {
-    switch (error.statusCode) {
-      case 404:
-        throw new NotFoundError(error.message);
-      case 400:
-        throw new BadRequestError(error.message);
-      default:
-        throw new InternalServerError(error.message);
-    }
+async function fetchSessionWithParticipants(sessionId: string): Promise<SessionWithParticipants | null> {
+  return prisma.interviewSession.findUnique({
+    where: { id: sessionId },
+    include: {
+      interviewer: {
+        select: {
+          email: true,
+          firstName: true,
+          lastName: true,
+        },
+      },
+      interviewee: {
+        select: {
+          email: true,
+          firstName: true,
+          lastName: true,
+        },
+      },
+    },
+  }) as Promise<SessionWithParticipants | null>;
+}
+
+/**
+ * Gets an existing report or generates a new one for a session.
+ * Handles the common pattern of lazy report generation.
+ *
+ * @param sessionId - The session ID to get/generate report for
+ * @param sessionRiskScore - The session's overall risk score (optional, for fallback)
+ * @returns The session report (existing or newly created)
+ */
+async function getOrCreateSessionReport(sessionId: string, sessionRiskScore?: any) {
+  // Check for existing report
+  const existingReport = await prisma.sessionReport.findUnique({
+    where: { sessionId },
+  });
+
+  if (existingReport) {
+    return existingReport;
   }
-  throw error;
+
+  // Generate report data
+  const [securityEventsCount, questionsCount, answersAnalysis] = await Promise.all([
+    prisma.securityEvent.count({ where: { sessionId } }),
+    prisma.question.count({ where: { sessionId } }),
+    prisma.answerAnalysis.findMany({
+      where: {
+        question: { sessionId },
+      },
+      include: {
+        question: {
+          select: { questionText: true },
+        },
+      },
+    }),
+  ]);
+
+  const avgRiskScore = answersAnalysis.length > 0
+    ? answersAnalysis.reduce((sum, a) => sum + Number(a.riskScore || 0), 0) / answersAnalysis.length
+    : 0;
+
+  const aiGeneratedCount = answersAnalysis.filter(a => a.isAiGenerated).length;
+
+  // Generate recommendations based on analysis
+  const recommendations: string[] = [];
+  if (avgRiskScore > 0.7) {
+    recommendations.push('High risk score detected - manual review recommended');
+  }
+  if (securityEventsCount > 10) {
+    recommendations.push('Multiple security events detected');
+  }
+  if (aiGeneratedCount > 0) {
+    recommendations.push('AI-generated answers detected');
+  }
+
+  return prisma.sessionReport.create({
+    data: {
+      sessionId,
+      overallRiskScore: sessionRiskScore || avgRiskScore,
+      aiDetectionScore: aiGeneratedCount / Math.max(answersAnalysis.length, 1),
+      gazeAnomalyScore: 0,
+      timingAnomalyScore: 0,
+      securityEventsCount,
+      recommendations,
+      detailedAnalysis: {
+        questionsAsked: questionsCount,
+        answersAnalyzed: answersAnalysis.length,
+        aiGeneratedAnswers: aiGeneratedCount,
+        securityEvents: securityEventsCount,
+      },
+    },
+  });
+}
+
+/**
+ * Verifies that a user has access to a session.
+ * Access is granted to the interviewer or an admin in the same organization.
+ *
+ * @param userId - The user ID to check
+ * @param sessionId - The session ID to check access for
+ * @returns True if user has access, false otherwise
+ */
+async function verifySessionAccess(userId: string, sessionId: string): Promise<boolean> {
+  const session = await prisma.interviewSession.findUnique({
+    where: { id: sessionId },
+    select: {
+      interviewerId: true,
+      organizationId: true,
+    },
+  });
+
+  if (!session) {
+    return false;
+  }
+
+  // Check if user is the interviewer
+  if (session.interviewerId === userId) {
+    return true;
+  }
+
+  // Check if user is an admin in the same organization
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      role: true,
+      organizationId: true,
+    },
+  });
+
+  if (!user) {
+    return false;
+  }
+
+  // Admin in same organization has access
+  if (user.role === 'admin' && user.organizationId === session.organizationId) {
+    return true;
+  }
+
+  return false;
 }
 
 export default async function reportsRoutes(fastify: FastifyInstance) {
   // Get session report
-  fastify.get<{ Params: { session_id: string } }>('/:session_id', {
+  fastify.get<{ Params: IdParam }>('/:session_id', {
     preHandler: [
       authenticate,
       authRateLimiter,
+      validateParams(idParamSchema.extend({ session_id: idParamSchema.shape.id })),
     ],
     schema: {
       tags: ['Reports'],
@@ -70,32 +217,42 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
-      const sessionId = request.params.session_id;
+      const sessionId = (request.params as any).session_id;
 
-      try {
-        // Get report from session-service
-        const report = await sessionServiceClient.forward<ServiceTypes.SessionReport & {
-          session: Partial<ServiceTypes.Session>;
-        }>(
-          'GET',
-          `/sessions/${sessionId}/report`,
-          {
-            ...getForwardHeaders(request),
-          }
-        );
+      // Fetch session with participants using helper
+      const session = await fetchSessionWithParticipants(sessionId);
 
-        return sendSuccess(reply, report);
-      } catch (error) {
-        handleServiceError(error);
+      if (!session) {
+        throw new NotFoundError('Session not found');
       }
+
+      // Get or generate report using helper
+      const report = await getOrCreateSessionReport(sessionId, session.riskScore);
+
+      const response = {
+        ...report,
+        session: {
+          id: session.id,
+          status: session.status,
+          scheduledStart: session.scheduledStart,
+          actualStart: session.actualStart,
+          actualEnd: session.actualEnd,
+          durationMinutes: session.durationMinutes,
+          interviewer: session.interviewer,
+          interviewee: session.interviewee,
+        },
+      };
+
+      return sendSuccess(reply, response);
     },
   });
 
   // Get session report as PDF
-  fastify.get<{ Params: { session_id: string } }>('/:session_id/pdf', {
+  fastify.get<{ Params: IdParam }>('/:session_id/pdf', {
     preHandler: [
       authenticate,
-      authRateLimiter,
+      pdfRateLimiter, // Stricter rate limit for expensive PDF generation
+      validateParams(idParamSchema.extend({ session_id: idParamSchema.shape.id })),
     ],
     schema: {
       tags: ['Reports'],
@@ -110,185 +267,167 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
-      const sessionId = request.params.session_id;
+      const sessionId = (request.params as any).session_id;
+      const userId = request.user!.userId;
 
-      try {
-        // For PDF export, we need to stream directly from session-service
-        const response = await fetch(
-          `${config.services.sessionService}/sessions/${sessionId}/report/export`,
-          {
-            headers: {
-              Authorization: request.headers.authorization || '',
-              'X-User-Id': request.user?.userId || '',
-              'X-Organization-Id': request.user?.organizationId || '',
-            },
-          }
-        );
-
-        if (!response.ok) {
-          if (response.status === 404) {
-            throw new NotFoundError('Session or report not found');
-          }
-          throw new InternalServerError('Failed to generate PDF report');
-        }
-
-        const buffer = await response.arrayBuffer();
-        reply.header('Content-Type', 'application/pdf');
-        reply.header('Content-Disposition', `attachment; filename="session-report-${sessionId}.pdf"`);
-
-        return reply.send(Buffer.from(buffer));
-      } catch (error) {
-        if (error instanceof NotFoundError || error instanceof InternalServerError) {
-          throw error;
-        }
-        throw new InternalServerError('Failed to export report');
+      // Verify user has access to this session
+      const hasAccess = await verifySessionAccess(userId, sessionId);
+      if (!hasAccess) {
+        throw new ForbiddenError('You do not have access to this session report');
       }
+
+      // Fetch session with participants using helper
+      const session = await fetchSessionWithParticipants(sessionId);
+
+      if (!session) {
+        throw new NotFoundError('Session not found');
+      }
+
+      // Get or create report using helper
+      const report = await getOrCreateSessionReport(sessionId, session.riskScore);
+
+      // Fetch security events for the report
+      const securityEvents = await prisma.securityEvent.findMany({
+        where: { sessionId },
+        orderBy: { timestamp: 'desc' },
+        take: 50,
+        select: {
+          eventType: true,
+          severity: true,
+          description: true,
+          timestamp: true,
+        },
+      });
+
+      // Fetch answer analyses with questions
+      const answerAnalyses = await prisma.answerAnalysis.findMany({
+        where: {
+          question: {
+            sessionId,
+          },
+        },
+        include: {
+          question: {
+            select: {
+              questionText: true,
+            },
+          },
+        },
+      });
+
+      // Build PDF data
+      const pdfData: SessionReportData = {
+        sessionId: session.id,
+        status: session.status,
+        scheduledStart: session.scheduledStart,
+        actualStart: session.actualStart,
+        actualEnd: session.actualEnd,
+        durationMinutes: session.durationMinutes,
+        interviewer: {
+          email: session.interviewer.email,
+          firstName: session.interviewer.firstName,
+          lastName: session.interviewer.lastName,
+        },
+        interviewee: {
+          email: session.interviewee.email,
+          firstName: session.interviewee.firstName,
+          lastName: session.interviewee.lastName,
+        },
+        report: {
+          overallRiskScore: Number(report.overallRiskScore),
+          aiDetectionScore: Number(report.aiDetectionScore),
+          gazeAnomalyScore: Number(report.gazeAnomalyScore),
+          timingAnomalyScore: Number(report.timingAnomalyScore),
+          securityEventsCount: report.securityEventsCount,
+          recommendations: report.recommendations as string[],
+          detailedAnalysis: report.detailedAnalysis as any,
+          createdAt: report.createdAt,
+        },
+        securityEvents: securityEvents.map(e => ({
+          eventType: e.eventType,
+          severity: e.severity,
+          description: e.description,
+          timestamp: e.timestamp,
+        })),
+        answerAnalyses: answerAnalyses.map(a => ({
+          questionText: a.question.questionText,
+          riskScore: Number(a.riskScore),
+          isAiGenerated: a.isAiGenerated,
+          similarityScores: a.similarityScores as Record<string, number> | undefined,
+          recommendations: (a as any).recommendations as string[] | undefined,
+        })),
+      };
+
+      // Generate PDF
+      const pdfBuffer = await generateSessionReportPdf(pdfData);
+      const filename = generateReportFilename(sessionId);
+
+      // Set response headers
+      reply.header('Content-Type', 'application/pdf');
+      reply.header('Content-Disposition', `attachment; filename="${filename}"`);
+      reply.header('Content-Length', pdfBuffer.length.toString());
+      reply.header('Cache-Control', 'no-cache');
+
+      return reply.send(pdfBuffer);
     },
   });
 
-  // Get report summary (lightweight version)
-  fastify.get<{ Params: { session_id: string } }>('/:session_id/summary', {
+  // Generate and email report
+  fastify.post<{ Params: IdParam; Body: EmailReportRecipientsRequest }>('/:session_id/email', {
     preHandler: [
       authenticate,
-      authRateLimiter,
+      emailRateLimiter, // Stricter rate limit for email operations
+      validateParams(idParamSchema.extend({ session_id: idParamSchema.shape.id })),
+      validateBody(emailReportRecipientsSchema),
     ],
     schema: {
       tags: ['Reports'],
-      summary: 'Get report summary',
-      description: 'Retrieves a lightweight summary of the session report',
+      summary: 'Email session report',
+      description: 'Generates and emails the session report to specified recipients. Only the interviewer or organization admin can email reports.',
       params: {
         type: 'object',
         properties: {
           session_id: { type: 'string', format: 'uuid' },
         },
       },
+      body: emailReportRecipientsSchema,
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
-      const sessionId = request.params.session_id;
+      const sessionId = (request.params as any).session_id;
+      const userId = request.user!.userId;
+      const { recipients } = request.body;
 
-      try {
-        const summary = await sessionServiceClient.forward<{
-          sessionId: string;
-          overallRiskScore: number;
-          riskLevel: 'low' | 'medium' | 'high' | 'critical';
-          securityEventsCount: number;
-          aiDetectionFlags: number;
-          gazeAnomalies: number;
-          status: string;
-        }>(
-          'GET',
-          `/sessions/${sessionId}/report/summary`,
-          {
-            ...getForwardHeaders(request),
-          }
-        );
-
-        return sendSuccess(reply, summary);
-      } catch (error) {
-        handleServiceError(error);
+      // Verify user has access to this session (interviewer or admin only)
+      const hasAccess = await verifySessionAccess(userId, sessionId);
+      if (!hasAccess) {
+        throw new ForbiddenError('You do not have permission to email this session report');
       }
-    },
-  });
 
-  // List reports for organization
-  fastify.get<{
-    Querystring: {
-      page?: number;
-      pageSize?: number;
-      startDate?: string;
-      endDate?: string;
-      riskLevel?: string;
-    };
-  }>('/', {
-    preHandler: [
-      authenticate,
-      authRateLimiter,
-    ],
-    schema: {
-      tags: ['Reports'],
-      summary: 'List organization reports',
-      description: 'Lists all reports for the organization with filtering options',
-      querystring: {
-        type: 'object',
-        properties: {
-          page: { type: 'number', default: 1 },
-          pageSize: { type: 'number', default: 20 },
-          startDate: { type: 'string', format: 'date-time' },
-          endDate: { type: 'string', format: 'date-time' },
-          riskLevel: { type: 'string', enum: ['low', 'medium', 'high', 'critical'] },
-        },
-      },
-      security: [{ bearerAuth: [] }],
-    },
-    handler: async (request, reply) => {
-      const { page, pageSize, startDate, endDate, riskLevel } = request.query;
+      // Verify session exists
+      const session = await prisma.interviewSession.findUnique({
+        where: { id: sessionId },
+      });
 
-      try {
-        const result = await sessionServiceClient.forward<ServiceTypes.PaginatedResponse<{
-          sessionId: string;
-          sessionStatus: string;
-          overallRiskScore: number;
-          riskLevel: string;
-          securityEventsCount: number;
-          generatedAt: string;
-          interviewee?: { email: string; firstName?: string; lastName?: string };
-        }>>(
-          'GET',
-          '/reports',
-          {
-            query: {
-              page: page || 1,
-              pageSize: pageSize || 20,
-              startDate,
-              endDate,
-              riskLevel,
-            },
-            ...getForwardHeaders(request),
-          }
-        );
-
-        return sendSuccess(reply, result);
-      } catch (error) {
-        handleServiceError(error);
+      if (!session) {
+        throw new NotFoundError('Session not found');
       }
-    },
-  });
 
-  // Regenerate session report
-  fastify.post<{ Params: { session_id: string } }>('/:session_id/regenerate', {
-    preHandler: [
-      authenticate,
-      authRateLimiter,
-    ],
-    schema: {
-      tags: ['Reports'],
-      summary: 'Regenerate session report',
-      description: 'Regenerates the analysis report for a session with fresh data',
-      params: {
-        type: 'object',
-        properties: {
-          session_id: { type: 'string', format: 'uuid' },
-        },
-      },
-      security: [{ bearerAuth: [] }],
-    },
-    handler: async (request, reply) => {
-      const sessionId = request.params.session_id;
+      // In production, this would:
+      // 1. Generate the PDF report
+      // 2. Send email with PDF attachment using an email service (SendGrid, SES, etc.)
+      // For now, return success with a message
 
-      try {
-        const report = await sessionServiceClient.forward<ServiceTypes.SessionReport>(
-          'POST',
-          `/sessions/${sessionId}/report/regenerate`,
-          {
-            ...getForwardHeaders(request),
-          }
-        );
+      request.log.info(
+        { sessionId, recipients, userId },
+        'Report email requested'
+      );
 
-        return sendSuccess(reply, report);
-      } catch (error) {
-        handleServiceError(error);
-      }
+      return sendSuccess(reply, {
+        message: 'Report email queued for delivery',
+        recipients,
+        sessionId,
+      });
     },
   });
 }

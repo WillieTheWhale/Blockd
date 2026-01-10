@@ -12,7 +12,8 @@ import websocket from '@fastify/websocket';
 import { config, validateConfig } from './config';
 import { corsOptions } from '../middleware/cors.middleware';
 import { errorHandler, notFoundHandler } from '../middleware/error-handler.middleware';
-import { loggerConfig, genReqId } from '../middleware/logger.middleware';
+import { loggerConfig, genReqId, requestTimingStart, requestTimingEnd } from '../middleware/logger.middleware';
+import { csrfProtectionMiddleware } from '../middleware/csrf.middleware';
 
 // Import routes
 import healthRoutes from '../routes/health.routes';
@@ -34,7 +35,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
   // Validate configuration
   validateConfig();
 
-  // Create Fastify instance
+  // Create Fastify instance with security defaults
   const app = Fastify({
     logger: loggerConfig,
     requestIdLogLabel: 'requestId',
@@ -42,6 +43,12 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
     genReqId,
     disableRequestLogging: false,
     trustProxy: true,
+    // Body size limits to prevent DoS attacks
+    bodyLimit: 1048576, // 1MB default for most endpoints
+    maxParamLength: 200, // Limit URL parameter length
+    // Connection limits
+    connectionTimeout: 30000, // 30 seconds
+    keepAliveTimeout: 72000, // 72 seconds (longer than ALB default)
     ...options,
   });
 
@@ -71,6 +78,13 @@ async function registerPlugins(app: FastifyInstance): Promise<void> {
       : false,
     global: true,
   });
+
+  // Register CSRF protection for state-changing requests
+  app.addHook('onRequest', csrfProtectionMiddleware);
+
+  // Register request timing hooks for performance monitoring
+  app.addHook('onRequest', requestTimingStart);
+  app.addHook('onResponse', requestTimingEnd);
 
   // Register WebSocket support
   await app.register(websocket, {
@@ -162,7 +176,7 @@ async function registerRoutes(app: FastifyInstance, prefix = '/api/v1'): Promise
   await app.register(reportsRoutes, { prefix: `${prefix}/reports` });
 
   // Root endpoint
-  app.get('/', async (request, reply) => {
+  app.get('/', async (_request, _reply) => {
     return {
       name: 'Blockd API Gateway',
       version: '1.0.0',

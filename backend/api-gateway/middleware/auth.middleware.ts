@@ -18,7 +18,7 @@ declare module 'fastify' {
  */
 export async function authenticate(
   request: FastifyRequest,
-  reply: FastifyReply
+  _reply: FastifyReply
 ): Promise<void> {
   try {
     // Get token from Authorization header
@@ -56,7 +56,7 @@ export async function authenticate(
  */
 export async function optionalAuthenticate(
   request: FastifyRequest,
-  reply: FastifyReply
+  _reply: FastifyReply
 ): Promise<void> {
   try {
     const authHeader = request.headers.authorization;
@@ -76,9 +76,17 @@ export async function optionalAuthenticate(
 
 /**
  * Role-based authorization middleware factory
+ * Accepts either an array of roles or rest parameters
+ * @example requireRole('admin', 'interviewer')
+ * @example requireRole(['admin', 'interviewer'])
  */
-export function requireRole(...allowedRoles: string[]) {
-  return async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
+export function requireRole(rolesOrFirstRole: string | string[], ...restRoles: string[]) {
+  // Support both requireRole(['admin', 'user']) and requireRole('admin', 'user')
+  const allowedRoles = Array.isArray(rolesOrFirstRole)
+    ? rolesOrFirstRole
+    : [rolesOrFirstRole, ...restRoles];
+
+  return async (request: FastifyRequest, _reply: FastifyReply): Promise<void> => {
     if (!request.user) {
       throw new UnauthorizedError('Authentication required');
     }
@@ -97,7 +105,7 @@ export function requireRole(...allowedRoles: string[]) {
  * Check if user owns the resource
  */
 export function requireOwnership(userIdParam = 'userId') {
-  return async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
+  return async (request: FastifyRequest, _reply: FastifyReply): Promise<void> => {
     if (!request.user) {
       throw new UnauthorizedError('Authentication required');
     }
@@ -125,7 +133,7 @@ export function requireOwnership(userIdParam = 'userId') {
  * Check if user belongs to the organization
  */
 export function requireOrganization(orgIdParam = 'organizationId') {
-  return async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
+  return async (request: FastifyRequest, _reply: FastifyReply): Promise<void> => {
     if (!request.user) {
       throw new UnauthorizedError('Authentication required');
     }

@@ -74,9 +74,21 @@ export class InternalServerError extends AppError {
   }
 }
 
+export class BadGatewayError extends AppError {
+  constructor(message = 'Bad gateway', details?: any) {
+    super(502, message, 'BAD_GATEWAY', details);
+  }
+}
+
 export class ServiceUnavailableError extends AppError {
   constructor(message = 'Service unavailable', details?: any) {
     super(503, message, 'SERVICE_UNAVAILABLE', details);
+  }
+}
+
+export class GatewayTimeoutError extends AppError {
+  constructor(message = 'Gateway timeout', details?: any) {
+    super(504, message, 'GATEWAY_TIMEOUT', details);
   }
 }
 
