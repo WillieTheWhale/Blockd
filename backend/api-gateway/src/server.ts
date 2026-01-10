@@ -52,12 +52,12 @@ async function start(): Promise<void> {
 
     // Handle uncaught errors
     process.on('uncaughtException', (error) => {
-      app.log.error('Uncaught Exception:', error);
+      app.log.error({ err: error }, 'Uncaught Exception');
       gracefulShutdown(app, 'uncaughtException');
     });
 
-    process.on('unhandledRejection', (reason, promise) => {
-      app.log.error('Unhandled Rejection at:', promise, 'reason:', reason);
+    process.on('unhandledRejection', (reason) => {
+      app.log.error({ err: reason }, 'Unhandled Rejection');
       gracefulShutdown(app, 'unhandledRejection');
     });
 

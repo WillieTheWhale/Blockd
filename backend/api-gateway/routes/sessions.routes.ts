@@ -77,7 +77,6 @@ export default async function sessionsRoutes(fastify: FastifyInstance) {
       tags: ['Sessions'],
       summary: 'Create a new interview session',
       description: 'Creates a new interview session',
-      body: createSessionRequestSchema,
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
@@ -124,7 +123,6 @@ export default async function sessionsRoutes(fastify: FastifyInstance) {
       tags: ['Sessions'],
       summary: 'Get session by ID',
       description: 'Retrieves a specific interview session',
-      params: idParamSchema,
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
@@ -158,7 +156,6 @@ export default async function sessionsRoutes(fastify: FastifyInstance) {
       tags: ['Sessions'],
       summary: 'List sessions',
       description: 'Lists interview sessions with pagination',
-      querystring: listSessionsQuerySchema,
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
@@ -202,8 +199,6 @@ export default async function sessionsRoutes(fastify: FastifyInstance) {
       tags: ['Sessions'],
       summary: 'Start a session',
       description: 'Starts an interview session',
-      params: idParamSchema,
-      body: startSessionRequestSchema,
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
@@ -239,8 +234,6 @@ export default async function sessionsRoutes(fastify: FastifyInstance) {
       tags: ['Sessions'],
       summary: 'End a session',
       description: 'Ends an interview session',
-      params: idParamSchema,
-      body: endSessionRequestSchema,
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
@@ -311,8 +304,6 @@ export default async function sessionsRoutes(fastify: FastifyInstance) {
       tags: ['Sessions'],
       summary: 'Get session events',
       description: 'Retrieves security events for a session',
-      params: idParamSchema,
-      querystring: sessionEventsQuerySchema,
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {

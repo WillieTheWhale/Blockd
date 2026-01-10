@@ -221,7 +221,8 @@ function mapUserToProfile(user: User): UserProfile {
 function mapUserWithPassword(user: User): UserWithPassword {
   return {
     ...mapUserToProfile(user),
-    password_hash: user.passwordHash
+    password_hash: user.passwordHash,
+    mfa_secret: user.mfaSecret
   };
 }
 

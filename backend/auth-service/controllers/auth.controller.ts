@@ -78,7 +78,7 @@ export async function register(
     // Parse full name
     const nameParts = data.full_name.trim().split(' ');
     const firstName = nameParts[0];
-    const lastName = nameParts.slice(1).join(' ') || null;
+    const lastName = nameParts.slice(1).join(' ') || undefined;
 
     // Create user
     const user = await createUser({

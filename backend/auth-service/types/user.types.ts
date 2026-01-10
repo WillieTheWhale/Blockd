@@ -40,6 +40,7 @@ export interface UpdateUserData {
 
 export interface UserWithPassword extends UserProfile {
   password_hash: string;
+  mfa_secret?: string | null;
 }
 
 export interface UserSession {
