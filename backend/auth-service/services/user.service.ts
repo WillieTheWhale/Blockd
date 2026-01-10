@@ -4,11 +4,10 @@
  * Blockd Auth Service
  */
 
-import { PrismaClient, User, UserRole as PrismaUserRole } from '@prisma/client';
+import { User, UserRole as PrismaUserRole } from '@prisma/client';
 import { CreateUserData, UpdateUserData, UserProfile, UserWithPassword } from '../types/user.types';
 import { NotFoundError, EmailAlreadyExistsError } from '../lib/errors';
-
-const prisma = new PrismaClient();
+import { prisma, disconnectPrisma } from '../lib/database';
 
 /**
  * Create a new user
@@ -224,5 +223,5 @@ function mapUserWithPassword(user: User): UserWithPassword {
  * Close Prisma connection
  */
 export async function disconnectDatabase(): Promise<void> {
-  await prisma.$disconnect();
+  await disconnectPrisma();
 }

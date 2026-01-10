@@ -42,3 +42,25 @@ variable "node_max_size" {
   description = "Maximum number of nodes"
   type        = number
 }
+
+variable "cluster_endpoint_public_access_cidrs" {
+  description = "List of CIDR blocks allowed to access the EKS API. Use VPN/office IPs for production."
+  type        = list(string)
+  default     = []
+}
+
+variable "enable_irsa" {
+  description = "Enable IAM Roles for Service Accounts"
+  type        = bool
+  default     = true
+}
+
+variable "service_account_roles" {
+  description = "Map of service account names to their IAM role configurations"
+  type = map(object({
+    namespace       = string
+    policy_arns     = list(string)
+    inline_policies = optional(map(string), {})
+  }))
+  default = {}
+}

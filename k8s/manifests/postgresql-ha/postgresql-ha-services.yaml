@@ -1,0 +1,116 @@
+# PostgreSQL HA Services
+# Provides separate endpoints for read-write (primary) and read-only (replicas) traffic
+#
+# Services:
+# - postgresql-ha-primary: Points to current primary (read-write)
+# - postgresql-ha-replica: Load balances across read replicas (read-only)
+# - postgresql-ha: Headless service for StatefulSet DNS
+#
+---
+# Headless service for StatefulSet DNS resolution
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgresql-ha
+  namespace: blockd
+  labels:
+    app: postgresql-ha
+spec:
+  type: ClusterIP
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app: postgresql-ha
+  ports:
+    - name: postgresql
+      port: 5432
+      targetPort: postgresql
+    - name: patroni
+      port: 8008
+      targetPort: patroni
+---
+# Primary service - points to current leader (read-write)
+# Patroni manages the endpoint to always point to the primary
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgresql-ha-primary
+  namespace: blockd
+  labels:
+    app: postgresql-ha
+    role: primary
+  annotations:
+    # This service is managed by Patroni - it updates the endpoint
+    # to point to the current primary after failover
+    patroni.kubernetes.io/primary: "true"
+spec:
+  type: ClusterIP
+  selector:
+    app: postgresql-ha
+    role: master  # Patroni labels the primary pod with this
+  ports:
+    - name: postgresql
+      port: 5432
+      targetPort: postgresql
+      protocol: TCP
+---
+# Replica service - load balances across read replicas (read-only)
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgresql-ha-replica
+  namespace: blockd
+  labels:
+    app: postgresql-ha
+    role: replica
+spec:
+  type: ClusterIP
+  selector:
+    app: postgresql-ha
+    role: replica  # Patroni labels replica pods with this
+  ports:
+    - name: postgresql
+      port: 5432
+      targetPort: postgresql
+      protocol: TCP
+---
+# Alternative: Service that includes ALL pods (primary + replicas) for read scaling
+# Use this when read queries don't require strong consistency
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgresql-ha-read
+  namespace: blockd
+  labels:
+    app: postgresql-ha
+    role: read
+  annotations:
+    description: "Load balances reads across all PostgreSQL instances (primary + replicas)"
+spec:
+  type: ClusterIP
+  selector:
+    app: postgresql-ha
+  ports:
+    - name: postgresql
+      port: 5432
+      targetPort: postgresql
+      protocol: TCP
+---
+# Patroni REST API service for health checks and cluster management
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgresql-ha-patroni
+  namespace: blockd
+  labels:
+    app: postgresql-ha
+    component: patroni
+spec:
+  type: ClusterIP
+  selector:
+    app: postgresql-ha
+  ports:
+    - name: patroni
+      port: 8008
+      targetPort: patroni
+      protocol: TCP

@@ -1,0 +1,467 @@
+# PostgreSQL Backup with Point-in-Time Recovery (PITR)
+# Provides comprehensive backup strategy for disaster recovery
+#
+# Components:
+# 1. Base backup CronJob (daily full backup)
+# 2. WAL archiving (continuous, configured in PostgreSQL)
+# 3. Backup verification job
+# 4. Cleanup job for old backups
+#
+# Recovery workflow:
+# 1. Restore latest base backup
+# 2. Replay WAL files up to desired point in time
+# 3. Start PostgreSQL in recovery mode
+#
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgresql-backup-scripts
+  namespace: blockd
+  labels:
+    app: postgresql-backup
+data:
+  # Full base backup script
+  base-backup.sh: |
+    #!/bin/bash
+    set -eo pipefail
+
+    BACKUP_DATE=$(date +%Y%m%d_%H%M%S)
+    BACKUP_DIR="/tmp/backup-${BACKUP_DATE}"
+    S3_BUCKET="${S3_BACKUP_BUCKET:-blockd-backups-production}"
+    S3_PREFIX="base-backups"
+    RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
+
+    echo "=== PostgreSQL Base Backup Started at $(date) ==="
+    echo "Target: s3://${S3_BUCKET}/${S3_PREFIX}/"
+
+    # Create backup directory
+    mkdir -p "${BACKUP_DIR}"
+
+    # Get primary host from Patroni
+    PRIMARY_HOST=$(curl -s http://postgresql-ha-patroni:8008/cluster | jq -r '.members[] | select(.role == "leader") | .host')
+    if [ -z "$PRIMARY_HOST" ]; then
+      echo "ERROR: Could not determine primary host"
+      exit 1
+    fi
+    echo "Primary host: ${PRIMARY_HOST}"
+
+    # Create base backup using pg_basebackup
+    echo "Creating base backup..."
+    PGPASSWORD="${POSTGRES_PASSWORD}" pg_basebackup \
+      -h "${PRIMARY_HOST}" \
+      -U postgres \
+      -D "${BACKUP_DIR}" \
+      -Ft \
+      -z \
+      -Xs \
+      -P \
+      --checkpoint=fast \
+      --label="blockd-backup-${BACKUP_DATE}"
+
+    BACKUP_SIZE=$(du -sh "${BACKUP_DIR}" | cut -f1)
+    echo "Backup size: ${BACKUP_SIZE}"
+
+    # Create backup manifest
+    cat > "${BACKUP_DIR}/backup_manifest.json" << EOF
+    {
+      "backup_date": "${BACKUP_DATE}",
+      "backup_type": "base",
+      "primary_host": "${PRIMARY_HOST}",
+      "pg_version": "$(pg_config --version)",
+      "backup_size": "${BACKUP_SIZE}",
+      "created_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    }
+    EOF
+
+    # Upload to S3
+    echo "Uploading to S3..."
+    aws s3 cp "${BACKUP_DIR}" "s3://${S3_BUCKET}/${S3_PREFIX}/${BACKUP_DATE}/" \
+      --recursive \
+      --storage-class STANDARD_IA
+
+    # Verify upload
+    echo "Verifying upload..."
+    UPLOADED_FILES=$(aws s3 ls "s3://${S3_BUCKET}/${S3_PREFIX}/${BACKUP_DATE}/" | wc -l)
+    LOCAL_FILES=$(ls -1 "${BACKUP_DIR}" | wc -l)
+
+    if [ "$UPLOADED_FILES" -ne "$LOCAL_FILES" ]; then
+      echo "ERROR: Upload verification failed"
+      exit 1
+    fi
+
+    # Create latest symlink/pointer
+    echo "${BACKUP_DATE}" | aws s3 cp - "s3://${S3_BUCKET}/${S3_PREFIX}/LATEST"
+
+    # Cleanup old backups
+    echo "Cleaning up backups older than ${RETENTION_DAYS} days..."
+    CUTOFF_DATE=$(date -d "${RETENTION_DAYS} days ago" +%Y%m%d)
+
+    aws s3 ls "s3://${S3_BUCKET}/${S3_PREFIX}/" | \
+      grep "PRE" | \
+      awk '{print $2}' | \
+      tr -d '/' | \
+      while read -r backup_name; do
+        backup_date_part=$(echo "$backup_name" | cut -d'_' -f1)
+        if [ "$backup_date_part" -lt "$CUTOFF_DATE" ]; then
+          echo "Deleting old backup: ${backup_name}"
+          aws s3 rm "s3://${S3_BUCKET}/${S3_PREFIX}/${backup_name}/" --recursive
+        fi
+      done
+
+    # Cleanup local
+    rm -rf "${BACKUP_DIR}"
+
+    echo "=== Backup Completed Successfully at $(date) ==="
+    echo "Backup location: s3://${S3_BUCKET}/${S3_PREFIX}/${BACKUP_DATE}/"
+
+  # WAL archive cleanup script
+  cleanup-wal.sh: |
+    #!/bin/bash
+    set -eo pipefail
+
+    S3_BUCKET="${S3_BACKUP_BUCKET:-blockd-backups-production}"
+    S3_PREFIX="wal-archive"
+    RETENTION_DAYS="${WAL_RETENTION_DAYS:-7}"
+
+    echo "=== WAL Archive Cleanup Started at $(date) ==="
+
+    # Get the oldest base backup we need to support PITR for
+    OLDEST_BACKUP=$(aws s3 ls "s3://${S3_BUCKET}/base-backups/" | \
+      grep "PRE" | \
+      awk '{print $2}' | \
+      tr -d '/' | \
+      sort | \
+      head -n1)
+
+    if [ -z "$OLDEST_BACKUP" ]; then
+      echo "No base backups found, keeping all WAL files"
+      exit 0
+    fi
+
+    echo "Oldest backup to support: ${OLDEST_BACKUP}"
+    CUTOFF_DATE=$(date -d "${RETENTION_DAYS} days ago" +%Y%m%d)
+
+    # List and delete old WAL files
+    aws s3 ls "s3://${S3_BUCKET}/${S3_PREFIX}/" --recursive | \
+      awk '{print $4}' | \
+      while read -r wal_file; do
+        # Extract date from WAL filename or path
+        file_date=$(echo "$wal_file" | grep -oP '\d{8}' | head -1 || echo "")
+        if [ -n "$file_date" ] && [ "$file_date" -lt "$CUTOFF_DATE" ]; then
+          echo "Deleting old WAL: ${wal_file}"
+          aws s3 rm "s3://${S3_BUCKET}/${wal_file}"
+        fi
+      done
+
+    echo "=== WAL Cleanup Completed at $(date) ==="
+
+  # Backup verification script
+  verify-backup.sh: |
+    #!/bin/bash
+    set -eo pipefail
+
+    S3_BUCKET="${S3_BACKUP_BUCKET:-blockd-backups-production}"
+    S3_PREFIX="base-backups"
+
+    echo "=== Backup Verification Started at $(date) ==="
+
+    # Get latest backup
+    LATEST=$(aws s3 cp "s3://${S3_BUCKET}/${S3_PREFIX}/LATEST" -)
+    echo "Latest backup: ${LATEST}"
+
+    # Verify files exist
+    echo "Checking backup files..."
+    BACKUP_FILES=$(aws s3 ls "s3://${S3_BUCKET}/${S3_PREFIX}/${LATEST}/" | wc -l)
+
+    if [ "$BACKUP_FILES" -lt 2 ]; then
+      echo "ERROR: Backup appears incomplete (found ${BACKUP_FILES} files)"
+      exit 1
+    fi
+
+    # Download and verify manifest
+    echo "Verifying manifest..."
+    aws s3 cp "s3://${S3_BUCKET}/${S3_PREFIX}/${LATEST}/backup_manifest.json" /tmp/manifest.json
+
+    BACKUP_DATE=$(jq -r '.backup_date' /tmp/manifest.json)
+    BACKUP_SIZE=$(jq -r '.backup_size' /tmp/manifest.json)
+
+    echo "Backup date: ${BACKUP_DATE}"
+    echo "Backup size: ${BACKUP_SIZE}"
+
+    # Verify base.tar.gz integrity (download and check gzip)
+    echo "Verifying backup integrity..."
+    aws s3 cp "s3://${S3_BUCKET}/${S3_PREFIX}/${LATEST}/base.tar.gz" - | gunzip -t
+
+    echo "=== Backup Verification Passed at $(date) ==="
+
+  # PITR restore script (for documentation/manual use)
+  pitr-restore.sh: |
+    #!/bin/bash
+    # Point-in-Time Recovery Script
+    # Usage: ./pitr-restore.sh <backup_date> <recovery_target_time>
+    #
+    # Example: ./pitr-restore.sh 20240115_020000 "2024-01-15 10:30:00"
+    #
+
+    set -eo pipefail
+
+    BACKUP_DATE=${1:-$(aws s3 cp "s3://${S3_BUCKET}/base-backups/LATEST" -)}
+    RECOVERY_TARGET=${2:-""}  # Empty = recover to latest
+
+    S3_BUCKET="${S3_BACKUP_BUCKET:-blockd-backups-production}"
+    RESTORE_DIR="/var/lib/postgresql/data/restore"
+    PGDATA="/var/lib/postgresql/data/pgdata"
+
+    echo "=== PITR Restore Started ==="
+    echo "Base backup: ${BACKUP_DATE}"
+    echo "Recovery target: ${RECOVERY_TARGET:-'latest'}"
+
+    # Stop PostgreSQL if running
+    pg_ctl stop -D "$PGDATA" -m fast || true
+
+    # Create restore directory
+    mkdir -p "${RESTORE_DIR}"
+
+    # Download base backup
+    echo "Downloading base backup..."
+    aws s3 cp "s3://${S3_BUCKET}/base-backups/${BACKUP_DATE}/base.tar.gz" - | \
+      tar -xzf - -C "${RESTORE_DIR}"
+
+    # Create recovery configuration
+    cat > "${RESTORE_DIR}/postgresql.auto.conf" << EOF
+    # PITR Recovery Configuration
+    restore_command = '/scripts/restore_wal.sh %f %p'
+    recovery_target_action = 'promote'
+    EOF
+
+    if [ -n "$RECOVERY_TARGET" ]; then
+      echo "recovery_target_time = '${RECOVERY_TARGET}'" >> "${RESTORE_DIR}/postgresql.auto.conf"
+    fi
+
+    # Create recovery signal file
+    touch "${RESTORE_DIR}/recovery.signal"
+
+    # Move old data directory and use restore
+    if [ -d "$PGDATA" ]; then
+      mv "$PGDATA" "${PGDATA}.old.$(date +%Y%m%d_%H%M%S)"
+    fi
+    mv "${RESTORE_DIR}" "$PGDATA"
+
+    # Start PostgreSQL in recovery mode
+    pg_ctl start -D "$PGDATA"
+
+    echo "=== PITR Restore Complete ==="
+    echo "PostgreSQL is recovering. Check logs for progress."
+---
+# Daily base backup CronJob
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgresql-base-backup
+  namespace: blockd
+  labels:
+    app: postgresql-backup
+    backup-type: base
+spec:
+  schedule: "0 2 * * *"  # Daily at 2 AM UTC
+  timeZone: "UTC"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 7200  # 2 hours max
+      template:
+        metadata:
+          labels:
+            app: postgresql-backup
+            backup-type: base
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: postgresql-backup-sa
+
+          containers:
+            - name: backup
+              image: postgres:17-alpine
+              command: ["/bin/bash", "/scripts/base-backup.sh"]
+              env:
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgresql-ha-secrets
+                      key: postgres-password
+                - name: S3_BACKUP_BUCKET
+                  value: blockd-backups-production
+                - name: BACKUP_RETENTION_DAYS
+                  value: "30"
+                - name: AWS_DEFAULT_REGION
+                  value: us-east-1
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: blockd-secrets
+                      key: aws-access-key-id
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: blockd-secrets
+                      key: aws-secret-access-key
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+              resources:
+                requests:
+                  memory: "512Mi"
+                  cpu: "250m"
+                limits:
+                  memory: "1Gi"
+                  cpu: "1000m"
+
+          volumes:
+            - name: scripts
+              configMap:
+                name: postgresql-backup-scripts
+                defaultMode: 0755
+---
+# Hourly backup verification CronJob
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgresql-backup-verify
+  namespace: blockd
+  labels:
+    app: postgresql-backup
+    backup-type: verify
+spec:
+  schedule: "30 * * * *"  # Every hour at :30
+  timeZone: "UTC"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 1800  # 30 minutes max
+      template:
+        metadata:
+          labels:
+            app: postgresql-backup
+            backup-type: verify
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: postgresql-backup-sa
+
+          containers:
+            - name: verify
+              image: postgres:17-alpine
+              command: ["/bin/bash", "/scripts/verify-backup.sh"]
+              env:
+                - name: S3_BACKUP_BUCKET
+                  value: blockd-backups-production
+                - name: AWS_DEFAULT_REGION
+                  value: us-east-1
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: blockd-secrets
+                      key: aws-access-key-id
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: blockd-secrets
+                      key: aws-secret-access-key
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+              resources:
+                requests:
+                  memory: "256Mi"
+                  cpu: "100m"
+                limits:
+                  memory: "512Mi"
+                  cpu: "500m"
+
+          volumes:
+            - name: scripts
+              configMap:
+                name: postgresql-backup-scripts
+                defaultMode: 0755
+---
+# Weekly WAL cleanup CronJob
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgresql-wal-cleanup
+  namespace: blockd
+  labels:
+    app: postgresql-backup
+    backup-type: cleanup
+spec:
+  schedule: "0 4 * * 0"  # Weekly on Sunday at 4 AM UTC
+  timeZone: "UTC"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 3600  # 1 hour max
+      template:
+        metadata:
+          labels:
+            app: postgresql-backup
+            backup-type: cleanup
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: postgresql-backup-sa
+
+          containers:
+            - name: cleanup
+              image: amazon/aws-cli:2.15.0
+              command: ["/bin/bash", "/scripts/cleanup-wal.sh"]
+              env:
+                - name: S3_BACKUP_BUCKET
+                  value: blockd-backups-production
+                - name: WAL_RETENTION_DAYS
+                  value: "7"
+                - name: AWS_DEFAULT_REGION
+                  value: us-east-1
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: blockd-secrets
+                      key: aws-access-key-id
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: blockd-secrets
+                      key: aws-secret-access-key
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+              resources:
+                requests:
+                  memory: "128Mi"
+                  cpu: "50m"
+                limits:
+                  memory: "256Mi"
+                  cpu: "250m"
+
+          volumes:
+            - name: scripts
+              configMap:
+                name: postgresql-backup-scripts
+                defaultMode: 0755
+---
+# ServiceAccount for backup jobs
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: postgresql-backup-sa
+  namespace: blockd
+  labels:
+    app: postgresql-backup
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/blockd-backup-role

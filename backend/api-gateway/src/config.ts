@@ -71,6 +71,9 @@ export interface Config {
     sessionService: string;
     aiDetectionService: string;
     eyeTrackingService: string;
+    responseTimingService: string;
+    videoService: string;
+    websocketService: string;
   };
 }
 
@@ -182,6 +185,9 @@ export const config: Config = {
     sessionService: getEnv('SESSION_SERVICE_URL', 'http://localhost:3002'),
     aiDetectionService: getEnv('AI_DETECTION_SERVICE_URL', 'http://localhost:3003'),
     eyeTrackingService: getEnv('EYE_TRACKING_SERVICE_URL', 'http://localhost:3004'),
+    responseTimingService: getEnv('RESPONSE_TIMING_SERVICE_URL', 'http://localhost:3005'),
+    videoService: getEnv('VIDEO_SERVICE_URL', 'http://localhost:3006'),
+    websocketService: getEnv('WEBSOCKET_SERVICE_URL', 'http://localhost:3007'),
   },
 };
 

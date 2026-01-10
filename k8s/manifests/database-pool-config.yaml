@@ -1,0 +1,261 @@
+##
+# Database Connection Pool Configuration
+#
+# This ConfigMap provides default connection pool settings for all
+# Blockd backend services. Services can override these defaults
+# by specifying their own environment variables.
+#
+# Pool sizing guidelines:
+# - Total connections across all service instances should not exceed
+#   PostgreSQL max_connections (typically 200-500)
+# - Each service instance gets its own pool
+# - Formula: (instances * connection_limit * services) < max_connections
+#
+# Example for 3 instances each of 4 services with 50 connections:
+# 3 * 50 * 4 = 600 connections (would exceed typical max_connections)
+# Reduce to 25 each: 3 * 25 * 4 = 300 connections (safe)
+##
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: database-pool-config
+  namespace: blockd
+  labels:
+    app.kubernetes.io/name: blockd
+    app.kubernetes.io/component: database-config
+data:
+  # Default connection limits per service type
+  # Services can override with their own env vars
+
+  # High-activity services (session-service, ai-detection)
+  DATABASE_CONNECTION_LIMIT_HIGH: "60"
+
+  # Medium-activity services (auth-service, video-service)
+  DATABASE_CONNECTION_LIMIT_MEDIUM: "40"
+
+  # Low-activity services (api-gateway, websocket-service)
+  DATABASE_CONNECTION_LIMIT_LOW: "25"
+
+  # Shared pool settings
+  DATABASE_POOL_TIMEOUT: "30"
+  DATABASE_CONNECT_TIMEOUT: "10"
+  DATABASE_STATEMENT_TIMEOUT: "60000"
+  DATABASE_IDLE_TIMEOUT: "60"
+
+---
+##
+# Service-Specific Database Configurations
+##
+
+# API Gateway - Low connection usage (routes to microservices)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-gateway-database-config
+  namespace: blockd
+  labels:
+    app.kubernetes.io/name: api-gateway
+    app.kubernetes.io/component: database-config
+data:
+  DATABASE_CONNECTION_LIMIT: "30"
+  DATABASE_POOL_TIMEOUT: "30"
+  DATABASE_CONNECT_TIMEOUT: "10"
+  DATABASE_STATEMENT_TIMEOUT: "60000"
+  DATABASE_IDLE_TIMEOUT: "60"
+
+---
+# Auth Service - Medium connection usage
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: auth-service-database-config
+  namespace: blockd
+  labels:
+    app.kubernetes.io/name: auth-service
+    app.kubernetes.io/component: database-config
+data:
+  DATABASE_CONNECTION_LIMIT: "40"
+  DATABASE_POOL_TIMEOUT: "30"
+  DATABASE_CONNECT_TIMEOUT: "10"
+  DATABASE_STATEMENT_TIMEOUT: "60000"
+  DATABASE_IDLE_TIMEOUT: "60"
+
+---
+# Session Service - High connection usage
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: session-service-database-config
+  namespace: blockd
+  labels:
+    app.kubernetes.io/name: session-service
+    app.kubernetes.io/component: database-config
+data:
+  DATABASE_CONNECTION_LIMIT: "60"
+  DATABASE_POOL_TIMEOUT: "30"
+  DATABASE_CONNECT_TIMEOUT: "10"
+  DATABASE_STATEMENT_TIMEOUT: "60000"
+  DATABASE_IDLE_TIMEOUT: "60"
+
+---
+# WebSocket Service - Low connection usage (real-time focus)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: websocket-service-database-config
+  namespace: blockd
+  labels:
+    app.kubernetes.io/name: websocket-service
+    app.kubernetes.io/component: database-config
+data:
+  DATABASE_CONNECTION_LIMIT: "25"
+  DATABASE_POOL_TIMEOUT: "30"
+  DATABASE_CONNECT_TIMEOUT: "10"
+  DATABASE_STATEMENT_TIMEOUT: "60000"
+  DATABASE_IDLE_TIMEOUT: "60"
+
+---
+# Video Service - Medium connection usage
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: video-service-database-config
+  namespace: blockd
+  labels:
+    app.kubernetes.io/name: video-service
+    app.kubernetes.io/component: database-config
+data:
+  DATABASE_CONNECTION_LIMIT: "40"
+  DATABASE_POOL_TIMEOUT: "30"
+  DATABASE_CONNECT_TIMEOUT: "10"
+  DATABASE_STATEMENT_TIMEOUT: "120000"  # Longer timeout for video processing
+  DATABASE_IDLE_TIMEOUT: "60"
+
+---
+# AI Detection Service - High connection usage
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-detection-database-config
+  namespace: blockd
+  labels:
+    app.kubernetes.io/name: ai-detection
+    app.kubernetes.io/component: database-config
+data:
+  DATABASE_CONNECTION_LIMIT: "50"
+  DATABASE_POOL_TIMEOUT: "30"
+  DATABASE_CONNECT_TIMEOUT: "10"
+  DATABASE_STATEMENT_TIMEOUT: "120000"  # Longer timeout for AI analysis
+  DATABASE_IDLE_TIMEOUT: "60"
+
+---
+# Eye Tracking Service - Medium connection usage
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: eye-tracking-database-config
+  namespace: blockd
+  labels:
+    app.kubernetes.io/name: eye-tracking
+    app.kubernetes.io/component: database-config
+data:
+  DATABASE_CONNECTION_LIMIT: "40"
+  DATABASE_POOL_TIMEOUT: "30"
+  DATABASE_CONNECT_TIMEOUT: "10"
+  DATABASE_STATEMENT_TIMEOUT: "60000"
+  DATABASE_IDLE_TIMEOUT: "60"
+
+---
+# Response Timing Service - Medium connection usage
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: response-timing-database-config
+  namespace: blockd
+  labels:
+    app.kubernetes.io/name: response-timing
+    app.kubernetes.io/component: database-config
+data:
+  DATABASE_CONNECTION_LIMIT: "40"
+  DATABASE_POOL_TIMEOUT: "30"
+  DATABASE_CONNECT_TIMEOUT: "10"
+  DATABASE_STATEMENT_TIMEOUT: "90000"  # Slightly longer for audio processing
+  DATABASE_IDLE_TIMEOUT: "60"
+
+---
+##
+# PgBouncer Configuration
+#
+# For production deployments, PgBouncer should be used as a connection
+# pooler in front of PostgreSQL to handle connection multiplexing.
+##
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pgbouncer-config
+  namespace: blockd
+  labels:
+    app.kubernetes.io/name: pgbouncer
+    app.kubernetes.io/component: connection-pooler
+data:
+  pgbouncer.ini: |
+    [databases]
+    blockd = host=postgresql-primary port=5432 dbname=blockd
+
+    [pgbouncer]
+    listen_addr = 0.0.0.0
+    listen_port = 6432
+    auth_type = scram-sha-256
+    auth_file = /etc/pgbouncer/userlist.txt
+
+    # Pool mode: session, transaction, or statement
+    # transaction mode is recommended for most workloads
+    pool_mode = transaction
+
+    # Maximum number of client connections
+    max_client_conn = 1000
+
+    # Default pool size per database/user pair
+    default_pool_size = 50
+
+    # Minimum pool size
+    min_pool_size = 10
+
+    # Reserve pool for burst handling
+    reserve_pool_size = 10
+    reserve_pool_timeout = 5
+
+    # Connection timeouts
+    server_connect_timeout = 10
+    server_idle_timeout = 600
+    server_lifetime = 3600
+
+    # Client timeouts
+    client_idle_timeout = 600
+    client_login_timeout = 60
+
+    # Query timeout (0 = disabled, handled at Prisma level)
+    query_timeout = 0
+
+    # Logging
+    log_connections = 1
+    log_disconnections = 1
+    log_pooler_errors = 1
+
+    # Stats
+    stats_period = 60
+
+    # Admin console
+    admin_users = pgbouncer_admin
+    stats_users = pgbouncer_stats
+
+  userlist.txt: |
+    ; Format: "username" "password"
+    ; Password should be scram-sha-256 hashed
+    ; Generate with: echo -n "password" | openssl dgst -sha256 -binary | base64
+    ; This is a placeholder - use Kubernetes secrets in production
+    "blockd_app" "SCRAM-SHA-256$4096:..."
+    "pgbouncer_admin" "SCRAM-SHA-256$4096:..."
+    "pgbouncer_stats" "SCRAM-SHA-256$4096:..."

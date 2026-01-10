@@ -1,0 +1,222 @@
+# Circuit Breaker Prometheus Alerts
+# Monitors LLM provider circuit breaker states and failures
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: circuit-breaker-alerts
+  namespace: blockd
+  labels:
+    app: ai-detection
+    prometheus: blockd
+spec:
+  groups:
+    - name: circuit-breaker-health
+      interval: 15s
+      rules:
+        # Circuit breaker state tracking metrics (recording rules)
+        - record: circuit_breaker:state:open
+          expr: |
+            count(
+              circuit_breaker_state{namespace="blockd", state="open"}
+            ) by (name)
+
+        - record: circuit_breaker:failure_rate:5m
+          expr: |
+            sum(rate(circuit_breaker_calls_failed_total{namespace="blockd"}[5m])) by (name)
+            /
+            sum(rate(circuit_breaker_calls_total{namespace="blockd"}[5m])) by (name)
+
+        # OpenAI circuit breaker open
+        - alert: OpenAICircuitBreakerOpen
+          expr: |
+            circuit_breaker_state{namespace="blockd", name="openai", state="open"} == 1
+          for: 1m
+          labels:
+            severity: warning
+            component: ai-detection
+            provider: openai
+          annotations:
+            summary: "OpenAI circuit breaker is open"
+            description: "The OpenAI circuit breaker has been open for 1 minute. GPT-4 answers are unavailable."
+            runbook_url: "https://docs.blockd.com/runbooks/circuit-breaker-open"
+
+        # Anthropic circuit breaker open
+        - alert: AnthropicCircuitBreakerOpen
+          expr: |
+            circuit_breaker_state{namespace="blockd", name="anthropic", state="open"} == 1
+          for: 1m
+          labels:
+            severity: warning
+            component: ai-detection
+            provider: anthropic
+          annotations:
+            summary: "Anthropic circuit breaker is open"
+            description: "The Anthropic circuit breaker has been open for 1 minute. Claude answers are unavailable."
+
+        # Gemini circuit breaker open
+        - alert: GeminiCircuitBreakerOpen
+          expr: |
+            circuit_breaker_state{namespace="blockd", name="gemini", state="open"} == 1
+          for: 1m
+          labels:
+            severity: warning
+            component: ai-detection
+            provider: gemini
+          annotations:
+            summary: "Gemini circuit breaker is open"
+            description: "The Gemini circuit breaker has been open for 1 minute. Gemini answers are unavailable."
+
+        # All circuit breakers open (critical)
+        - alert: AllLLMCircuitBreakersOpen
+          expr: |
+            sum(circuit_breaker_state{namespace="blockd", state="open"}) >= 3
+          for: 1m
+          labels:
+            severity: critical
+            component: ai-detection
+          annotations:
+            summary: "All LLM circuit breakers are open"
+            description: "All LLM providers (OpenAI, Anthropic, Gemini) are unavailable. AI detection is severely degraded."
+            runbook_url: "https://docs.blockd.com/runbooks/all-circuits-open"
+
+        # Multiple circuit breakers open
+        - alert: MultipleLLMCircuitBreakersOpen
+          expr: |
+            sum(circuit_breaker_state{namespace="blockd", state="open"}) >= 2
+          for: 2m
+          labels:
+            severity: high
+            component: ai-detection
+          annotations:
+            summary: "Multiple LLM circuit breakers are open"
+            description: "{{ $value }} LLM providers are unavailable. AI detection accuracy may be reduced."
+
+    - name: circuit-breaker-failures
+      interval: 30s
+      rules:
+        # High failure rate for any circuit
+        - alert: LLMProviderHighFailureRate
+          expr: |
+            (
+              sum(rate(circuit_breaker_calls_failed_total{namespace="blockd"}[5m])) by (name)
+              /
+              sum(rate(circuit_breaker_calls_total{namespace="blockd"}[5m])) by (name)
+            ) > 0.3
+          for: 5m
+          labels:
+            severity: warning
+            component: ai-detection
+          annotations:
+            summary: "LLM provider {{ $labels.name }} has high failure rate"
+            description: "Provider {{ $labels.name }} has {{ $value | humanizePercentage }} failure rate over the last 5 minutes."
+
+        # Circuit breaker rejection rate high
+        - alert: LLMProviderHighRejectionRate
+          expr: |
+            (
+              sum(rate(circuit_breaker_calls_rejected_total{namespace="blockd"}[5m])) by (name)
+              /
+              sum(rate(circuit_breaker_calls_total{namespace="blockd"}[5m])) by (name)
+            ) > 0.5
+          for: 5m
+          labels:
+            severity: high
+            component: ai-detection
+          annotations:
+            summary: "LLM provider {{ $labels.name }} has high rejection rate"
+            description: "Provider {{ $labels.name }} is rejecting {{ $value | humanizePercentage }} of requests due to open circuit."
+
+        # Circuit flapping (opening and closing rapidly)
+        - alert: LLMCircuitBreakerFlapping
+          expr: |
+            changes(circuit_breaker_state{namespace="blockd"}[10m]) > 4
+          for: 2m
+          labels:
+            severity: warning
+            component: ai-detection
+          annotations:
+            summary: "LLM circuit breaker {{ $labels.name }} is flapping"
+            description: "Circuit breaker {{ $labels.name }} has changed state {{ $value }} times in 10 minutes. Provider may be unstable."
+
+    - name: circuit-breaker-recovery
+      interval: 30s
+      rules:
+        # Long-term circuit open
+        - alert: LLMCircuitBreakerOpenExtended
+          expr: |
+            circuit_breaker_state{namespace="blockd", state="open"} == 1
+          for: 10m
+          labels:
+            severity: high
+            component: ai-detection
+          annotations:
+            summary: "LLM circuit breaker {{ $labels.name }} open for extended period"
+            description: "Circuit breaker {{ $labels.name }} has been open for over 10 minutes. Manual intervention may be required."
+            runbook_url: "https://docs.blockd.com/runbooks/circuit-breaker-extended-outage"
+
+        # Circuit breaker recovered
+        - alert: LLMCircuitBreakerRecovered
+          expr: |
+            (
+              circuit_breaker_state{namespace="blockd", state="closed"} == 1
+            )
+            and
+            (
+              changes(circuit_breaker_state{namespace="blockd"}[5m]) > 0
+            )
+          for: 0m
+          labels:
+            severity: info
+            component: ai-detection
+          annotations:
+            summary: "LLM circuit breaker {{ $labels.name }} recovered"
+            description: "Circuit breaker {{ $labels.name }} has recovered and is now closed."
+
+    - name: ai-detection-degradation
+      interval: 30s
+      rules:
+        # AI detection degraded (fewer than all providers available)
+        - alert: AIDetectionDegraded
+          expr: |
+            (
+              3 - sum(circuit_breaker_state{namespace="blockd", state="open"})
+            ) < 3
+          for: 5m
+          labels:
+            severity: warning
+            component: ai-detection
+          annotations:
+            summary: "AI detection operating with reduced providers"
+            description: "AI detection is operating with {{ $value }} of 3 LLM providers. Detection accuracy may be affected."
+
+        # AI detection service unavailable
+        - alert: AIDetectionServiceDown
+          expr: |
+            up{job="ai-detection-service", namespace="blockd"} == 0
+          for: 2m
+          labels:
+            severity: critical
+            component: ai-detection
+          annotations:
+            summary: "AI detection service is down"
+            description: "The AI detection service is not responding. Answer analysis is unavailable."
+            runbook_url: "https://docs.blockd.com/runbooks/ai-detection-down"
+
+        # AI detection high latency
+        - alert: AIDetectionHighLatency
+          expr: |
+            histogram_quantile(0.95,
+              sum(rate(http_request_duration_seconds_bucket{
+                namespace="blockd",
+                service="ai-detection",
+                endpoint=~"/analyze.*"
+              }[5m])) by (le)
+            ) > 10
+          for: 5m
+          labels:
+            severity: warning
+            component: ai-detection
+          annotations:
+            summary: "AI detection has high latency"
+            description: "AI detection p95 latency is {{ $value | humanizeDuration }}. Analysis requests are slow."
