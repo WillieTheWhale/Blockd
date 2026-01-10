@@ -4,8 +4,8 @@
  */
 
 import { FastifyInstance } from 'fastify';
-import { authenticate, strictRateLimiter } from '../middleware/auth.middleware';
-import { publicRateLimiter } from '../middleware/rate-limit.middleware';
+import { authenticate } from '../middleware/auth.middleware';
+import { publicRateLimiter, strictRateLimiter } from '../middleware/rate-limit.middleware';
 import { validateBody } from '../middleware/validation.middleware';
 import {
   registerRequestSchema,
@@ -25,11 +25,11 @@ import { generateTokenPair, verifyRefreshToken, revokeRefreshToken, revokeAllRef
 import { sendSuccess, sendCreated } from '../lib/response';
 import { BadRequestError, UnauthorizedError, NotFoundError } from '../lib/errors';
 import prisma from '../lib/prisma';
-import { hash, compare } from 'crypto';
+import crypto from 'crypto';
 import { promisify } from 'util';
 
 const scrypt = promisify((password: string, salt: string, keylen: number, callback: (err: Error | null, derivedKey?: Buffer) => void) => {
-  require('crypto').scrypt(password, salt, keylen, callback);
+  crypto.scrypt(password, salt, keylen, callback);
 });
 
 export default async function authRoutes(fastify: FastifyInstance) {
@@ -40,7 +40,6 @@ export default async function authRoutes(fastify: FastifyInstance) {
       tags: ['Authentication'],
       summary: 'Register a new user',
       description: 'Creates a new user account',
-      body: registerRequestSchema,
     },
     handler: async (request, reply) => {
       const { email, password, firstName, lastName, role, organizationId } = request.body;
@@ -55,7 +54,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
       }
 
       // Hash password (in production, this would be handled by auth-service)
-      const salt = require('crypto').randomBytes(16).toString('hex');
+      const salt = crypto.randomBytes(16).toString('hex');
       const passwordHash = `${salt}:${password}`; // Simplified for demo
 
       // Create user
@@ -103,7 +102,6 @@ export default async function authRoutes(fastify: FastifyInstance) {
       tags: ['Authentication'],
       summary: 'Login user',
       description: 'Authenticates a user and returns JWT tokens',
-      body: loginRequestSchema,
     },
     handler: async (request, reply) => {
       const { email, password, mfaCode } = request.body;
@@ -167,7 +165,6 @@ export default async function authRoutes(fastify: FastifyInstance) {
       tags: ['Authentication'],
       summary: 'Refresh access token',
       description: 'Generates a new access token using a refresh token',
-      body: refreshTokenRequestSchema,
     },
     handler: async (request, reply) => {
       const { refreshToken } = request.body;
@@ -206,7 +203,6 @@ export default async function authRoutes(fastify: FastifyInstance) {
       tags: ['Authentication'],
       summary: 'Logout user',
       description: 'Revokes the refresh token',
-      body: logoutRequestSchema,
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
@@ -231,7 +227,6 @@ export default async function authRoutes(fastify: FastifyInstance) {
       tags: ['Authentication'],
       summary: 'Setup MFA',
       description: 'Enables or disables MFA for the user',
-      body: mfaSetupRequestSchema,
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
@@ -270,7 +265,6 @@ export default async function authRoutes(fastify: FastifyInstance) {
       tags: ['Authentication'],
       summary: 'Verify MFA code',
       description: 'Verifies a 2FA code',
-      body: mfaVerifyRequestSchema,
     },
     handler: async (request, reply) => {
       const { code, secret } = request.body;

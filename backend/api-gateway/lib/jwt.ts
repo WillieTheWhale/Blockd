@@ -4,7 +4,7 @@
  */
 
 import jwt from 'jsonwebtoken';
-import { getRedisClient } from '../../shared/cache/redis-client';
+import { getRedisClient } from './redis-client';
 import { UnauthorizedError } from './errors';
 
 export interface JwtPayload {

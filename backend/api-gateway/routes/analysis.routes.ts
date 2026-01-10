@@ -29,7 +29,6 @@ export default async function analysisRoutes(fastify: FastifyInstance) {
       tags: ['Analysis'],
       summary: 'Analyze interview question',
       description: 'Generates AI answers and analysis for an interview question',
-      body: analyzeQuestionRequestSchema,
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
@@ -88,7 +87,6 @@ export default async function analysisRoutes(fastify: FastifyInstance) {
       tags: ['Analysis'],
       summary: 'Analyze interview answer',
       description: 'Analyzes an interview answer for AI detection',
-      body: analyzeAnswerRequestSchema,
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {

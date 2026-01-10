@@ -25,8 +25,9 @@ export const corsOptions: CorsOptions = {
     // Reject requests with no origin in production
     // No-origin requests (curl, Postman, etc.) should use API keys instead of CORS
     if (!origin) {
-      // In development, allow no-origin for testing tools
-      if (config.cors.allowNoOrigin || process.env.NODE_ENV === 'development') {
+      // In development/test mode, allow no-origin for testing tools
+      const nodeEnv = process.env.NODE_ENV || 'development';
+      if (config.cors.allowNoOrigin || nodeEnv === 'development' || nodeEnv === 'test') {
         callback(null, true);
         return;
       }

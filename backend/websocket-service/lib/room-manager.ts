@@ -17,6 +17,9 @@ import { AuthenticatedSocket } from '../types/socket.types';
 import { logger } from './logger';
 import { RoomNotFoundError } from './errors';
 
+// Re-export RoomType for convenience
+export { RoomType } from '../types/room.types';
+
 export class RoomManager {
   private io: Server;
   private rooms: Map<string, RoomInfo> = new Map();

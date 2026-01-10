@@ -40,8 +40,11 @@ export function loggingMiddleware() {
     });
 
     // Setup event logging after authentication
-    const originalOnevent = socket.onevent;
-    socket.onevent = function (packet: any) {
+    // Note: onevent is a private method, but we need to intercept it for logging
+    // Using type assertion to access it
+    const socketAny = socket as any;
+    const originalOnevent = socketAny.onevent;
+    socketAny.onevent = function (packet: any) {
       const [event, ...args] = packet.data || [];
 
       // Handle gaze events with sampling

@@ -161,7 +161,7 @@ export async function createApp(): Promise<FastifyInstance> {
   // ERROR HANDLER
   // ============================================================================
 
-  app.setErrorHandler((error, request, reply) => {
+  app.setErrorHandler((error: Error & { statusCode?: number }, request, reply) => {
     app.log.error(error);
 
     const statusCode = error.statusCode || 500;

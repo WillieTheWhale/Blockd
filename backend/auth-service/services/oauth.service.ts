@@ -68,7 +68,12 @@ export async function parseGoogleUserInfo(accessToken: string): Promise<OAuthUse
       throw new Error('Failed to fetch Google user info');
     }
 
-    const data = await response.json();
+    const data = await response.json() as {
+      email: string;
+      given_name?: string;
+      family_name?: string;
+      picture?: string;
+    };
 
     return {
       email: data.email,
@@ -97,10 +102,15 @@ export async function parseMicrosoftUserInfo(accessToken: string): Promise<OAuth
       throw new Error('Failed to fetch Microsoft user info');
     }
 
-    const data = await response.json();
+    const data = await response.json() as {
+      mail?: string;
+      userPrincipalName?: string;
+      givenName?: string;
+      surname?: string;
+    };
 
     return {
-      email: data.mail || data.userPrincipalName,
+      email: data.mail || data.userPrincipalName || '',
       given_name: data.givenName,
       family_name: data.surname,
       provider: 'microsoft'

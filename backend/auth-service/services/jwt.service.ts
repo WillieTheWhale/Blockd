@@ -78,10 +78,18 @@ export function generateCustomToken(
     aud: options.audience || DEFAULT_AUDIENCE
   };
 
-  const token = jwt.sign(fullPayload, privateKey!, {
+  // expiresIn expects string like '1h' or number (seconds)
+  const signOptions: jwt.SignOptions = {
     algorithm: options.algorithm || 'RS256',
-    expiresIn: options.expiresIn
-  });
+  };
+
+  // Add expiresIn if specified (can be string like '1h' or number in seconds)
+  if (options.expiresIn !== undefined) {
+    // Cast to expected type - jsonwebtoken accepts both string and number
+    signOptions.expiresIn = options.expiresIn as jwt.SignOptions['expiresIn'];
+  }
+
+  const token = jwt.sign(fullPayload, privateKey!, signOptions);
 
   return token;
 }
@@ -117,7 +125,14 @@ export function verifyToken(token: string): JWTPayload {
 export function decodeToken(token: string): DecodedToken | null {
   try {
     const decoded = jwt.decode(token, { complete: true });
-    return decoded as DecodedToken;
+    if (!decoded || typeof decoded === 'string') {
+      return null;
+    }
+    // Map jwt.Jwt to our DecodedToken type
+    return {
+      payload: decoded.payload as JWTPayload,
+      header: decoded.header as { alg: string; typ: string }
+    };
   } catch {
     return null;
   }
