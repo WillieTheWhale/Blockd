@@ -1,0 +1,31 @@
+# Kustomization for PostgreSQL HA deployment
+# Deploy with: kubectl apply -k k8s/manifests/postgresql-ha/
+#
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: blockd
+
+resources:
+  # etcd cluster for Patroni leader election
+  - etcd-cluster.yaml
+  # PostgreSQL HA StatefulSet with Patroni
+  - postgresql-ha-statefulset.yaml
+  # Services (primary, replica, read)
+  - postgresql-ha-services.yaml
+  # PgBouncer connection pooler
+  - pgbouncer-deployment.yaml
+  # Backup and PITR configuration
+  - postgresql-backup-pitr.yaml
+
+commonLabels:
+  app.kubernetes.io/part-of: blockd
+  app.kubernetes.io/component: database
+
+images:
+  - name: registry.opensource.zalan.do/acid/spilo-16
+    newTag: 3.2-p2
+  - name: bitnami/etcd
+    newTag: 3.5.12
+  - name: bitnami/pgbouncer
+    newTag: 1.22.1

@@ -217,3 +217,184 @@ groups:
           summary: "SSL certificate expiring soon"
           description: "SSL certificate for {{ $labels.domain }} expires in {{ $value }} days"
           runbook_url: "https://docs.blockd.io/runbooks/ssl-renewal"
+
+      # ==========================================
+      # PostgreSQL HA Alerts
+      # ==========================================
+
+      # PostgreSQL Replication Lag
+      - alert: PostgreSQLReplicationLag
+        expr: |
+          pg_replication_lag_seconds > 30
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "PostgreSQL replication lag detected on {{ $labels.instance }}"
+          description: "Replica {{ $labels.instance }} is {{ $value }}s behind primary (threshold: 30s)"
+          runbook_url: "https://docs.blockd.io/runbooks/postgresql-replication-lag"
+
+      # PostgreSQL Replication Lag Critical
+      - alert: PostgreSQLReplicationLagCritical
+        expr: |
+          pg_replication_lag_seconds > 300
+        for: 2m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "Critical PostgreSQL replication lag on {{ $labels.instance }}"
+          description: "Replica {{ $labels.instance }} is {{ $value }}s behind primary - data loss risk!"
+          runbook_url: "https://docs.blockd.io/runbooks/postgresql-replication-lag"
+
+      # PostgreSQL Replica Down
+      - alert: PostgreSQLReplicaDown
+        expr: |
+          pg_replication_is_replica == 0 and pg_up{job="postgresql-ha"} == 1
+        for: 5m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "PostgreSQL replica is not streaming"
+          description: "PostgreSQL instance {{ $labels.instance }} is not replicating from primary"
+          runbook_url: "https://docs.blockd.io/runbooks/postgresql-replica-down"
+
+      # PostgreSQL No Primary
+      - alert: PostgreSQLNoPrimary
+        expr: |
+          count(patroni_master{job="postgresql-ha"} == 1) == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "No PostgreSQL primary available"
+          description: "Patroni cluster has no leader - database is unavailable for writes!"
+          runbook_url: "https://docs.blockd.io/runbooks/postgresql-no-primary"
+
+      # PostgreSQL Too Many Primaries (Split Brain)
+      - alert: PostgreSQLSplitBrain
+        expr: |
+          count(patroni_master{job="postgresql-ha"} == 1) > 1
+        for: 1m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "PostgreSQL split brain detected!"
+          description: "Multiple PostgreSQL instances claim to be primary - immediate action required!"
+          runbook_url: "https://docs.blockd.io/runbooks/postgresql-split-brain"
+
+      # etcd Cluster Unhealthy
+      - alert: EtcdClusterUnhealthy
+        expr: |
+          etcd_server_has_leader{job="etcd"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "etcd cluster has no leader"
+          description: "etcd cluster is unhealthy - Patroni failover will not work!"
+          runbook_url: "https://docs.blockd.io/runbooks/etcd-unhealthy"
+
+      # ==========================================
+      # PgBouncer Alerts
+      # ==========================================
+
+      # PgBouncer Pool Utilization High
+      - alert: PgBouncerPoolUtilizationHigh
+        expr: |
+          (pgbouncer_pools_server_active / pgbouncer_pools_server_maxconn) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "PgBouncer pool utilization high for {{ $labels.database }}"
+          description: "PgBouncer pool {{ $labels.database }} is at {{ $value | humanizePercentage }} capacity"
+          runbook_url: "https://docs.blockd.io/runbooks/pgbouncer-pool-utilization"
+
+      # PgBouncer Pool Exhausted
+      - alert: PgBouncerPoolExhausted
+        expr: |
+          (pgbouncer_pools_server_active / pgbouncer_pools_server_maxconn) > 0.95
+        for: 2m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "PgBouncer pool nearly exhausted for {{ $labels.database }}"
+          description: "PgBouncer pool {{ $labels.database }} is at {{ $value | humanizePercentage }} - connections will be rejected!"
+          runbook_url: "https://docs.blockd.io/runbooks/pgbouncer-pool-exhausted"
+
+      # PgBouncer Client Wait Time
+      - alert: PgBouncerClientWaitTimeHigh
+        expr: |
+          pgbouncer_pools_client_wait_time > 5
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "High client wait time in PgBouncer"
+          description: "Clients are waiting {{ $value }}s for database connections (threshold: 5s)"
+          runbook_url: "https://docs.blockd.io/runbooks/pgbouncer-wait-time"
+
+      # PgBouncer Down
+      - alert: PgBouncerDown
+        expr: |
+          up{job="pgbouncer"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "PgBouncer instance is down"
+          description: "PgBouncer instance {{ $labels.instance }} is not responding"
+          runbook_url: "https://docs.blockd.io/runbooks/pgbouncer-down"
+
+      # ==========================================
+      # Backup Alerts
+      # ==========================================
+
+      # PostgreSQL Backup Failed
+      - alert: PostgreSQLBackupFailed
+        expr: |
+          kube_job_failed{job_name=~"postgresql-base-backup.*"} > 0
+        for: 5m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "PostgreSQL backup job failed"
+          description: "Backup job {{ $labels.job_name }} has failed - check logs for details"
+          runbook_url: "https://docs.blockd.io/runbooks/postgresql-backup-failed"
+
+      # PostgreSQL Backup Missing
+      - alert: PostgreSQLBackupMissing
+        expr: |
+          time() - postgresql_backup_last_success_timestamp > 90000
+        for: 10m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "PostgreSQL backup is overdue"
+          description: "Last successful backup was {{ $value | humanizeDuration }} ago (expected: daily)"
+          runbook_url: "https://docs.blockd.io/runbooks/postgresql-backup-missing"
+
+      # WAL Archiving Failed
+      - alert: PostgreSQLWALArchivingFailed
+        expr: |
+          pg_stat_archiver_failed_count > 0
+        for: 10m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "PostgreSQL WAL archiving has failures"
+          description: "{{ $value }} WAL files failed to archive - PITR recovery may be incomplete"
+          runbook_url: "https://docs.blockd.io/runbooks/postgresql-wal-archive-failed"

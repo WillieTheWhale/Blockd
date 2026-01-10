@@ -1,0 +1,459 @@
+# Redis Cluster Deployment for Blockd Platform
+# 6-node cluster: 3 primaries + 3 replicas
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-cluster-config
+  namespace: blockd
+  labels:
+    app: redis-cluster
+data:
+  redis.conf: |
+    # Network
+    bind 0.0.0.0
+    protected-mode yes
+    port 6379
+    tcp-backlog 511
+    timeout 0
+    tcp-keepalive 300
+
+    # General
+    daemonize no
+    loglevel notice
+    databases 16
+
+    # Cluster Configuration
+    cluster-enabled yes
+    cluster-config-file nodes.conf
+    cluster-node-timeout 5000
+    cluster-replica-validity-factor 10
+    cluster-migration-barrier 1
+    cluster-require-full-coverage no
+    cluster-replica-no-failover no
+    cluster-allow-reads-when-down yes
+    cluster-allow-pubsubshard-when-down yes
+
+    # Memory Management
+    maxmemory 8gb
+    maxmemory-policy allkeys-lru
+    maxmemory-samples 10
+
+    # Lazy Freeing
+    lazyfree-lazy-eviction yes
+    lazyfree-lazy-expire yes
+    lazyfree-lazy-server-del yes
+    replica-lazy-flush yes
+
+    # AOF Persistence
+    appendonly yes
+    appendfilename "appendonly.aof"
+    appendfsync everysec
+    no-appendfsync-on-rewrite no
+    auto-aof-rewrite-percentage 100
+    auto-aof-rewrite-min-size 64mb
+    aof-load-truncated yes
+    aof-use-rdb-preamble yes
+
+    # RDB Snapshots (backup safety net)
+    save 900 1
+    save 300 10
+    save 60 10000
+    stop-writes-on-bgsave-error yes
+    rdbcompression yes
+    rdbchecksum yes
+
+    # Slow Log
+    slowlog-log-slower-than 10000
+    slowlog-max-len 128
+
+    # Latency Monitor
+    latency-monitor-threshold 100
+
+    # Event Notification
+    notify-keyspace-events "Ex"
+
+    # Client Output Buffer Limits
+    client-output-buffer-limit normal 0 0 0
+    client-output-buffer-limit replica 512mb 128mb 60
+    client-output-buffer-limit pubsub 64mb 16mb 60
+
+    # Performance Tuning
+    io-threads 4
+    io-threads-do-reads yes
+    hz 10
+    dynamic-hz yes
+
+    # Active Defragmentation
+    activedefrag yes
+    active-defrag-ignore-bytes 100mb
+    active-defrag-threshold-lower 10
+    active-defrag-threshold-upper 25
+
+  update-node.sh: |
+    #!/bin/sh
+    REDIS_NODES="/data/nodes.conf"
+    sed -i -e "/myself/ s/[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}/${POD_IP}/" ${REDIS_NODES}
+    exec "$@"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: redis-cluster-credentials
+  namespace: blockd
+  labels:
+    app: redis-cluster
+type: Opaque
+stringData:
+  # In production, use External Secrets Operator
+  redis-password: "CHANGE_THIS_STRONG_PASSWORD_IN_PRODUCTION"
+
+---
+# Headless service for cluster communication
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-cluster-headless
+  namespace: blockd
+  labels:
+    app: redis-cluster
+spec:
+  clusterIP: None
+  ports:
+    - port: 6379
+      targetPort: 6379
+      name: client
+    - port: 16379
+      targetPort: 16379
+      name: gossip
+  selector:
+    app: redis-cluster
+
+---
+# Client-facing service with load balancing
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-cluster
+  namespace: blockd
+  labels:
+    app: redis-cluster
+spec:
+  type: ClusterIP
+  ports:
+    - port: 6379
+      targetPort: 6379
+      name: client
+  selector:
+    app: redis-cluster
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis-cluster
+  namespace: blockd
+  labels:
+    app: redis-cluster
+spec:
+  serviceName: redis-cluster-headless
+  replicas: 6
+  podManagementPolicy: Parallel
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app: redis-cluster
+  template:
+    metadata:
+      labels:
+        app: redis-cluster
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9121"
+    spec:
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: redis-cluster
+              topologyKey: kubernetes.io/hostname
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: redis-cluster
+                topologyKey: topology.kubernetes.io/zone
+      initContainers:
+        # Disable THP (Transparent Huge Pages)
+        - name: disable-thp
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              if [ -f /sys/kernel/mm/transparent_hugepage/enabled ]; then
+                echo never > /host-sys/kernel/mm/transparent_hugepage/enabled
+              fi
+              if [ -f /sys/kernel/mm/transparent_hugepage/defrag ]; then
+                echo never > /host-sys/kernel/mm/transparent_hugepage/defrag
+              fi
+          securityContext:
+            privileged: true
+            runAsNonRoot: false
+            runAsUser: 0
+          volumeMounts:
+            - name: host-sys
+              mountPath: /host-sys
+
+        # Set kernel parameters
+        - name: sysctl
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              sysctl -w net.core.somaxconn=65535 || true
+              sysctl -w vm.overcommit_memory=1 || true
+          securityContext:
+            privileged: true
+            runAsNonRoot: false
+            runAsUser: 0
+
+      containers:
+        - name: redis
+          image: redis:8.4-alpine
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              # Update node IP in config if exists
+              if [ -f /data/nodes.conf ]; then
+                sed -i -e "/myself/ s/[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}/${POD_IP}/" /data/nodes.conf
+              fi
+              # Start Redis with authentication
+              redis-server /etc/redis/redis.conf \
+                --requirepass ${REDIS_PASSWORD} \
+                --masterauth ${REDIS_PASSWORD} \
+                --cluster-announce-ip ${POD_IP} \
+                --cluster-announce-port 6379 \
+                --cluster-announce-bus-port 16379
+          ports:
+            - containerPort: 6379
+              name: client
+            - containerPort: 16379
+              name: gossip
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-cluster-credentials
+                  key: redis-password
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "2Gi"
+            limits:
+              cpu: "2000m"
+              memory: "10Gi"
+          volumeMounts:
+            - name: redis-data
+              mountPath: /data
+            - name: redis-config
+              mountPath: /etc/redis
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - redis-cli -a $REDIS_PASSWORD ping | grep -q PONG
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 5
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - |
+                  redis-cli -a $REDIS_PASSWORD ping | grep -q PONG && \
+                  redis-cli -a $REDIS_PASSWORD cluster info | grep -q 'cluster_state:ok'
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - sh
+                  - -c
+                  - redis-cli -a $REDIS_PASSWORD shutdown save
+
+        # Redis Exporter sidecar for Prometheus metrics
+        - name: redis-exporter
+          image: oliver006/redis_exporter:v1.66.0
+          ports:
+            - containerPort: 9121
+              name: metrics
+          env:
+            - name: REDIS_ADDR
+              value: "redis://localhost:6379"
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-cluster-credentials
+                  key: redis-password
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "100m"
+              memory: "128Mi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 9121
+            initialDelaySeconds: 10
+            periodSeconds: 30
+
+      volumes:
+        - name: redis-config
+          configMap:
+            name: redis-cluster-config
+            items:
+              - key: redis.conf
+                path: redis.conf
+        - name: host-sys
+          hostPath:
+            path: /sys
+
+  volumeClaimTemplates:
+    - metadata:
+        name: redis-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: fast-ssd
+        resources:
+          requests:
+            storage: 20Gi
+
+---
+# Job to initialize Redis cluster after pods are ready
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: redis-cluster-init
+  namespace: blockd
+  labels:
+    app: redis-cluster
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 10
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: init-cluster
+          image: redis:8.4-alpine
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              echo "Waiting for Redis nodes to be ready..."
+
+              # Wait for all 6 nodes to be available
+              for i in $(seq 0 5); do
+                until redis-cli -h redis-cluster-${i}.redis-cluster-headless.blockd.svc.cluster.local -a $REDIS_PASSWORD ping 2>/dev/null | grep -q PONG; do
+                  echo "Waiting for redis-cluster-${i}..."
+                  sleep 5
+                done
+                echo "redis-cluster-${i} is ready"
+              done
+
+              echo "All nodes are ready. Checking cluster status..."
+
+              # Check if cluster is already initialized
+              CLUSTER_STATE=$(redis-cli -h redis-cluster-0.redis-cluster-headless.blockd.svc.cluster.local -a $REDIS_PASSWORD cluster info 2>/dev/null | grep cluster_state || echo "")
+
+              if echo "$CLUSTER_STATE" | grep -q "cluster_state:ok"; then
+                echo "Cluster is already initialized"
+                redis-cli -h redis-cluster-0.redis-cluster-headless.blockd.svc.cluster.local -a $REDIS_PASSWORD cluster nodes
+                exit 0
+              fi
+
+              echo "Initializing Redis cluster..."
+
+              # Build node list
+              NODES=""
+              for i in $(seq 0 5); do
+                NODE_IP=$(getent hosts redis-cluster-${i}.redis-cluster-headless.blockd.svc.cluster.local | awk '{ print $1 }')
+                NODES="${NODES} ${NODE_IP}:6379"
+              done
+
+              echo "Creating cluster with nodes:${NODES}"
+
+              # Create cluster with 1 replica per master
+              redis-cli -a $REDIS_PASSWORD --cluster create \
+                ${NODES} \
+                --cluster-replicas 1 \
+                --cluster-yes
+
+              echo "Cluster created successfully!"
+
+              # Verify cluster status
+              redis-cli -h redis-cluster-0.redis-cluster-headless.blockd.svc.cluster.local -a $REDIS_PASSWORD cluster info
+              redis-cli -h redis-cluster-0.redis-cluster-headless.blockd.svc.cluster.local -a $REDIS_PASSWORD cluster nodes
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-cluster-credentials
+                  key: redis-password
+
+---
+# PodDisruptionBudget - ensure at least 4 nodes available
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: redis-cluster-pdb
+  namespace: blockd
+spec:
+  minAvailable: 4
+  selector:
+    matchLabels:
+      app: redis-cluster
+
+---
+# ServiceMonitor for Prometheus Operator
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: redis-cluster-monitor
+  namespace: blockd
+  labels:
+    app: redis-cluster
+spec:
+  selector:
+    matchLabels:
+      app: redis-cluster
+  endpoints:
+    - port: metrics
+      interval: 15s
+      scrapeTimeout: 10s

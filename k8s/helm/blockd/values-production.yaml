@@ -135,9 +135,28 @@ frontend:
     targetCPUUtilizationPercentage: 70
     targetMemoryUtilizationPercentage: 80
 
-# Production persistence
+# Production Database Configuration
+# ==================================
+# IMPORTANT: For production, use the PostgreSQL HA manifests instead of the basic Helm chart PostgreSQL.
+# Deploy PostgreSQL HA separately: kubectl apply -k k8s/manifests/postgresql-ha/
+#
+# The PostgreSQL HA setup includes:
+# - 1 Primary + 2 Read Replicas (Patroni-managed)
+# - PgBouncer connection pooling (2000 max client connections)
+# - Automatic failover with etcd consensus
+# - WAL archiving to S3 for Point-in-Time Recovery (PITR)
+# - Daily base backups with 30-day retention
+#
 postgresql:
-  replicas: 1
+  # Disable basic PostgreSQL - use HA setup instead
+  enabled: false
+
+# PostgreSQL High Availability Configuration
+postgresqlHA:
+  enabled: true
+  # 1 primary + 2 replicas
+  replicas: 3
+  image: registry.opensource.zalan.do/acid/spilo-16:3.2-p2
   resources:
     requests:
       memory: "4Gi"
@@ -148,6 +167,68 @@ postgresql:
   persistence:
     enabled: true
     size: 100Gi
+    storageClass: fast-ssd
+  # Patroni configuration
+  patroni:
+    enabled: true
+    scope: blockd-postgres
+  # WAL archiving for PITR
+  walArchiving:
+    enabled: true
+    s3Bucket: blockd-backups-production
+    retentionDays: 30
+
+# PgBouncer Connection Pooler
+pgbouncer:
+  enabled: true
+  replicas: 3
+  image: bitnami/pgbouncer:1.22.1
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "500m"
+  # Connection pooling settings
+  poolMode: transaction
+  maxClientConnections: 2000
+  defaultPoolSize: 50
+  minPoolSize: 10
+  reservePoolSize: 10
+  maxDbConnections: 200
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+
+# etcd for Patroni leader election
+etcd:
+  enabled: true
+  replicas: 3
+  image: bitnami/etcd:3.5.12
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  persistence:
+    enabled: true
+    size: 10Gi
+
+# Database backup configuration
+backup:
+  enabled: true
+  schedule: "0 2 * * *"  # Daily at 2 AM UTC
+  retentionDays: 30
+  walRetentionDays: 7
+  s3Bucket: blockd-backups-production
+  verification:
+    enabled: true
+    schedule: "30 * * * *"  # Hourly verification
 
 redis:
   replicas: 3
@@ -200,6 +281,27 @@ ingress:
 configMap:
   s3Bucket: blockd-videos-production
   logLevel: info
+
+# Database connection configuration
+# =================================
+# IMPORTANT: Services should connect through PgBouncer, not directly to PostgreSQL
+#
+# Connection URLs (set via External Secrets):
+# - DATABASE_URL: postgresql://user:pass@pgbouncer:5432/blockd (read-write via primary)
+# - DATABASE_URL_READONLY: postgresql://user:pass@pgbouncer:5432/blockd_readonly (read-only via replicas)
+# - DATABASE_URL_DIRECT: postgresql://user:pass@postgresql-ha-primary:5432/blockd (bypasses pooling, for migrations)
+#
+database:
+  # PgBouncer endpoint for application connections
+  host: pgbouncer
+  port: 5432
+  name: blockd
+  # Read-only endpoint (load balanced across replicas)
+  readonlyHost: pgbouncer
+  readonlyDatabase: blockd_readonly
+  # Direct connection to primary (for migrations, bypasses pooling)
+  directHost: postgresql-ha-primary
+  directPort: 5432
 
 # Secrets MUST be provided via external secret manager (Vault, AWS Secrets Manager, etc.)
 secrets:

@@ -42,3 +42,13 @@ output "node_security_group_id" {
   description = "Security group ID for nodes"
   value       = module.eks.node_security_group_id
 }
+
+output "oidc_provider_arn" {
+  description = "ARN of the OIDC Provider for IRSA"
+  value       = module.eks.oidc_provider_arn
+}
+
+output "service_account_role_arns" {
+  description = "Map of service account names to their IAM role ARNs"
+  value       = { for k, v in aws_iam_role.service_account : k => v.arn }
+}
