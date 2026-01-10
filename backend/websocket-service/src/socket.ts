@@ -98,7 +98,8 @@ export function setupEventMonitoring(
   });
 
   // Monitor server errors
-  io.on('error', (error) => {
+  // Note: Using type assertion since 'error' is not in the typed event names
+  (io as any).on('error', (error: Error) => {
     logger.error('Socket.io server error', error);
   });
 

@@ -4,11 +4,10 @@
  * Blockd Auth Service
  */
 
-import { PrismaClient, User, UserRole as PrismaUserRole } from '@prisma/client';
+import { User, UserRole as PrismaUserRole } from '@prisma/client';
 import { CreateUserData, UpdateUserData, UserProfile, UserWithPassword } from '../types/user.types';
 import { NotFoundError, EmailAlreadyExistsError } from '../lib/errors';
-
-const prisma = new PrismaClient();
+import { prisma, disconnectPrisma } from '../lib/database';
 
 /**
  * Create a new user
@@ -195,6 +194,10 @@ export async function getUsersByRole(role: string): Promise<UserProfile[]> {
  * Map Prisma User to UserProfile
  */
 function mapUserToProfile(user: User): UserProfile {
+  const firstName = user.firstName || '';
+  const lastName = user.lastName || '';
+  const fullName = [firstName, lastName].filter(Boolean).join(' ') || null;
+
   return {
     id: user.id,
     email: user.email,
@@ -202,6 +205,8 @@ function mapUserToProfile(user: User): UserProfile {
     organization_id: user.organizationId,
     first_name: user.firstName,
     last_name: user.lastName,
+    full_name: fullName,
+    avatar_url: (user as any).avatarUrl || null,
     mfa_enabled: user.mfaEnabled,
     email_verified: user.emailVerified,
     last_login_at: user.lastLoginAt,
@@ -216,7 +221,8 @@ function mapUserToProfile(user: User): UserProfile {
 function mapUserWithPassword(user: User): UserWithPassword {
   return {
     ...mapUserToProfile(user),
-    password_hash: user.passwordHash
+    password_hash: user.passwordHash,
+    mfa_secret: user.mfaSecret
   };
 }
 
@@ -224,5 +230,5 @@ function mapUserWithPassword(user: User): UserWithPassword {
  * Close Prisma connection
  */
 export async function disconnectDatabase(): Promise<void> {
-  await prisma.$disconnect();
+  await disconnectPrisma();
 }

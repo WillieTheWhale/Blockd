@@ -45,14 +45,22 @@ model Organization {
   @@map("organizations")
 }
 
+enum OAuthProvider {
+  google
+  microsoft
+
+  @@map("oauth_provider")
+}
+
 model User {
   id              String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   email           String        @unique @db.VarChar(255)
-  passwordHash    String        @map("password_hash") @db.VarChar(255)
+  passwordHash    String?       @map("password_hash") @db.VarChar(255)
   role            UserRole      @default(interviewee)
   organizationId  String?       @map("organization_id") @db.Uuid
   firstName       String?       @map("first_name") @db.VarChar(100)
   lastName        String?       @map("last_name") @db.VarChar(100)
+  avatarUrl       String?       @map("avatar_url") @db.VarChar(500)
   mfaEnabled      Boolean       @default(false) @map("mfa_enabled")
   mfaSecret       String?       @map("mfa_secret") @db.VarChar(255)
   emailVerified   Boolean       @default(false) @map("email_verified")
@@ -62,11 +70,31 @@ model User {
   deletedAt       DateTime?     @map("deleted_at") @db.Timestamptz(6)
 
   organization    Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  oauthAccounts   OAuthAccount[]
 
   @@index([email], where: { deletedAt: null })
   @@index([organizationId], where: { deletedAt: null })
   @@index([role])
   @@map("users")
+}
+
+model OAuthAccount {
+  id              String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId          String        @map("user_id") @db.Uuid
+  provider        OAuthProvider
+  providerId      String        @map("provider_id") @db.VarChar(255)
+  accessToken     String?       @map("access_token") @db.Text
+  refreshToken    String?       @map("refresh_token") @db.Text
+  tokenExpiresAt  DateTime?     @map("token_expires_at") @db.Timestamptz(6)
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerId])
+  @@unique([userId, provider])
+  @@index([userId])
+  @@map("oauth_accounts")
 }
 
 model AuditLog {

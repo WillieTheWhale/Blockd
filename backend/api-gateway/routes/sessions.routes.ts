@@ -1,11 +1,13 @@
 /**
  * Session Management Routes
+ * Proxies requests to session-service with state machine enforcement
  */
 
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, FastifyRequest } from 'fastify';
 import { authenticate, requireRole } from '../middleware/auth.middleware';
 import { authRateLimiter } from '../middleware/rate-limit.middleware';
 import { validateBody, validateParams, validateQuery } from '../middleware/validation.middleware';
+import { sessionStateMiddleware } from '../middleware/session-state.middleware';
 import {
   createSessionRequestSchema,
   startSessionRequestSchema,
@@ -20,8 +22,47 @@ import {
 } from '../schemas/session.schema';
 import { idParamSchema, IdParam } from '../schemas/common.schema';
 import { sendSuccess, sendCreated, sendPaginated } from '../lib/response';
-import { NotFoundError, BadRequestError, ForbiddenError } from '../lib/errors';
-import prisma from '../lib/prisma';
+import { NotFoundError, BadRequestError, ForbiddenError, InternalServerError } from '../lib/errors';
+import {
+  sessionServiceClient,
+  ServiceClientError,
+  extractAuthToken,
+  ServiceTypes,
+} from '../lib/service-client';
+
+/**
+ * Helper to forward authentication context to session-service
+ */
+function getForwardHeaders(request: FastifyRequest): {
+  authToken?: string;
+  userId?: string;
+  organizationId?: string;
+} {
+  return {
+    authToken: extractAuthToken(request.headers.authorization),
+    userId: request.user?.userId,
+    organizationId: request.user?.organizationId,
+  };
+}
+
+/**
+ * Convert service client errors to appropriate HTTP errors
+ */
+function handleServiceError(error: unknown): never {
+  if (error instanceof ServiceClientError) {
+    switch (error.statusCode) {
+      case 404:
+        throw new NotFoundError(error.message);
+      case 400:
+        throw new BadRequestError(error.message);
+      case 403:
+        throw new ForbiddenError(error.message);
+      default:
+        throw new InternalServerError(error.message);
+    }
+  }
+  throw error;
+}
 
 export default async function sessionsRoutes(fastify: FastifyInstance) {
   // Create session
@@ -36,7 +77,6 @@ export default async function sessionsRoutes(fastify: FastifyInstance) {
       tags: ['Sessions'],
       summary: 'Create a new interview session',
       description: 'Creates a new interview session',
-      body: createSessionRequestSchema,
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
@@ -48,20 +88,27 @@ export default async function sessionsRoutes(fastify: FastifyInstance) {
         throw new BadRequestError('User must belong to an organization');
       }
 
-      // Create session
-      const session = await prisma.interviewSession.create({
-        data: {
-          interviewerId,
-          intervieweeId,
-          intervieweeEmail,
-          organizationId,
-          scheduledStart,
-          status: 'scheduled',
-          metadata: metadata || {},
-        },
-      });
+      try {
+        const session = await sessionServiceClient.forward<ServiceTypes.Session>(
+          'POST',
+          '/sessions',
+          {
+            body: {
+              interviewerId,
+              intervieweeId,
+              intervieweeEmail,
+              organizationId,
+              scheduledStart,
+              metadata,
+            },
+            ...getForwardHeaders(request),
+          }
+        );
 
-      return sendCreated(reply, session);
+        return sendCreated(reply, session);
+      } catch (error) {
+        handleServiceError(error);
+      }
     },
   });
 
@@ -76,49 +123,25 @@ export default async function sessionsRoutes(fastify: FastifyInstance) {
       tags: ['Sessions'],
       summary: 'Get session by ID',
       description: 'Retrieves a specific interview session',
-      params: idParamSchema,
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
       const { id } = request.params;
 
-      const session = await prisma.interviewSession.findUnique({
-        where: { id },
-        include: {
-          interviewer: {
-            select: {
-              id: true,
-              email: true,
-              firstName: true,
-              lastName: true,
-            },
-          },
-          interviewee: {
-            select: {
-              id: true,
-              email: true,
-              firstName: true,
-              lastName: true,
-            },
-          },
-        },
-      });
+      try {
+        const session = await sessionServiceClient.forward<ServiceTypes.Session>(
+          'GET',
+          `/sessions/${id}`,
+          {
+            ...getForwardHeaders(request),
+          }
+        );
 
-      if (!session) {
-        throw new NotFoundError('Session not found');
+        // Access control is enforced by session-service based on forwarded headers
+        return sendSuccess(reply, session);
+      } catch (error) {
+        handleServiceError(error);
       }
-
-      // Check access permissions
-      const userId = request.user!.userId;
-      const userRole = request.user!.role;
-
-      if (userRole !== 'admin' &&
-          session.interviewerId !== userId &&
-          session.intervieweeId !== userId) {
-        throw new ForbiddenError('Access denied to this session');
-      }
-
-      return sendSuccess(reply, session);
     },
   });
 
@@ -133,57 +156,33 @@ export default async function sessionsRoutes(fastify: FastifyInstance) {
       tags: ['Sessions'],
       summary: 'List sessions',
       description: 'Lists interview sessions with pagination',
-      querystring: listSessionsQuerySchema,
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
       const { page, pageSize, status, interviewerId, intervieweeId, startDate, endDate } = request.query;
-      const userId = request.user!.userId;
-      const userRole = request.user!.role;
 
-      const where: any = {};
+      try {
+        const result = await sessionServiceClient.forward<ServiceTypes.PaginatedResponse<ServiceTypes.Session>>(
+          'GET',
+          '/sessions',
+          {
+            query: {
+              page,
+              pageSize,
+              status,
+              interviewerId,
+              intervieweeId,
+              startDate: startDate?.toISOString(),
+              endDate: endDate?.toISOString(),
+            },
+            ...getForwardHeaders(request),
+          }
+        );
 
-      // Non-admin users can only see their own sessions
-      if (userRole !== 'admin') {
-        where.OR = [
-          { interviewerId: userId },
-          { intervieweeId: userId },
-        ];
+        return sendPaginated(reply, result.items, result.page, result.pageSize, result.totalItems);
+      } catch (error) {
+        handleServiceError(error);
       }
-
-      if (status) {
-        where.status = status;
-      }
-
-      if (interviewerId) {
-        where.interviewerId = interviewerId;
-      }
-
-      if (intervieweeId) {
-        where.intervieweeId = intervieweeId;
-      }
-
-      if (startDate || endDate) {
-        where.scheduledStart = {};
-        if (startDate) {
-          where.scheduledStart.gte = startDate;
-        }
-        if (endDate) {
-          where.scheduledStart.lte = endDate;
-        }
-      }
-
-      const [sessions, totalItems] = await Promise.all([
-        prisma.interviewSession.findMany({
-          where,
-          skip: (page - 1) * pageSize,
-          take: pageSize,
-          orderBy: { createdAt: 'desc' },
-        }),
-        prisma.interviewSession.count({ where }),
-      ]);
-
-      return sendPaginated(reply, sessions, page, pageSize, totalItems);
     },
   });
 
@@ -194,40 +193,31 @@ export default async function sessionsRoutes(fastify: FastifyInstance) {
       authRateLimiter,
       validateParams(idParamSchema),
       validateBody(startSessionRequestSchema),
+      sessionStateMiddleware.start, // Validates: scheduled -> active
     ],
     schema: {
       tags: ['Sessions'],
       summary: 'Start a session',
       description: 'Starts an interview session',
-      params: idParamSchema,
-      body: startSessionRequestSchema,
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
       const { id } = request.params;
 
-      const session = await prisma.interviewSession.findUnique({
-        where: { id },
-      });
+      try {
+        const session = await sessionServiceClient.forward<ServiceTypes.Session>(
+          'POST',
+          `/sessions/${id}/start`,
+          {
+            body: request.body,
+            ...getForwardHeaders(request),
+          }
+        );
 
-      if (!session) {
-        throw new NotFoundError('Session not found');
+        return sendSuccess(reply, session);
+      } catch (error) {
+        handleServiceError(error);
       }
-
-      if (session.status !== 'scheduled') {
-        throw new BadRequestError(`Session cannot be started. Current status: ${session.status}`);
-      }
-
-      // Update session status
-      const updatedSession = await prisma.interviewSession.update({
-        where: { id },
-        data: {
-          status: 'active',
-          actualStart: new Date(),
-        },
-      });
-
-      return sendSuccess(reply, updatedSession);
     },
   });
 
@@ -238,93 +228,225 @@ export default async function sessionsRoutes(fastify: FastifyInstance) {
       authRateLimiter,
       validateParams(idParamSchema),
       validateBody(endSessionRequestSchema),
+      sessionStateMiddleware.end, // Validates: active -> ended
     ],
     schema: {
       tags: ['Sessions'],
       summary: 'End a session',
       description: 'Ends an interview session',
-      params: idParamSchema,
-      body: endSessionRequestSchema,
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
       const { id } = request.params;
 
-      const session = await prisma.interviewSession.findUnique({
-        where: { id },
-      });
+      try {
+        const session = await sessionServiceClient.forward<ServiceTypes.Session>(
+          'POST',
+          `/sessions/${id}/end`,
+          {
+            body: request.body,
+            ...getForwardHeaders(request),
+          }
+        );
 
-      if (!session) {
-        throw new NotFoundError('Session not found');
+        return sendSuccess(reply, session);
+      } catch (error) {
+        handleServiceError(error);
       }
-
-      if (session.status !== 'active') {
-        throw new BadRequestError(`Session cannot be ended. Current status: ${session.status}`);
-      }
-
-      // Update session status
-      const updatedSession = await prisma.interviewSession.update({
-        where: { id },
-        data: {
-          status: 'ended',
-          actualEnd: new Date(),
-        },
-      });
-
-      return sendSuccess(reply, updatedSession);
     },
   });
 
-  // Get session events
+  // Cancel session
+  fastify.post<{ Params: IdParam }>('/:id/cancel', {
+    preHandler: [
+      authenticate,
+      authRateLimiter,
+      requireRole('interviewer', 'admin'),
+      validateParams(idParamSchema),
+      sessionStateMiddleware.cancel, // Validates: scheduled/active -> cancelled
+    ],
+    schema: {
+      tags: ['Sessions'],
+      summary: 'Cancel a session',
+      description: 'Cancels a scheduled interview session',
+      params: idParamSchema,
+      security: [{ bearerAuth: [] }],
+    },
+    handler: async (request, reply) => {
+      const { id } = request.params;
+
+      try {
+        const session = await sessionServiceClient.forward<ServiceTypes.Session>(
+          'POST',
+          `/sessions/${id}/cancel`,
+          {
+            ...getForwardHeaders(request),
+          }
+        );
+
+        return sendSuccess(reply, session);
+      } catch (error) {
+        handleServiceError(error);
+      }
+    },
+  });
+
+  // Get session events (security events)
   fastify.get<{ Params: IdParam; Querystring: SessionEventsQuery }>('/:id/events', {
     preHandler: [
       authenticate,
       authRateLimiter,
       validateParams(idParamSchema),
       validateQuery(sessionEventsQuerySchema),
+      sessionStateMiddleware.events, // Validates: only active/ended sessions
     ],
     schema: {
       tags: ['Sessions'],
       summary: 'Get session events',
       description: 'Retrieves security events for a session',
-      params: idParamSchema,
-      querystring: sessionEventsQuerySchema,
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
       const { id } = request.params;
       const { page, pageSize, eventType, severity } = request.query;
 
-      // Verify session exists and user has access
-      const session = await prisma.interviewSession.findUnique({
-        where: { id },
-      });
+      try {
+        const result = await sessionServiceClient.forward<ServiceTypes.PaginatedResponse<ServiceTypes.SecurityEvent>>(
+          'GET',
+          `/sessions/${id}/security-events`,
+          {
+            query: { page, pageSize, eventType, severity },
+            ...getForwardHeaders(request),
+          }
+        );
 
-      if (!session) {
-        throw new NotFoundError('Session not found');
+        return sendPaginated(reply, result.items, result.page, result.pageSize, result.totalItems);
+      } catch (error) {
+        handleServiceError(error);
       }
+    },
+  });
 
-      const where: any = { sessionId: id };
+  // Get session questions
+  fastify.get<{ Params: IdParam }>('/:id/questions', {
+    preHandler: [
+      authenticate,
+      authRateLimiter,
+      validateParams(idParamSchema),
+      sessionStateMiddleware.questions, // Validates: not cancelled sessions
+    ],
+    schema: {
+      tags: ['Sessions'],
+      summary: 'Get session questions',
+      description: 'Retrieves all questions for a session',
+      params: idParamSchema,
+      security: [{ bearerAuth: [] }],
+    },
+    handler: async (request, reply) => {
+      const { id } = request.params;
 
-      if (eventType) {
-        where.eventType = eventType;
+      try {
+        const questions = await sessionServiceClient.forward<ServiceTypes.Question[]>(
+          'GET',
+          `/sessions/${id}/questions`,
+          {
+            ...getForwardHeaders(request),
+          }
+        );
+
+        return sendSuccess(reply, questions);
+      } catch (error) {
+        handleServiceError(error);
       }
+    },
+  });
 
-      if (severity) {
-        where.severity = severity;
+  // Generate session report
+  fastify.post<{ Params: IdParam }>('/:id/report', {
+    preHandler: [
+      authenticate,
+      authRateLimiter,
+      requireRole('interviewer', 'admin'),
+      validateParams(idParamSchema),
+      sessionStateMiddleware.report, // Validates: only ended sessions
+    ],
+    schema: {
+      tags: ['Sessions'],
+      summary: 'Generate session report',
+      description: 'Generates an analysis report for the session',
+      params: idParamSchema,
+      security: [{ bearerAuth: [] }],
+    },
+    handler: async (request, reply) => {
+      const { id } = request.params;
+
+      try {
+        const report = await sessionServiceClient.forward<ServiceTypes.SessionReport>(
+          'POST',
+          `/sessions/${id}/report`,
+          {
+            ...getForwardHeaders(request),
+          }
+        );
+
+        return sendCreated(reply, report);
+      } catch (error) {
+        handleServiceError(error);
       }
+    },
+  });
 
-      const [events, totalItems] = await Promise.all([
-        prisma.securityEvent.findMany({
-          where,
-          skip: (page - 1) * pageSize,
-          take: pageSize,
-          orderBy: { timestamp: 'desc' },
-        }),
-        prisma.securityEvent.count({ where }),
-      ]);
+  // Export session report
+  fastify.get<{ Params: IdParam }>('/:id/report/export', {
+    preHandler: [
+      authenticate,
+      authRateLimiter,
+      requireRole('interviewer', 'admin'),
+      validateParams(idParamSchema),
+      sessionStateMiddleware.report, // Validates: only ended sessions
+    ],
+    schema: {
+      tags: ['Sessions'],
+      summary: 'Export session report',
+      description: 'Exports the session report as PDF',
+      params: idParamSchema,
+      security: [{ bearerAuth: [] }],
+    },
+    handler: async (request, reply) => {
+      const { id } = request.params;
 
-      return sendPaginated(reply, events, page, pageSize, totalItems);
+      try {
+        // For binary responses like PDF, we need a different approach
+        // The session-service returns the PDF directly
+        const response = await fetch(
+          `${sessionServiceClient['baseUrl']}/sessions/${id}/report/export`,
+          {
+            headers: {
+              Authorization: request.headers.authorization || '',
+              'X-User-Id': request.user?.userId || '',
+              'X-Organization-Id': request.user?.organizationId || '',
+            },
+          }
+        );
+
+        if (!response.ok) {
+          if (response.status === 404) {
+            throw new NotFoundError('Session or report not found');
+          }
+          throw new InternalServerError('Failed to export report');
+        }
+
+        const buffer = await response.arrayBuffer();
+        reply.header('Content-Type', 'application/pdf');
+        reply.header('Content-Disposition', `attachment; filename="session-report-${id}.pdf"`);
+
+        return reply.send(Buffer.from(buffer));
+      } catch (error) {
+        if (error instanceof NotFoundError || error instanceof InternalServerError) {
+          throw error;
+        }
+        throw new InternalServerError('Failed to export report');
+      }
     },
   });
 }

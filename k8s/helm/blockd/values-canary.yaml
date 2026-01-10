@@ -1,0 +1,141 @@
+# Canary Deployment Configuration
+# Used in conjunction with values-production.yaml for canary releases
+
+# Canary configuration
+canary:
+  enabled: true
+  weight: 10  # Initial traffic weight (10%)
+  labels:
+    canary: "true"
+    version: canary
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/canary: "true"
+
+# Reduced replicas for canary (start small)
+replicaCount: 1
+
+# Resource limits (same as production for accurate testing)
+resources:
+  requests:
+    cpu: "250m"
+    memory: "512Mi"
+  limits:
+    cpu: "1000m"
+    memory: "2Gi"
+
+# Autoscaling disabled for canary (manual scaling)
+autoscaling:
+  enabled: false
+
+# Pod disruption budget (allow all pods to be disrupted for quick rollback)
+podDisruptionBudget:
+  enabled: false
+
+# Service configuration (internal only, traffic goes through canary ingress)
+service:
+  type: ClusterIP
+  annotations:
+    service.kubernetes.io/canary: "true"
+
+# Probes (same as production)
+livenessProbe:
+  enabled: true
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: true
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# Startup probe (allow longer startup for canary observation)
+startupProbe:
+  enabled: true
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 30
+
+# Metrics for canary monitoring
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 15s
+    labels:
+      release: prometheus
+      canary: "true"
+
+# Additional environment for canary identification
+extraEnv:
+  - name: DEPLOYMENT_TYPE
+    value: "canary"
+  - name: VERSION_TAG
+    valueFrom:
+      fieldRef:
+        fieldPath: metadata.labels['version']
+
+# Pod annotations for tracing
+podAnnotations:
+  sidecar.istio.io/inject: "true"
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "9090"
+  deployment.kubernetes.io/canary: "true"
+
+# Node affinity (prefer different nodes than stable)
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchLabels:
+              canary: "false"
+          topologyKey: kubernetes.io/hostname
+
+# Tolerations (allow scheduling on any node)
+tolerations: []
+
+# Update strategy (recreate for canary to ensure clean deployment)
+updateStrategy:
+  type: Recreate
+
+# Termination grace period (short for quick rollback)
+terminationGracePeriodSeconds: 30
+
+# Init containers (same as production)
+initContainers: []
+
+# Sidecar containers (add canary-specific metrics collector)
+sidecarContainers:
+  - name: canary-metrics-proxy
+    image: prom/pushgateway:v1.6.2
+    ports:
+      - containerPort: 9091
+        name: metrics-push
+    resources:
+      requests:
+        cpu: "10m"
+        memory: "32Mi"
+      limits:
+        cpu: "50m"
+        memory: "64Mi"
+
+# Config for canary-specific behavior
+config:
+  # Enable detailed logging for canary
+  logLevel: debug
+
+  # Feature flags for canary testing
+  features:
+    detailedMetrics: true
+    requestTracing: true
+
+# Ingress (disabled - using separate canary ingress)
+ingress:
+  enabled: false

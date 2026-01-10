@@ -1,0 +1,300 @@
+##
+# Prometheus Alerting Rules for Database Connection Pool Monitoring
+#
+# These rules monitor PostgreSQL connection pool health across all
+# Blockd backend services to prevent connection exhaustion.
+#
+# Alert severity levels:
+# - warning: Investigate during business hours
+# - critical: Immediate attention required
+# - page: Wake up on-call engineer
+##
+
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: database-pool-alerts
+  namespace: monitoring
+  labels:
+    app: prometheus
+    release: prometheus
+    component: database
+spec:
+  groups:
+    - name: database-connection-pool
+      interval: 30s
+      rules:
+        ##
+        # Connection Usage Alerts
+        ##
+
+        # Pool approaching capacity
+        - alert: DatabasePoolHighUsage
+          expr: |
+            (
+              pg_stat_activity_count{state="active"} /
+              pg_settings_setting{name="max_connections"}
+            ) > 0.7
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Database connection pool usage above 70%"
+            description: "PostgreSQL connection pool is at {{ $value | humanizePercentage }} capacity. Consider scaling up connections or optimizing queries."
+            runbook_url: "https://docs.blockd.io/runbooks/database-pool-high-usage"
+
+        # Pool nearly exhausted
+        - alert: DatabasePoolCriticalUsage
+          expr: |
+            (
+              pg_stat_activity_count{state="active"} /
+              pg_settings_setting{name="max_connections"}
+            ) > 0.85
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Database connection pool usage above 85%"
+            description: "PostgreSQL connection pool is at {{ $value | humanizePercentage }} capacity. Immediate action required to prevent connection exhaustion."
+            runbook_url: "https://docs.blockd.io/runbooks/database-pool-critical"
+
+        # Pool exhausted
+        - alert: DatabasePoolExhausted
+          expr: |
+            (
+              pg_stat_activity_count{state="active"} /
+              pg_settings_setting{name="max_connections"}
+            ) > 0.95
+          for: 1m
+          labels:
+            severity: page
+          annotations:
+            summary: "Database connection pool exhausted"
+            description: "PostgreSQL connection pool is at {{ $value | humanizePercentage }} capacity. New connections will be rejected."
+            runbook_url: "https://docs.blockd.io/runbooks/database-pool-exhausted"
+
+        ##
+        # Per-Service Connection Alerts
+        ##
+
+        # Service using too many connections
+        - alert: ServiceConnectionsHigh
+          expr: |
+            pg_stat_activity_count{state!="idle", application_name=~"blockd-.*"} > 40
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Service {{ $labels.application_name }} using high connections"
+            description: "Service {{ $labels.application_name }} is using {{ $value }} active connections. May indicate connection leak or high load."
+            runbook_url: "https://docs.blockd.io/runbooks/service-connections-high"
+
+        # Connection leak detection
+        - alert: ServiceConnectionLeak
+          expr: |
+            rate(pg_stat_activity_count{state="active", application_name=~"blockd-.*"}[1h]) > 0.5
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Possible connection leak in {{ $labels.application_name }}"
+            description: "Connection count for {{ $labels.application_name }} has been steadily increasing. Investigate for connection leaks."
+            runbook_url: "https://docs.blockd.io/runbooks/connection-leak"
+
+        ##
+        # Idle Connection Alerts
+        ##
+
+        # Too many idle connections (waste of resources)
+        - alert: DatabaseIdleConnectionsHigh
+          expr: |
+            pg_stat_activity_count{state="idle"} > 100
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High number of idle database connections"
+            description: "{{ $value }} idle connections detected. Consider reducing connection limits or implementing connection timeouts."
+            runbook_url: "https://docs.blockd.io/runbooks/idle-connections-high"
+
+        # Idle in transaction (potentially blocking)
+        - alert: DatabaseIdleInTransaction
+          expr: |
+            pg_stat_activity_count{state="idle in transaction"} > 5
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Connections idle in transaction"
+            description: "{{ $value }} connections are idle in transaction state, which can block other operations and cause deadlocks."
+            runbook_url: "https://docs.blockd.io/runbooks/idle-in-transaction"
+
+        # Long idle in transaction
+        - alert: DatabaseLongIdleInTransaction
+          expr: |
+            max(pg_stat_activity_max_tx_duration{state="idle in transaction"}) > 300
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Long-running idle transaction detected"
+            description: "Transaction has been idle for {{ $value | humanizeDuration }}. This blocks database resources and should be investigated immediately."
+            runbook_url: "https://docs.blockd.io/runbooks/long-idle-transaction"
+
+        ##
+        # Query Performance Alerts
+        ##
+
+        # Slow queries
+        - alert: DatabaseSlowQueries
+          expr: |
+            rate(pg_stat_statements_mean_time_seconds[5m]) > 1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Database queries running slowly"
+            description: "Average query execution time is {{ $value | humanizeDuration }}. Investigate query performance and consider adding indexes."
+            runbook_url: "https://docs.blockd.io/runbooks/slow-queries"
+
+        # Long-running queries
+        - alert: DatabaseLongRunningQuery
+          expr: |
+            max(pg_stat_activity_max_tx_duration{state="active"}) > 60
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Long-running database query detected"
+            description: "Query has been running for {{ $value | humanizeDuration }}. May indicate missing indexes or inefficient query."
+            runbook_url: "https://docs.blockd.io/runbooks/long-running-query"
+
+        # Very long-running queries (potential runaway)
+        - alert: DatabaseRunawayQuery
+          expr: |
+            max(pg_stat_activity_max_tx_duration{state="active"}) > 300
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Potential runaway query detected"
+            description: "Query has been running for {{ $value | humanizeDuration }}. Consider terminating the query to free resources."
+            runbook_url: "https://docs.blockd.io/runbooks/runaway-query"
+
+        ##
+        # Connection Wait Alerts
+        ##
+
+        # Queries waiting for connections
+        - alert: DatabaseConnectionWait
+          expr: |
+            rate(pg_stat_activity_count{wait_event_type="Client"}[5m]) > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Queries waiting for database connections"
+            description: "Queries are waiting for database connections. Consider increasing pool size or optimizing connection usage."
+            runbook_url: "https://docs.blockd.io/runbooks/connection-wait"
+
+        ##
+        # Pool Timeout Alerts
+        ##
+
+        # Application-level pool timeout (if exposed via metrics)
+        - alert: PrismaPoolTimeout
+          expr: |
+            increase(prisma_pool_timeout_total[5m]) > 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Prisma connection pool timeout"
+            description: "Prisma client experienced {{ $value }} pool timeouts in the last 5 minutes. Increase pool size or investigate slow queries."
+            runbook_url: "https://docs.blockd.io/runbooks/prisma-pool-timeout"
+
+        ##
+        # Replication Alerts
+        ##
+
+        # Replication lag
+        - alert: DatabaseReplicationLag
+          expr: |
+            pg_replication_lag_seconds > 10
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Database replication lag detected"
+            description: "Replication lag is {{ $value | humanizeDuration }}. Read replicas may be serving stale data."
+            runbook_url: "https://docs.blockd.io/runbooks/replication-lag"
+
+        # Critical replication lag
+        - alert: DatabaseReplicationLagCritical
+          expr: |
+            pg_replication_lag_seconds > 60
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Critical database replication lag"
+            description: "Replication lag is {{ $value | humanizeDuration }}. Consider pausing read traffic to replicas."
+            runbook_url: "https://docs.blockd.io/runbooks/replication-lag-critical"
+
+        # Replica disconnected
+        - alert: DatabaseReplicaDisconnected
+          expr: |
+            pg_replication_is_replica == 1 and up == 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Database replica disconnected"
+            description: "Read replica {{ $labels.instance }} is disconnected. Read capacity is reduced."
+            runbook_url: "https://docs.blockd.io/runbooks/replica-disconnected"
+
+        ##
+        # Deadlock Detection
+        ##
+
+        - alert: DatabaseDeadlockDetected
+          expr: |
+            increase(pg_stat_database_deadlocks[5m]) > 0
+          for: 0m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Database deadlock detected"
+            description: "{{ $value }} deadlock(s) detected in database {{ $labels.datname }}. Review transaction ordering and locking strategies."
+            runbook_url: "https://docs.blockd.io/runbooks/deadlock-detected"
+
+        - alert: DatabaseDeadlocksFrequent
+          expr: |
+            increase(pg_stat_database_deadlocks[1h]) > 5
+          for: 0m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Frequent database deadlocks"
+            description: "{{ $value }} deadlocks in the last hour. Immediate investigation required to prevent application failures."
+            runbook_url: "https://docs.blockd.io/runbooks/deadlocks-frequent"
+
+    - name: database-capacity-planning
+      interval: 1m
+      rules:
+        ##
+        # Capacity Planning Metrics (for recording rules)
+        ##
+
+        - record: blockd:database:connection_usage_ratio
+          expr: |
+            pg_stat_activity_count{state="active"} /
+            pg_settings_setting{name="max_connections"}
+
+        - record: blockd:database:connections_by_service
+          expr: |
+            sum by (application_name) (pg_stat_activity_count{application_name=~"blockd-.*"})
+
+        - record: blockd:database:connection_usage_trend
+          expr: |
+            predict_linear(pg_stat_activity_count{state="active"}[1h], 3600)

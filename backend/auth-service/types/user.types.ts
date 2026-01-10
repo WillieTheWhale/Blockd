@@ -12,6 +12,8 @@ export interface UserProfile {
   organization_id: string | null;
   first_name: string | null;
   last_name: string | null;
+  full_name?: string | null;
+  avatar_url?: string | null;
   mfa_enabled: boolean;
   email_verified: boolean;
   last_login_at: Date | null;
@@ -38,6 +40,7 @@ export interface UpdateUserData {
 
 export interface UserWithPassword extends UserProfile {
   password_hash: string;
+  mfa_secret?: string | null;
 }
 
 export interface UserSession {

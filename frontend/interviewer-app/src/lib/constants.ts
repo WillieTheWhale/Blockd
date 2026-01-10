@@ -8,6 +8,25 @@ export const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000'
 export const APP_ENV = import.meta.env.VITE_APP_ENV || 'development'
 
 /**
+ * OAuth 2.0 configuration
+ * Uses Authorization Code Flow with PKCE for maximum security
+ */
+export const OAUTH_CONFIG = {
+  GOOGLE: {
+    CLIENT_ID: import.meta.env.VITE_GOOGLE_CLIENT_ID || '',
+    AUTHORIZATION_URL: 'https://accounts.google.com/o/oauth2/v2/auth',
+    SCOPES: ['openid', 'email', 'profile'],
+  },
+  MICROSOFT: {
+    CLIENT_ID: import.meta.env.VITE_MICROSOFT_CLIENT_ID || '',
+    AUTHORIZATION_URL: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
+    SCOPES: ['openid', 'email', 'profile'],
+  },
+  // Redirect URI is constructed dynamically to support different environments
+  REDIRECT_URI: typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : '',
+} as const
+
+/**
  * Local storage keys
  */
 export const STORAGE_KEYS = {
@@ -15,6 +34,7 @@ export const STORAGE_KEYS = {
   REFRESH_TOKEN: 'blockd_refresh_token',
   USER_DATA: 'blockd_user_data',
   THEME: 'blockd_theme',
+  OAUTH_STATE: 'blockd_oauth_state',
 } as const
 
 /**
@@ -27,6 +47,8 @@ export const API_ENDPOINTS = {
     LOGOUT: '/api/v1/auth/logout',
     REFRESH: '/api/v1/auth/refresh',
     ME: '/api/v1/auth/me',
+    OAUTH_CALLBACK: '/api/v1/auth/oauth/callback',
+    OAUTH_PROVIDERS: '/api/v1/auth/oauth/providers',
   },
   SESSIONS: {
     LIST: '/api/v1/sessions',

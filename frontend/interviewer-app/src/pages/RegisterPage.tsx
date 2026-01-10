@@ -14,6 +14,8 @@ import { useAuthStore } from '@/stores/auth-store'
 import { registerSchema, type RegisterFormData, calculatePasswordStrength } from '@/lib/validations'
 import { USER_ROLES } from '@/lib/constants'
 import { Loader2, CheckCircle2 } from 'lucide-react'
+import { Separator } from '@/components/ui/separator'
+import { OAuthButton } from '@/components/OAuthButton'
 import type { UserRole } from '@/types'
 
 export function RegisterPage() {
@@ -293,6 +295,20 @@ export function RegisterPage() {
               )}
             </Button>
           </form>
+
+          <div className="relative my-4">
+            <div className="absolute inset-0 flex items-center">
+              <Separator />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-card px-2 text-muted-foreground">Or continue with</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <OAuthButton provider="google" disabled={isLoading} />
+            <OAuthButton provider="microsoft" disabled={isLoading} />
+          </div>
 
           <div className="mt-4 text-center text-sm">
             Already have an account?{' '}

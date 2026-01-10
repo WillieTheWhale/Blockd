@@ -1,0 +1,204 @@
+# Pod Disruption Budgets for Blockd Platform
+# Ensures minimum availability during voluntary disruptions (node maintenance, cluster upgrades)
+#
+# Guidelines:
+# - Services with 2+ replicas: minAvailable = 1 or maxUnavailable = 1
+# - Critical services: minAvailable = 2 (requires 3+ replicas)
+# - Use minAvailable for strict guarantees, maxUnavailable for flexibility
+---
+# API Gateway PDB - Critical entry point
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: api-gateway-pdb
+  namespace: blockd
+  labels:
+    app: api-gateway
+    app.kubernetes.io/part-of: blockd
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: api-gateway
+
+---
+# Auth Service PDB - Critical for authentication
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: auth-service-pdb
+  namespace: blockd
+  labels:
+    app: auth-service
+    app.kubernetes.io/part-of: blockd
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: auth-service
+
+---
+# Session Service PDB - Manages interview sessions
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: session-service-pdb
+  namespace: blockd
+  labels:
+    app: session-service
+    app.kubernetes.io/part-of: blockd
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: session-service
+
+---
+# WebSocket Service PDB - Real-time connections
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: websocket-service-pdb
+  namespace: blockd
+  labels:
+    app: websocket-service
+    app.kubernetes.io/part-of: blockd
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: websocket-service
+
+---
+# AI Detection Service PDB
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ai-detection-pdb
+  namespace: blockd
+  labels:
+    app: ai-detection
+    app.kubernetes.io/part-of: blockd
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: ai-detection
+
+---
+# Eye Tracking Service PDB
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: eye-tracking-pdb
+  namespace: blockd
+  labels:
+    app: eye-tracking
+    app.kubernetes.io/part-of: blockd
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: eye-tracking
+
+---
+# Response Timing Service PDB
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: response-timing-pdb
+  namespace: blockd
+  labels:
+    app: response-timing
+    app.kubernetes.io/part-of: blockd
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: response-timing
+
+---
+# Video Service PDB - Critical for interview recording
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: video-service-pdb
+  namespace: blockd
+  labels:
+    app: video-service
+    app.kubernetes.io/part-of: blockd
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: video-service
+
+---
+# Frontend PDB
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: frontend-pdb
+  namespace: blockd
+  labels:
+    app: frontend
+    app.kubernetes.io/part-of: blockd
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: frontend
+
+---
+# Celery Video Workers PDB
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: celery-worker-video-pdb
+  namespace: blockd
+  labels:
+    app: celery-worker
+    component: video
+    app.kubernetes.io/part-of: blockd
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: celery-worker
+      component: video
+
+---
+# Celery AI Workers PDB
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: celery-worker-ai-pdb
+  namespace: blockd
+  labels:
+    app: celery-worker
+    component: ai
+    app.kubernetes.io/part-of: blockd
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: celery-worker
+      component: ai
+
+---
+# Celery Session Workers PDB
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: celery-worker-session-pdb
+  namespace: blockd
+  labels:
+    app: celery-worker
+    component: session
+    app.kubernetes.io/part-of: blockd
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: celery-worker
+      component: session

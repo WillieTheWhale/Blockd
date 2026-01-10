@@ -17,10 +17,22 @@ export interface SocketUserData {
 }
 
 /**
+ * Socket Data (attached to each socket)
+ */
+export interface SocketData {
+  user: SocketUserData;
+  sessionId?: string;
+  connectedAt: Date;
+  lastActivity: Date;
+  latency?: number;
+}
+
+/**
  * Extended Socket type with custom user data
+ * Uses SocketData which contains the user object and session metadata
  */
 export interface AuthenticatedSocket extends IOSocket {
-  data: SocketUserData;
+  data: SocketData;
 }
 
 /**
@@ -88,16 +100,6 @@ export interface ServerToClientEvents {
 export interface InterServerEvents {
   'session:broadcast': (sessionId: string, event: string, data: any) => void;
   'user:broadcast': (userId: string, event: string, data: any) => void;
-}
-
-/**
- * Socket Data (attached to each socket)
- */
-export interface SocketData {
-  user: SocketUserData;
-  sessionId?: string;
-  connectedAt: Date;
-  lastActivity: Date;
 }
 
 // Event data types

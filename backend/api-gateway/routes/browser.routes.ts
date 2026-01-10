@@ -1,9 +1,9 @@
 /**
  * Browser Client Routes
+ * Proxies requests to session-service for session validation and security events
  */
 
 import { FastifyInstance } from 'fastify';
-import { optionalAuthenticate } from '../middleware/auth.middleware';
 import { publicRateLimiter, authRateLimiter } from '../middleware/rate-limit.middleware';
 import { validateBody } from '../middleware/validation.middleware';
 import {
@@ -15,8 +15,28 @@ import {
   BatchTelemetryRequest,
 } from '../schemas/browser.schema';
 import { sendSuccess } from '../lib/response';
-import { NotFoundError } from '../lib/errors';
-import prisma from '../lib/prisma';
+import { NotFoundError, BadRequestError, InternalServerError } from '../lib/errors';
+import {
+  sessionServiceClient,
+  ServiceClientError,
+} from '../lib/service-client';
+
+/**
+ * Convert service client errors to appropriate HTTP errors
+ */
+function handleServiceError(error: unknown): never {
+  if (error instanceof ServiceClientError) {
+    switch (error.statusCode) {
+      case 404:
+        throw new NotFoundError(error.message);
+      case 400:
+        throw new BadRequestError(error.message);
+      default:
+        throw new InternalServerError(error.message);
+    }
+  }
+  throw error;
+}
 
 export default async function browserRoutes(fastify: FastifyInstance) {
   // Validate session token
@@ -26,29 +46,28 @@ export default async function browserRoutes(fastify: FastifyInstance) {
       tags: ['Browser'],
       summary: 'Validate session token',
       description: 'Validates a session token for browser client',
-      body: validateSessionRequestSchema,
     },
     handler: async (request, reply) => {
       const { sessionToken } = request.body;
 
-      const session = await prisma.interviewSession.findUnique({
-        where: { sessionToken },
-      });
+      try {
+        const validation = await sessionServiceClient.post<{
+          valid: boolean;
+          sessionId?: string;
+          expiresAt?: string;
+        }>(
+          '/sessions/token/validate',
+          { sessionToken }
+        );
 
-      if (!session) {
-        return sendSuccess(reply, {
-          valid: false,
-        });
+        return sendSuccess(reply, validation);
+      } catch (error) {
+        // If session not found, return valid: false instead of throwing
+        if (error instanceof ServiceClientError && error.statusCode === 404) {
+          return sendSuccess(reply, { valid: false });
+        }
+        handleServiceError(error);
       }
-
-      // Check if session is active
-      const isValid = session.status === 'active' || session.status === 'scheduled';
-
-      return sendSuccess(reply, {
-        valid: isValid,
-        sessionId: isValid ? session.id : undefined,
-        expiresAt: session.actualEnd?.toISOString(),
-      });
     },
   });
 
@@ -59,44 +78,33 @@ export default async function browserRoutes(fastify: FastifyInstance) {
       tags: ['Browser'],
       summary: 'Report security event',
       description: 'Reports a security event from the browser client',
-      body: securityEventRequestSchema,
     },
     handler: async (request, reply) => {
       const { sessionId, eventType, severity, description, metadata } = request.body;
 
-      // Verify session exists
-      const session = await prisma.interviewSession.findUnique({
-        where: { id: sessionId },
-      });
+      try {
+        const event = await sessionServiceClient.post<{
+          id: string;
+          sessionId: string;
+          eventType: string;
+          severity: string;
+          description?: string;
+          metadata?: Record<string, unknown>;
+          timestamp: string;
+        }>(
+          `/sessions/${sessionId}/security-events`,
+          {
+            eventType,
+            severity,
+            description,
+            metadata,
+          }
+        );
 
-      if (!session) {
-        throw new NotFoundError('Session not found');
+        return sendSuccess(reply, event);
+      } catch (error) {
+        handleServiceError(error);
       }
-
-      // Create security event
-      const event = await prisma.securityEvent.create({
-        data: {
-          sessionId,
-          eventType: eventType as any,
-          severity: severity as any,
-          description,
-          metadata: metadata || {},
-        },
-      });
-
-      // Update session risk score (simplified calculation)
-      const eventCount = await prisma.securityEvent.count({
-        where: { sessionId },
-      });
-
-      const riskScore = Math.min(eventCount * 0.1, 1.0);
-
-      await prisma.interviewSession.update({
-        where: { id: sessionId },
-        data: { riskScore },
-      });
-
-      return sendSuccess(reply, event);
     },
   });
 
@@ -107,36 +115,102 @@ export default async function browserRoutes(fastify: FastifyInstance) {
       tags: ['Browser'],
       summary: 'Submit batch telemetry',
       description: 'Submits a batch of telemetry data from browser client',
-      body: batchTelemetryRequestSchema,
     },
     handler: async (request, reply) => {
       const { events } = request.body;
 
-      // Process telemetry events in batch
-      const telemetryRecords = events.map(event => ({
-        sessionId: event.sessionId,
-        timestamp: event.timestamp,
-        cpuPercent: event.cpuPercent,
-        memoryMb: event.memoryMb,
-        activeProcesses: event.activeProcesses || [],
-        windowTitle: event.windowTitle,
-        browserTabsCount: event.browserTabsCount,
-        networkRequests: event.networkRequests || [],
-        metadata: event.metadata || {},
-      }));
+      try {
+        // Group events by session ID and forward to session-service
+        const sessionGroups = new Map<string, typeof events>();
 
-      // Insert in batch (note: this uses createMany which doesn't work with TimescaleDB hypertables)
-      // In production, use individual inserts or batch insert via raw SQL
-      for (const record of telemetryRecords) {
-        await prisma.browserTelemetry.create({
-          data: record as any,
+        for (const event of events) {
+          const sessionId = event.sessionId;
+          if (!sessionGroups.has(sessionId)) {
+            sessionGroups.set(sessionId, []);
+          }
+          sessionGroups.get(sessionId)!.push(event);
+        }
+
+        // Send telemetry batches to session-service for each session
+        const promises = Array.from(sessionGroups.entries()).map(
+          ([sessionId, sessionEvents]) =>
+            sessionServiceClient.post(
+              `/sessions/${sessionId}/telemetry/batch`,
+              { events: sessionEvents }
+            )
+        );
+
+        await Promise.all(promises);
+
+        return sendSuccess(reply, {
+          processed: events.length,
+          message: 'Telemetry data processed successfully',
         });
+      } catch (error) {
+        handleServiceError(error);
       }
+    },
+  });
 
-      return sendSuccess(reply, {
-        processed: telemetryRecords.length,
-        message: 'Telemetry data processed successfully',
-      });
+  // Get session info for browser client
+  fastify.get<{ Params: { sessionToken: string } }>('/session/:sessionToken', {
+    preHandler: [publicRateLimiter],
+    schema: {
+      tags: ['Browser'],
+      summary: 'Get session info by token',
+      description: 'Retrieves session information for the browser client',
+      params: {
+        type: 'object',
+        properties: {
+          sessionToken: { type: 'string' },
+        },
+      },
+    },
+    handler: async (request, reply) => {
+      const { sessionToken } = request.params;
+
+      try {
+        const session = await sessionServiceClient.get<{
+          id: string;
+          status: string;
+          scheduledStart?: string;
+          actualStart?: string;
+          metadata?: Record<string, unknown>;
+        }>(
+          `/sessions/token/${sessionToken}`
+        );
+
+        return sendSuccess(reply, session);
+      } catch (error) {
+        handleServiceError(error);
+      }
+    },
+  });
+
+  // Heartbeat endpoint for browser client
+  fastify.post<{ Body: { sessionId: string; timestamp: string } }>('/heartbeat', {
+    preHandler: [authRateLimiter],
+    schema: {
+      tags: ['Browser'],
+      summary: 'Session heartbeat',
+      description: 'Sends a heartbeat to indicate browser client is still active',
+    },
+    handler: async (request, reply) => {
+      const { sessionId, timestamp } = request.body;
+
+      try {
+        await sessionServiceClient.post(
+          `/sessions/${sessionId}/heartbeat`,
+          { timestamp }
+        );
+
+        return sendSuccess(reply, {
+          acknowledged: true,
+          serverTime: new Date().toISOString(),
+        });
+      } catch (error) {
+        handleServiceError(error);
+      }
     },
   });
 }

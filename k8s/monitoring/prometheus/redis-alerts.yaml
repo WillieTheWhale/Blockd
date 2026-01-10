@@ -1,0 +1,334 @@
+# Redis Cluster Prometheus Alerts
+# Monitors cluster health, memory, replication, and performance
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: redis-cluster-alerts
+  namespace: blockd
+  labels:
+    app: redis-cluster
+    prometheus: blockd
+spec:
+  groups:
+    - name: redis-cluster-health
+      interval: 15s
+      rules:
+        # Cluster state not OK
+        - alert: RedisClusterStateNotOK
+          expr: |
+            redis_cluster_state{namespace="blockd"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            component: redis
+          annotations:
+            summary: "Redis cluster state is not OK"
+            description: "Redis cluster on {{ $labels.instance }} is reporting cluster_state != ok. Slots may be failing over or unassigned."
+            runbook_url: "https://docs.blockd.com/runbooks/redis-cluster-not-ok"
+
+        # Cluster slot coverage incomplete
+        - alert: RedisClusterSlotsNotCovered
+          expr: |
+            redis_cluster_slots_ok{namespace="blockd"} < 16384
+          for: 2m
+          labels:
+            severity: critical
+            component: redis
+          annotations:
+            summary: "Redis cluster has uncovered slots"
+            description: "Redis cluster has only {{ $value }} of 16384 slots covered. Some data may be inaccessible."
+            runbook_url: "https://docs.blockd.com/runbooks/redis-slots-uncovered"
+
+        # Cluster node down
+        - alert: RedisClusterNodeDown
+          expr: |
+            redis_cluster_known_nodes{namespace="blockd"} < 6
+          for: 2m
+          labels:
+            severity: high
+            component: redis
+          annotations:
+            summary: "Redis cluster has fewer than expected nodes"
+            description: "Redis cluster has {{ $value }} nodes instead of expected 6. Node may have failed."
+
+        # Pod not running
+        - alert: RedisClusterPodNotRunning
+          expr: |
+            kube_statefulset_status_replicas_ready{
+              namespace="blockd",
+              statefulset="redis-cluster"
+            } < 6
+          for: 2m
+          labels:
+            severity: high
+            component: redis
+          annotations:
+            summary: "Redis cluster has pods not ready"
+            description: "Only {{ $value }} of 6 Redis cluster pods are ready."
+
+    - name: redis-memory
+      interval: 30s
+      rules:
+        # Memory usage high
+        - alert: RedisMemoryUsageHigh
+          expr: |
+            (
+              redis_memory_used_bytes{namespace="blockd"}
+              /
+              redis_memory_max_bytes{namespace="blockd"}
+            ) > 0.8
+          for: 5m
+          labels:
+            severity: warning
+            component: redis
+          annotations:
+            summary: "Redis memory usage is high on {{ $labels.instance }}"
+            description: "Redis is using {{ $value | humanizePercentage }} of max memory. Consider scaling or eviction."
+
+        # Memory usage critical
+        - alert: RedisMemoryUsageCritical
+          expr: |
+            (
+              redis_memory_used_bytes{namespace="blockd"}
+              /
+              redis_memory_max_bytes{namespace="blockd"}
+            ) > 0.95
+          for: 2m
+          labels:
+            severity: critical
+            component: redis
+          annotations:
+            summary: "Redis memory usage is critical on {{ $labels.instance }}"
+            description: "Redis is using {{ $value | humanizePercentage }} of max memory. OOM or heavy eviction imminent."
+            runbook_url: "https://docs.blockd.com/runbooks/redis-memory-critical"
+
+        # Fragmentation ratio high
+        - alert: RedisMemoryFragmentationHigh
+          expr: |
+            redis_mem_fragmentation_ratio{namespace="blockd"} > 2.5
+          for: 10m
+          labels:
+            severity: warning
+            component: redis
+          annotations:
+            summary: "Redis memory fragmentation is high"
+            description: "Redis memory fragmentation ratio is {{ $value }}. Memory usage is inefficient."
+
+        # Fragmentation ratio very high
+        - alert: RedisMemoryFragmentationCritical
+          expr: |
+            redis_mem_fragmentation_ratio{namespace="blockd"} > 5
+          for: 5m
+          labels:
+            severity: high
+            component: redis
+          annotations:
+            summary: "Redis memory fragmentation is critical"
+            description: "Redis memory fragmentation ratio is {{ $value }}. This indicates serious memory issues."
+
+    - name: redis-replication
+      interval: 30s
+      rules:
+        # Replication lag
+        - alert: RedisReplicationLag
+          expr: |
+            redis_connected_slave_lag_seconds{namespace="blockd"} > 10
+          for: 5m
+          labels:
+            severity: warning
+            component: redis
+          annotations:
+            summary: "Redis replica has replication lag"
+            description: "Redis replica {{ $labels.instance }} is {{ $value }}s behind master."
+
+        # Replication broken
+        - alert: RedisReplicationBroken
+          expr: |
+            redis_connected_slaves{namespace="blockd"} == 0
+          for: 2m
+          labels:
+            severity: high
+            component: redis
+          annotations:
+            summary: "Redis master has no connected replicas"
+            description: "Redis master {{ $labels.instance }} has no connected replicas. Data is not being replicated."
+
+        # Master link down
+        - alert: RedisReplicaMasterLinkDown
+          expr: |
+            redis_master_link_up{namespace="blockd"} == 0
+          for: 1m
+          labels:
+            severity: high
+            component: redis
+          annotations:
+            summary: "Redis replica lost connection to master"
+            description: "Redis replica {{ $labels.instance }} has lost connection to its master."
+
+    - name: redis-performance
+      interval: 30s
+      rules:
+        # High command latency
+        - alert: RedisHighCommandLatency
+          expr: |
+            redis_commands_duration_seconds_total{namespace="blockd"}
+            /
+            redis_commands_processed_total{namespace="blockd"} > 0.001
+          for: 5m
+          labels:
+            severity: warning
+            component: redis
+          annotations:
+            summary: "Redis command latency is high"
+            description: "Redis average command latency is {{ $value | humanizeDuration }} on {{ $labels.instance }}."
+
+        # Too many connections
+        - alert: RedisConnectionsHigh
+          expr: |
+            redis_connected_clients{namespace="blockd"} > 1000
+          for: 5m
+          labels:
+            severity: warning
+            component: redis
+          annotations:
+            summary: "Redis has many connected clients"
+            description: "Redis {{ $labels.instance }} has {{ $value }} connected clients."
+
+        # Connections near limit
+        - alert: RedisConnectionsNearLimit
+          expr: |
+            (
+              redis_connected_clients{namespace="blockd"}
+              /
+              redis_config_maxclients{namespace="blockd"}
+            ) > 0.9
+          for: 2m
+          labels:
+            severity: high
+            component: redis
+          annotations:
+            summary: "Redis connections near limit"
+            description: "Redis {{ $labels.instance }} is using {{ $value | humanizePercentage }} of max connections."
+
+        # High eviction rate
+        - alert: RedisHighEvictionRate
+          expr: |
+            rate(redis_evicted_keys_total{namespace="blockd"}[5m]) > 100
+          for: 5m
+          labels:
+            severity: warning
+            component: redis
+          annotations:
+            summary: "Redis has high key eviction rate"
+            description: "Redis {{ $labels.instance }} is evicting {{ $value }} keys per second."
+
+        # Blocked clients
+        - alert: RedisBlockedClients
+          expr: |
+            redis_blocked_clients{namespace="blockd"} > 10
+          for: 5m
+          labels:
+            severity: warning
+            component: redis
+          annotations:
+            summary: "Redis has blocked clients"
+            description: "Redis {{ $labels.instance }} has {{ $value }} blocked clients waiting on BLPOP/BRPOP."
+
+    - name: redis-persistence
+      interval: 60s
+      rules:
+        # AOF rewrite in progress for too long
+        - alert: RedisAOFRewriteInProgress
+          expr: |
+            redis_aof_rewrite_in_progress{namespace="blockd"} == 1
+          for: 30m
+          labels:
+            severity: warning
+            component: redis
+          annotations:
+            summary: "Redis AOF rewrite in progress for too long"
+            description: "Redis {{ $labels.instance }} has been rewriting AOF for over 30 minutes."
+
+        # RDB save in progress for too long
+        - alert: RedisRDBSaveInProgress
+          expr: |
+            redis_rdb_bgsave_in_progress{namespace="blockd"} == 1
+          for: 30m
+          labels:
+            severity: warning
+            component: redis
+          annotations:
+            summary: "Redis RDB save in progress for too long"
+            description: "Redis {{ $labels.instance }} has been saving RDB for over 30 minutes."
+
+        # Last successful save too old
+        - alert: RedisLastSaveTooOld
+          expr: |
+            time() - redis_rdb_last_save_timestamp_seconds{namespace="blockd"} > 3600
+          for: 5m
+          labels:
+            severity: warning
+            component: redis
+          annotations:
+            summary: "Redis last RDB save is too old"
+            description: "Redis {{ $labels.instance }} last RDB save was {{ $value | humanizeDuration }} ago."
+
+    - name: redis-keyspace
+      interval: 60s
+      rules:
+        # Key count growing rapidly
+        - alert: RedisKeyCountGrowingRapidly
+          expr: |
+            rate(redis_db_keys{namespace="blockd"}[1h]) > 1000
+          for: 30m
+          labels:
+            severity: warning
+            component: redis
+          annotations:
+            summary: "Redis key count growing rapidly"
+            description: "Redis {{ $labels.instance }} db{{ $labels.db }} is adding {{ $value }} keys per second."
+
+        # Too many expiring keys
+        - alert: RedisTooManyExpiringKeys
+          expr: |
+            (
+              redis_db_keys_expiring{namespace="blockd"}
+              /
+              redis_db_keys{namespace="blockd"}
+            ) > 0.9
+          for: 10m
+          labels:
+            severity: info
+            component: redis
+          annotations:
+            summary: "Most Redis keys are expiring"
+            description: "{{ $value | humanizePercentage }} of keys in Redis {{ $labels.instance }} db{{ $labels.db }} have TTL set."
+
+    - name: redis-cluster-failover
+      interval: 15s
+      rules:
+        # Failover in progress
+        - alert: RedisClusterFailoverInProgress
+          expr: |
+            redis_cluster_current_epoch{namespace="blockd"} - redis_cluster_current_epoch{namespace="blockd"} offset 1m > 0
+          for: 0m
+          labels:
+            severity: warning
+            component: redis
+          annotations:
+            summary: "Redis cluster failover in progress"
+            description: "A failover is happening in the Redis cluster. Epoch changed from {{ $value }}."
+
+        # Multiple failovers
+        - alert: RedisClusterMultipleFailovers
+          expr: |
+            changes(redis_cluster_current_epoch{namespace="blockd"}[1h]) > 3
+          for: 0m
+          labels:
+            severity: high
+            component: redis
+          annotations:
+            summary: "Redis cluster has had multiple failovers"
+            description: "Redis cluster has had {{ $value }} failovers in the last hour. Cluster may be unstable."
+            runbook_url: "https://docs.blockd.com/runbooks/redis-unstable"

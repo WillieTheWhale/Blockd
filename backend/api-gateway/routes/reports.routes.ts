@@ -1,23 +1,61 @@
 /**
  * Reports Routes
+ * Proxies requests to session-service for report generation and retrieval
  */
 
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, FastifyRequest } from 'fastify';
 import { authenticate } from '../middleware/auth.middleware';
 import { authRateLimiter } from '../middleware/rate-limit.middleware';
 import { validateParams } from '../middleware/validation.middleware';
 import { idParamSchema, IdParam } from '../schemas/common.schema';
 import { sendSuccess } from '../lib/response';
-import { NotFoundError } from '../lib/errors';
-import prisma from '../lib/prisma';
+import { NotFoundError, BadRequestError, InternalServerError } from '../lib/errors';
+import {
+  sessionServiceClient,
+  ServiceClientError,
+  extractAuthToken,
+  ServiceTypes,
+} from '../lib/service-client';
+import { config } from '../src/config';
+
+/**
+ * Helper to forward authentication context
+ */
+function getForwardHeaders(request: FastifyRequest): {
+  authToken?: string;
+  userId?: string;
+  organizationId?: string;
+} {
+  return {
+    authToken: extractAuthToken(request.headers.authorization),
+    userId: request.user?.userId,
+    organizationId: request.user?.organizationId,
+  };
+}
+
+/**
+ * Convert service client errors to appropriate HTTP errors
+ */
+function handleServiceError(error: unknown): never {
+  if (error instanceof ServiceClientError) {
+    switch (error.statusCode) {
+      case 404:
+        throw new NotFoundError(error.message);
+      case 400:
+        throw new BadRequestError(error.message);
+      default:
+        throw new InternalServerError(error.message);
+    }
+  }
+  throw error;
+}
 
 export default async function reportsRoutes(fastify: FastifyInstance) {
   // Get session report
-  fastify.get<{ Params: IdParam }>('/:session_id', {
+  fastify.get<{ Params: { session_id: string } }>('/:session_id', {
     preHandler: [
       authenticate,
       authRateLimiter,
-      validateParams(idParamSchema.extend({ session_id: idParamSchema.shape.id })),
     ],
     schema: {
       tags: ['Reports'],
@@ -32,105 +70,32 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
-      const sessionId = (request.params as any).session_id;
+      const sessionId = request.params.session_id;
 
-      // Verify session exists
-      const session = await prisma.interviewSession.findUnique({
-        where: { id: sessionId },
-        include: {
-          interviewer: {
-            select: {
-              email: true,
-              firstName: true,
-              lastName: true,
-            },
-          },
-          interviewee: {
-            select: {
-              email: true,
-              firstName: true,
-              lastName: true,
-            },
-          },
-        },
-      });
+      try {
+        // Get report from session-service
+        const report = await sessionServiceClient.forward<ServiceTypes.SessionReport & {
+          session: Partial<ServiceTypes.Session>;
+        }>(
+          'GET',
+          `/sessions/${sessionId}/report`,
+          {
+            ...getForwardHeaders(request),
+          }
+        );
 
-      if (!session) {
-        throw new NotFoundError('Session not found');
+        return sendSuccess(reply, report);
+      } catch (error) {
+        handleServiceError(error);
       }
-
-      // Get or generate report
-      let report = await prisma.sessionReport.findUnique({
-        where: { sessionId },
-      });
-
-      if (!report) {
-        // Generate report if it doesn't exist
-        const [securityEventsCount, questionsCount, answersAnalysis] = await Promise.all([
-          prisma.securityEvent.count({ where: { sessionId } }),
-          prisma.question.count({ where: { sessionId } }),
-          prisma.answerAnalysis.findMany({
-            where: {
-              question: {
-                sessionId,
-              },
-            },
-          }),
-        ]);
-
-        const avgRiskScore = answersAnalysis.length > 0
-          ? answersAnalysis.reduce((sum, a) => sum + Number(a.riskScore || 0), 0) / answersAnalysis.length
-          : 0;
-
-        const aiGeneratedCount = answersAnalysis.filter(a => a.isAiGenerated).length;
-
-        report = await prisma.sessionReport.create({
-          data: {
-            sessionId,
-            overallRiskScore: session.riskScore || avgRiskScore,
-            aiDetectionScore: aiGeneratedCount / Math.max(answersAnalysis.length, 1),
-            gazeAnomalyScore: 0, // Would be calculated from gaze events
-            timingAnomalyScore: 0, // Would be calculated from timing data
-            securityEventsCount,
-            recommendations: [
-              ...(avgRiskScore > 0.7 ? ['High risk score detected - manual review recommended'] : []),
-              ...(securityEventsCount > 10 ? ['Multiple security events detected'] : []),
-              ...(aiGeneratedCount > 0 ? ['AI-generated answers detected'] : []),
-            ],
-            detailedAnalysis: {
-              questionsAsked: questionsCount,
-              answersAnalyzed: answersAnalysis.length,
-              aiGeneratedAnswers: aiGeneratedCount,
-              securityEvents: securityEventsCount,
-            },
-          },
-        });
-      }
-
-      const response = {
-        ...report,
-        session: {
-          id: session.id,
-          status: session.status,
-          scheduledStart: session.scheduledStart,
-          actualStart: session.actualStart,
-          actualEnd: session.actualEnd,
-          durationMinutes: session.durationMinutes,
-          interviewer: session.interviewer,
-          interviewee: session.interviewee,
-        },
-      };
-
-      return sendSuccess(reply, response);
     },
   });
 
   // Get session report as PDF
-  fastify.get<{ Params: IdParam }>('/:session_id/pdf', {
+  fastify.get<{ Params: { session_id: string } }>('/:session_id/pdf', {
     preHandler: [
       authenticate,
       authRateLimiter,
-      validateParams(idParamSchema.extend({ session_id: idParamSchema.shape.id })),
     ],
     schema: {
       tags: ['Reports'],
@@ -145,23 +110,185 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
-      const sessionId = (request.params as any).session_id;
+      const sessionId = request.params.session_id;
 
-      // Verify session exists
-      const session = await prisma.interviewSession.findUnique({
-        where: { id: sessionId },
-      });
+      try {
+        // For PDF export, we need to stream directly from session-service
+        const response = await fetch(
+          `${config.services.sessionService}/sessions/${sessionId}/report/export`,
+          {
+            headers: {
+              Authorization: request.headers.authorization || '',
+              'X-User-Id': request.user?.userId || '',
+              'X-Organization-Id': request.user?.organizationId || '',
+            },
+          }
+        );
 
-      if (!session) {
-        throw new NotFoundError('Session not found');
+        if (!response.ok) {
+          if (response.status === 404) {
+            throw new NotFoundError('Session or report not found');
+          }
+          throw new InternalServerError('Failed to generate PDF report');
+        }
+
+        const buffer = await response.arrayBuffer();
+        reply.header('Content-Type', 'application/pdf');
+        reply.header('Content-Disposition', `attachment; filename="session-report-${sessionId}.pdf"`);
+
+        return reply.send(Buffer.from(buffer));
+      } catch (error) {
+        if (error instanceof NotFoundError || error instanceof InternalServerError) {
+          throw error;
+        }
+        throw new InternalServerError('Failed to export report');
       }
+    },
+  });
 
-      // In production, this would generate a PDF using a library like puppeteer or pdfkit
-      // For now, return a placeholder response
-      reply.header('Content-Type', 'application/pdf');
-      reply.header('Content-Disposition', `attachment; filename="session-report-${sessionId}.pdf"`);
+  // Get report summary (lightweight version)
+  fastify.get<{ Params: { session_id: string } }>('/:session_id/summary', {
+    preHandler: [
+      authenticate,
+      authRateLimiter,
+    ],
+    schema: {
+      tags: ['Reports'],
+      summary: 'Get report summary',
+      description: 'Retrieves a lightweight summary of the session report',
+      params: {
+        type: 'object',
+        properties: {
+          session_id: { type: 'string', format: 'uuid' },
+        },
+      },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: async (request, reply) => {
+      const sessionId = request.params.session_id;
 
-      return reply.send(Buffer.from('PDF content would be generated here'));
+      try {
+        const summary = await sessionServiceClient.forward<{
+          sessionId: string;
+          overallRiskScore: number;
+          riskLevel: 'low' | 'medium' | 'high' | 'critical';
+          securityEventsCount: number;
+          aiDetectionFlags: number;
+          gazeAnomalies: number;
+          status: string;
+        }>(
+          'GET',
+          `/sessions/${sessionId}/report/summary`,
+          {
+            ...getForwardHeaders(request),
+          }
+        );
+
+        return sendSuccess(reply, summary);
+      } catch (error) {
+        handleServiceError(error);
+      }
+    },
+  });
+
+  // List reports for organization
+  fastify.get<{
+    Querystring: {
+      page?: number;
+      pageSize?: number;
+      startDate?: string;
+      endDate?: string;
+      riskLevel?: string;
+    };
+  }>('/', {
+    preHandler: [
+      authenticate,
+      authRateLimiter,
+    ],
+    schema: {
+      tags: ['Reports'],
+      summary: 'List organization reports',
+      description: 'Lists all reports for the organization with filtering options',
+      querystring: {
+        type: 'object',
+        properties: {
+          page: { type: 'number', default: 1 },
+          pageSize: { type: 'number', default: 20 },
+          startDate: { type: 'string', format: 'date-time' },
+          endDate: { type: 'string', format: 'date-time' },
+          riskLevel: { type: 'string', enum: ['low', 'medium', 'high', 'critical'] },
+        },
+      },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: async (request, reply) => {
+      const { page, pageSize, startDate, endDate, riskLevel } = request.query;
+
+      try {
+        const result = await sessionServiceClient.forward<ServiceTypes.PaginatedResponse<{
+          sessionId: string;
+          sessionStatus: string;
+          overallRiskScore: number;
+          riskLevel: string;
+          securityEventsCount: number;
+          generatedAt: string;
+          interviewee?: { email: string; firstName?: string; lastName?: string };
+        }>>(
+          'GET',
+          '/reports',
+          {
+            query: {
+              page: page || 1,
+              pageSize: pageSize || 20,
+              startDate,
+              endDate,
+              riskLevel,
+            },
+            ...getForwardHeaders(request),
+          }
+        );
+
+        return sendSuccess(reply, result);
+      } catch (error) {
+        handleServiceError(error);
+      }
+    },
+  });
+
+  // Regenerate session report
+  fastify.post<{ Params: { session_id: string } }>('/:session_id/regenerate', {
+    preHandler: [
+      authenticate,
+      authRateLimiter,
+    ],
+    schema: {
+      tags: ['Reports'],
+      summary: 'Regenerate session report',
+      description: 'Regenerates the analysis report for a session with fresh data',
+      params: {
+        type: 'object',
+        properties: {
+          session_id: { type: 'string', format: 'uuid' },
+        },
+      },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: async (request, reply) => {
+      const sessionId = request.params.session_id;
+
+      try {
+        const report = await sessionServiceClient.forward<ServiceTypes.SessionReport>(
+          'POST',
+          `/sessions/${sessionId}/report/regenerate`,
+          {
+            ...getForwardHeaders(request),
+          }
+        );
+
+        return sendSuccess(reply, report);
+      } catch (error) {
+        handleServiceError(error);
+      }
     },
   });
 }

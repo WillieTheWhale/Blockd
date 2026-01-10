@@ -61,32 +61,69 @@ class RedisClient {
   }
 
   /**
-   * Create Redis cluster client
+   * Create Redis cluster client for Kubernetes deployment
    */
   private createClusterClient(): Cluster {
-    const nodes = [
-      { host: '172.28.0.11', port: 6379 },
-      { host: '172.28.0.12', port: 6379 },
-      { host: '172.28.0.13', port: 6379 },
-      { host: '172.28.0.14', port: 6379 },
-      { host: '172.28.0.15', port: 6379 },
-      { host: '172.28.0.16', port: 6379 },
-    ];
+    // Get cluster nodes from environment or use Kubernetes DNS discovery
+    const clusterNodes = process.env.REDIS_CLUSTER_NODES;
+    const clusterServiceName = process.env.REDIS_CLUSTER_SERVICE || 'redis-cluster-headless';
+    const clusterNamespace = process.env.REDIS_CLUSTER_NAMESPACE || 'blockd';
+    const clusterPort = parseInt(process.env.REDIS_CLUSTER_PORT || '6379', 10);
+    const clusterReplicas = parseInt(process.env.REDIS_CLUSTER_REPLICAS || '6', 10);
+
+    let nodes: { host: string; port: number }[];
+
+    if (clusterNodes) {
+      // Parse nodes from comma-separated environment variable
+      // Format: "host1:port1,host2:port2,..."
+      nodes = clusterNodes.split(',').map(node => {
+        const [host, port] = node.trim().split(':');
+        return { host, port: parseInt(port || '6379', 10) };
+      });
+    } else {
+      // Use Kubernetes DNS discovery with headless service
+      // Each pod gets a DNS entry like: redis-cluster-0.redis-cluster-headless.blockd.svc.cluster.local
+      nodes = Array.from({ length: clusterReplicas }, (_, i) => ({
+        host: `redis-cluster-${i}.${clusterServiceName}.${clusterNamespace}.svc.cluster.local`,
+        port: clusterPort,
+      }));
+    }
+
+    console.log('[Redis] Cluster nodes:', nodes.map(n => `${n.host}:${n.port}`).join(', '));
 
     const options: ClusterOptions = {
       redisOptions: {
         password: process.env.REDIS_PASSWORD,
-        connectTimeout: 10000,
+        connectTimeout: 15000,
         maxRetriesPerRequest: 3,
+        enableReadyCheck: true,
+        retryStrategy: (times: number) => {
+          const delay = Math.min(times * 100, 3000);
+          console.log(`[Redis] Cluster node retry attempt ${times}, waiting ${delay}ms`);
+          return delay;
+        },
       },
       clusterRetryStrategy: (times: number) => {
-        const delay = Math.min(times * 100, 3000);
+        if (times > 10) {
+          console.error('[Redis] Cluster max retries exceeded');
+          return null; // Stop retrying
+        }
+        const delay = Math.min(times * 200, 5000);
+        console.log(`[Redis] Cluster retry attempt ${times}, waiting ${delay}ms`);
         return delay;
       },
       enableReadyCheck: true,
       enableOfflineQueue: true,
       slotsRefreshTimeout: 10000,
-      natMap: {},
+      slotsRefreshInterval: 5000,
+      dnsLookup: (address, callback) => callback(null, address),
+      scaleReads: 'slave', // Read from replicas to distribute load
+      maxRedirections: 16,
+      retryDelayOnFailover: 100,
+      retryDelayOnClusterDown: 100,
+      retryDelayOnTryAgain: 100,
+      retryDelayOnMoved: 10,
+      natMap: {}, // Can be configured for NAT environments
     };
 
     return new Redis.Cluster(nodes, options);
@@ -115,6 +152,84 @@ class RedisClient {
     this.client.on('reconnecting', () => {
       console.log('[Redis] Reconnecting to Redis...');
     });
+
+    // Cluster-specific events
+    if (this.isCluster) {
+      const clusterClient = this.client as Cluster;
+
+      clusterClient.on('+node', (node: any) => {
+        console.log(`[Redis Cluster] Node added: ${node.options?.host}:${node.options?.port}`);
+      });
+
+      clusterClient.on('-node', (node: any) => {
+        console.log(`[Redis Cluster] Node removed: ${node.options?.host}:${node.options?.port}`);
+      });
+
+      clusterClient.on('node error', (error: Error, node: any) => {
+        console.error(`[Redis Cluster] Node error on ${node?.options?.host}:${node?.options?.port}:`, error.message);
+      });
+    }
+  }
+
+  /**
+   * Get cluster health status
+   */
+  async getClusterHealth(): Promise<{
+    isHealthy: boolean;
+    clusterState: string;
+    nodesCount: number;
+    slotsAssigned: number;
+    message: string;
+  }> {
+    try {
+      if (!this.isCluster) {
+        const pong = await this.client.ping();
+        return {
+          isHealthy: pong === 'PONG',
+          clusterState: 'standalone',
+          nodesCount: 1,
+          slotsAssigned: 16384,
+          message: 'Standalone Redis connection',
+        };
+      }
+
+      const clusterClient = this.client as Cluster;
+      const clusterInfo = await clusterClient.cluster('INFO') as string;
+
+      // Parse cluster info
+      const lines = clusterInfo.split('\r\n');
+      const info: Record<string, string> = {};
+      for (const line of lines) {
+        const [key, value] = line.split(':');
+        if (key && value) {
+          info[key] = value;
+        }
+      }
+
+      const clusterState = info.cluster_state || 'unknown';
+      const nodesCount = parseInt(info.cluster_known_nodes || '0', 10);
+      const slotsAssigned = parseInt(info.cluster_slots_assigned || '0', 10);
+
+      const isHealthy = clusterState === 'ok' && slotsAssigned === 16384;
+
+      return {
+        isHealthy,
+        clusterState,
+        nodesCount,
+        slotsAssigned,
+        message: isHealthy
+          ? `Cluster healthy with ${nodesCount} nodes`
+          : `Cluster degraded: state=${clusterState}, slots=${slotsAssigned}/16384`,
+      };
+    } catch (error) {
+      return {
+        isHealthy: false,
+        clusterState: 'error',
+        nodesCount: 0,
+        slotsAssigned: 0,
+        message: `Health check failed: ${error}`,
+      };
+    }
   }
 
   /**

@@ -4,6 +4,7 @@ import type { User, LoginCredentials, RegisterData, ProfileUpdateFormData } from
 import { clearTokens, setTokens as setAuthTokens } from '@/lib/auth'
 import { STORAGE_KEYS } from '@/lib/constants'
 import { apiRequest } from '@/lib/api-client'
+import { validateOAuthCallback, getOAuthState, clearOAuthState } from '@/lib/oauth'
 
 interface AuthState {
   user: User | null
@@ -27,6 +28,10 @@ interface AuthActions {
   disableMfa: (code: string) => Promise<{ success: boolean }>
   forgotPassword: (email: string) => Promise<{ success: boolean }>
   resetPassword: (token: string, password: string) => Promise<{ success: boolean }>
+  handleOAuthCallback: (
+    code: string,
+    state: string
+  ) => Promise<{ success: boolean; error?: string; redirectPath?: string }>
   setLoading: (isLoading: boolean) => void
   setError: (error: string | null) => void
   clearError: () => void
@@ -208,6 +213,53 @@ export const useAuthStore = create<AuthStore>()(
             const message = error instanceof Error ? error.message : 'Password reset failed'
             set({ isLoading: false, error: message })
             return { success: false }
+          }
+        },
+
+        handleOAuthCallback: async (code, state) => {
+          set({ isLoading: true, error: null })
+
+          try {
+            // Validate state parameter (CSRF protection)
+            const validation = validateOAuthCallback(state)
+            if (!validation.valid) {
+              set({ isLoading: false, error: validation.error })
+              return { success: false, error: validation.error }
+            }
+
+            const storedState = validation.storedState
+
+            // Exchange authorization code for tokens
+            const response = await apiRequest<{
+              user: User
+              accessToken: string
+              refreshToken: string
+            }>('POST', '/api/v1/auth/oauth/callback', {
+              code,
+              codeVerifier: storedState.codeVerifier,
+              provider: storedState.provider,
+            })
+
+            const { user, accessToken, refreshToken } = response
+
+            // Store tokens and user
+            get().setUser(user)
+            get().setTokens(accessToken, refreshToken)
+
+            // Clear OAuth state from sessionStorage
+            clearOAuthState()
+
+            set({ isLoading: false })
+
+            return {
+              success: true,
+              redirectPath: storedState.redirectPath,
+            }
+          } catch (error) {
+            const message = error instanceof Error ? error.message : 'OAuth callback failed'
+            set({ isLoading: false, error: message })
+            clearOAuthState()
+            return { success: false, error: message }
           }
         },
 

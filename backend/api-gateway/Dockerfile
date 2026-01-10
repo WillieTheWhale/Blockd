@@ -31,8 +31,8 @@ RUN npx tsc --skipLibCheck 2>&1 || echo "TypeScript compilation completed with w
 # Stage 2: Runtime
 FROM node:20-alpine
 
-# Set NODE_ENV - development for dev mode with tsx
-ENV NODE_ENV=development
+# Set NODE_ENV for production optimizations
+ENV NODE_ENV=production
 
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs && \
@@ -41,24 +41,16 @@ RUN addgroup -g 1001 -S nodejs && \
 # Set working directory
 WORKDIR /app
 
-# Copy package files and install ALL dependencies (including dev for tsx)
+# Copy package files and install production dependencies only
 COPY api-gateway/package*.json ./
-RUN npm install && \
+RUN npm ci --only=production && \
     npm cache clean --force
 
-# Copy built application from builder (for production use)
+# Copy built application from builder
 COPY --from=builder --chown=nodejs:nodejs /app/dist ./dist
 
 # Copy shared modules for runtime
 COPY --from=builder --chown=nodejs:nodejs /app/shared ../shared
-
-# Copy source code (needed for tsx dev mode)
-COPY --chown=nodejs:nodejs api-gateway/src/ ./src/
-COPY --chown=nodejs:nodejs api-gateway/lib/ ./lib/
-COPY --chown=nodejs:nodejs api-gateway/middleware/ ./middleware/
-COPY --chown=nodejs:nodejs api-gateway/routes/ ./routes/
-COPY --chown=nodejs:nodejs api-gateway/schemas/ ./schemas/
-COPY --chown=nodejs:nodejs api-gateway/tsconfig.json ./
 
 # Switch to non-root user
 USER nodejs
@@ -70,5 +62,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD node -e "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})" || exit 1
 
-# Default to dev mode (can be overridden)
-CMD ["npm", "run", "dev"]
+# Run compiled JavaScript in production
+CMD ["node", "dist/src/index.js"]

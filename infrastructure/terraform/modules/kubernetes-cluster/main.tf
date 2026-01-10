@@ -46,7 +46,11 @@ module "eks" {
 
   # Cluster endpoint configuration
   cluster_endpoint_private_access = true
-  cluster_endpoint_public_access  = true
+  cluster_endpoint_public_access  = length(var.cluster_endpoint_public_access_cidrs) > 0
+  cluster_endpoint_public_access_cidrs = length(var.cluster_endpoint_public_access_cidrs) > 0 ? var.cluster_endpoint_public_access_cidrs : null
+
+  # Enable IRSA (IAM Roles for Service Accounts)
+  enable_irsa = var.enable_irsa
 
   # Cluster encryption
   cluster_encryption_config = {
@@ -159,15 +163,61 @@ resource "aws_kms_alias" "eks" {
   target_key_id = aws_kms_key.eks.key_id
 }
 
-# Security group rules
+# Security group rules - Only allow access from specified CIDR blocks
+# SECURITY: Never use 0.0.0.0/0 - always specify VPN/office/bastion IPs
 resource "aws_security_group_rule" "cluster_ingress_workstation_https" {
-  description       = "Allow workstation to communicate with the cluster API Server"
+  count = length(var.cluster_endpoint_public_access_cidrs) > 0 ? 1 : 0
+
+  description       = "Allow specified CIDR blocks to communicate with the cluster API Server"
   type              = "ingress"
   from_port         = 443
   to_port           = 443
   protocol          = "tcp"
-  cidr_blocks       = ["0.0.0.0/0"]
+  cidr_blocks       = var.cluster_endpoint_public_access_cidrs
   security_group_id = module.eks.cluster_security_group_id
+}
+
+# IRSA (IAM Roles for Service Accounts) - enables pods to assume IAM roles
+resource "aws_iam_role" "service_account" {
+  for_each = var.enable_irsa ? var.service_account_roles : {}
+
+  name = "${var.cluster_name}-${each.key}-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Federated = module.eks.oidc_provider_arn
+        }
+        Action = "sts:AssumeRoleWithWebIdentity"
+        Condition = {
+          StringEquals = {
+            "${replace(module.eks.oidc_provider, "https://", "")}:sub" = "system:serviceaccount:${each.value.namespace}:${each.key}"
+            "${replace(module.eks.oidc_provider, "https://", "")}:aud" = "sts.amazonaws.com"
+          }
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name        = "${var.cluster_name}-${each.key}-role"
+    Environment = var.environment
+    ServiceAccount = each.key
+    Namespace   = each.value.namespace
+  }
+}
+
+resource "aws_iam_role_policy_attachment" "service_account" {
+  for_each = { for sa, config in var.service_account_roles : "${sa}-${index(config.policy_arns, config.policy_arns[0])}" => {
+    role       = sa
+    policy_arn = config.policy_arns[0]
+  } if var.enable_irsa && length(config.policy_arns) > 0 }
+
+  role       = aws_iam_role.service_account[each.value.role].name
+  policy_arn = each.value.policy_arn
 }
 
 # Data source for AWS account

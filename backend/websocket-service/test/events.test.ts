@@ -136,10 +136,12 @@ describe('Event Broadcasting', () => {
       });
 
       clientSocket1.on('connect', () => {
-        io.to(clientSocket1.id).emit('error', {
-          message: 'Test error',
-          code: 'TEST_ERROR',
-        });
+        if (clientSocket1.id) {
+          io.to(clientSocket1.id).emit('error', {
+            message: 'Test error',
+            code: 'TEST_ERROR',
+          });
+        }
       });
     });
   });
