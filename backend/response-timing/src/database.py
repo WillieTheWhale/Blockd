@@ -1,8 +1,13 @@
-"""Database connection and session management"""
+"""
+Database Connection and Session Management for Response Timing Service.
+
+Provides SQLAlchemy engine, session management, and database initialization.
+Uses PostgreSQL with connection pooling.
+"""
 
 import logging
 from contextlib import contextmanager
-from typing import Generator
+from typing import Generator, Optional
 from sqlalchemy import create_engine, pool, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
@@ -10,7 +15,7 @@ from .config import get_settings
 
 logger = logging.getLogger(__name__)
 
-# SQLAlchemy base
+# SQLAlchemy base - used by models.py
 Base = declarative_base()
 
 # Global engine and session maker
@@ -96,8 +101,14 @@ def get_db_session() -> Generator[Session, None, None]:
         db.close()
 
 
-def init_db():
-    """Initialize database connection and verify connectivity"""
+def init_db(create_tables: bool = False):
+    """
+    Initialize database connection and optionally create tables.
+
+    Args:
+        create_tables: If True, create all tables from models.
+                      In production, use Alembic migrations instead.
+    """
     try:
         engine = get_engine()
 
@@ -108,9 +119,24 @@ def init_db():
 
         logger.info("Database connection verified")
 
+        # Create tables if requested (for development/testing)
+        if create_tables:
+            # Import models to register them with Base
+            from . import models  # noqa: F401
+            Base.metadata.create_all(bind=engine)
+            logger.info("Database tables created")
+
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
         raise
+
+
+def create_all_tables():
+    """Create all database tables from models (for development)"""
+    from . import models  # noqa: F401
+    engine = get_engine()
+    Base.metadata.create_all(bind=engine)
+    logger.info("All database tables created")
 
 
 def close_db():
