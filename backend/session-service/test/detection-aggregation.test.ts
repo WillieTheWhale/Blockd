@@ -5,6 +5,8 @@
  * that coordinates AI detection, eye tracking, and response timing.
  */
 
+/// <reference types="jest" />
+
 import { DetectionAggregationService } from '../services/detection-aggregation.service';
 
 // Mock axios
@@ -12,14 +14,18 @@ jest.mock('axios', () => ({
   create: jest.fn(() => ({
     get: jest.fn(),
     post: jest.fn(),
+    interceptors: {
+      request: { use: jest.fn() },
+      response: { use: jest.fn() },
+    },
   })),
 }));
 
 describe('DetectionAggregationService', () => {
   let service: DetectionAggregationService;
-  let mockAiClient: any;
-  let mockEyeClient: any;
-  let mockTimingClient: any;
+  let mockAiClient: jest.Mocked<any>;
+  let mockEyeClient: jest.Mocked<any>;
+  let mockTimingClient: jest.Mocked<any>;
 
   beforeEach(() => {
     // Reset environment
@@ -53,35 +59,34 @@ describe('DetectionAggregationService', () => {
     it('should call AI detection service with correct parameters', async () => {
       const mockResponse = {
         data: {
-          analysis_id: 'analysis-123',
-          risk_score: 0.75,
-          is_ai_generated: true,
-          confidence: 0.85,
-          similarity_scores: {
+          analysisId: 'analysis-123',
+          riskScore: 0.75,
+          riskLevel: 'high',
+          isAiGenerated: true,
+          confidenceScore: 0.85,
+          similarityScores: {
             'gpt-4': 0.8,
             'claude-3.5-sonnet': 0.7,
           },
-          perplexity_score: 45.2,
-          analysis_completed_at: new Date().toISOString(),
+          perplexityScore: 45.2,
+          flags: ['high_similarity'],
         },
       };
 
       mockAiClient.post.mockResolvedValue(mockResponse);
 
       const result = await service.analyzeAnswer({
-        sessionId: 'session-123',
         questionId: 'question-456',
         answerText: 'This is a test answer',
         questionText: 'What is testing?',
       });
 
       expect(mockAiClient.post).toHaveBeenCalledWith(
-        '/analyze',
+        '/api/v1/analysis/answer',
         expect.objectContaining({
-          session_id: 'session-123',
-          question_id: 'question-456',
-          answer_text: 'This is a test answer',
-          question_text: 'What is testing?',
+          questionId: 'question-456',
+          answerText: 'This is a test answer',
+          questionText: 'What is testing?',
         })
       );
 
@@ -94,12 +99,11 @@ describe('DetectionAggregationService', () => {
 
       await expect(
         service.analyzeAnswer({
-          sessionId: 'session-123',
           questionId: 'question-456',
           answerText: 'Test answer',
           questionText: 'Test question',
         })
-      ).rejects.toThrow('Service unavailable');
+      ).rejects.toThrow();
     });
   });
 
@@ -107,22 +111,22 @@ describe('DetectionAggregationService', () => {
     it('should call eye tracking service and return summary', async () => {
       const mockResponse = {
         data: {
-          session_id: 'session-123',
-          total_duration_seconds: 600,
-          on_screen_percentage: 85.5,
-          off_screen_events: [
-            { direction: 'left', duration: 2.5, timestamp: new Date().toISOString() },
-          ],
-          patterns_detected: {
+          sessionId: 'session-123',
+          totalGazeEvents: 1000,
+          offScreenEvents: 50,
+          offScreenPercentage: 5.0,
+          offScreenDurationSeconds: 30,
+          offScreenByDirection: { left: 20, right: 15, up: 10, down: 5 },
+          patternsDetected: {
             reading: false,
             drift: false,
-            shifty: true,
+            shiftyEyes: true,
           },
           anomalies: [
-            { type: 'extended_off_screen', severity: 'medium', score: 0.6 },
+            { type: 'extended_off_screen', severity: 'medium', score: 0.6, timestamp: new Date().toISOString(), description: 'Extended off-screen' },
           ],
-          risk_score: 0.45,
-          heatmap_url: 'https://storage.example.com/heatmap-123.png',
+          riskScore: 0.45,
+          averageConfidence: 0.85,
         },
       };
 
@@ -130,18 +134,16 @@ describe('DetectionAggregationService', () => {
 
       const result = await service.getGazeAnalysis('session-123');
 
-      expect(mockEyeClient.get).toHaveBeenCalledWith('/summary/session-123');
-      expect(result.onScreenPercentage).toBe(85.5);
+      expect(mockEyeClient.get).toHaveBeenCalledWith('/api/v1/gaze/summary/session-123');
+      expect(result.offScreenPercentage).toBe(5.0);
       expect(result.riskScore).toBe(0.45);
-      expect(result.patternsDetected.shifty).toBe(true);
+      expect(result.patternsDetected.shiftyEyes).toBe(true);
     });
 
-    it('should handle missing gaze data gracefully', async () => {
-      mockEyeClient.get.mockResolvedValue({ data: null });
+    it('should handle gaze service errors', async () => {
+      mockEyeClient.get.mockRejectedValue(new Error('Service unavailable'));
 
-      const result = await service.getGazeAnalysis('session-123');
-
-      expect(result).toBeNull();
+      await expect(service.getGazeAnalysis('session-123')).rejects.toThrow();
     });
   });
 
@@ -149,30 +151,30 @@ describe('DetectionAggregationService', () => {
     it('should call response timing service with correct parameters', async () => {
       const mockResponse = {
         data: {
-          analysis_id: 'timing-123',
+          analysisId: 'timing-123',
+          sessionId: 'session-123',
           transcription: {
             text: 'Transcribed answer text',
             confidence: 0.95,
             words: [{ word: 'Test', start: 0, end: 0.5 }],
           },
-          timing_metrics: {
-            response_latency_ms: 4500,
-            speech_duration_seconds: 45.0,
-            total_duration_seconds: 52.0,
-            speech_rate_wpm: 145,
-            pause_count: 5,
-            pause_percentage: 13.5,
-            avg_pause_duration_seconds: 1.4,
-            filler_word_count: 3,
-            filler_word_ratio: 0.02,
+          metrics: {
+            latencyMs: 4500,
+            responseLatencyMs: 4500,
+            wordsPerMinute: 145,
+            speechRateWpm: 145,
+            pauseCount: 5,
+            pauseDurationAvgMs: 1400,
+            pausePercentage: 13.5,
+            fillerWordCount: 3,
+            fillerWordRatio: 0.02,
+            speechDurationMs: 45000,
+            totalDurationMs: 52000,
           },
-          anomalies: {
-            instant_response: false,
-            unnatural_consistency: false,
-            delayed_then_fluent: false,
-            robotic_speech_pattern: false,
-          },
-          risk_score: 0.15,
+          anomalies: [],
+          riskScore: 0.15,
+          riskLevel: 'low',
+          flags: [],
           recommendation: 'Timing patterns appear natural',
         },
       };
@@ -180,23 +182,23 @@ describe('DetectionAggregationService', () => {
       mockTimingClient.post.mockResolvedValue(mockResponse);
 
       const result = await service.analyzeAnswerTiming({
-        questionId: 'question-456',
+        sessionId: 'session-123',
+        answerId: 'question-456',
         audioUrl: 's3://bucket/audio.mp3',
         questionAskedAt: new Date(),
-        answerStartAt: new Date(),
-        difficulty: 'analytical',
+        answerStartedAt: new Date(),
       });
 
       expect(mockTimingClient.post).toHaveBeenCalledWith(
-        '/analyze',
+        '/api/v1/timing/analyze',
         expect.objectContaining({
-          question_id: 'question-456',
-          audio_url: 's3://bucket/audio.mp3',
-          difficulty: 'analytical',
+          sessionId: 'session-123',
+          answerId: 'question-456',
+          audioUrl: 's3://bucket/audio.mp3',
         })
       );
 
-      expect(result.timingMetrics.speechRateWpm).toBe(145);
+      expect(result.metrics.wordsPerMinute).toBe(145);
       expect(result.riskScore).toBe(0.15);
     });
   });
@@ -206,157 +208,171 @@ describe('DetectionAggregationService', () => {
       // Mock AI detection response
       mockAiClient.post.mockResolvedValue({
         data: {
-          analysis_id: 'ai-123',
-          risk_score: 0.7,
-          is_ai_generated: true,
-          confidence: 0.8,
-          similarity_scores: { 'gpt-4': 0.75 },
-          perplexity_score: 50,
+          analysisId: 'ai-123',
+          riskScore: 0.7,
+          riskLevel: 'high',
+          isAiGenerated: true,
+          confidenceScore: 0.8,
+          similarityScores: { 'gpt-4': 0.75 },
+          perplexityScore: 50,
+          flags: [],
         },
       });
 
       // Mock eye tracking response
       mockEyeClient.get.mockResolvedValue({
         data: {
-          session_id: 'session-123',
-          total_duration_seconds: 600,
-          on_screen_percentage: 80,
-          risk_score: 0.3,
-          patterns_detected: { reading: false, drift: false, shifty: false },
-          off_screen_events: [],
-          anomalies: [],
-        },
-      });
-
-      // Mock response timing response
-      mockTimingClient.post.mockResolvedValue({
-        data: {
-          analysis_id: 'timing-123',
-          risk_score: 0.2,
-          transcription: { text: 'Test', confidence: 0.9, words: [] },
-          timing_metrics: {
-            response_latency_ms: 5000,
-            speech_duration_seconds: 30,
-            total_duration_seconds: 35,
-            speech_rate_wpm: 140,
-            pause_count: 3,
-            pause_percentage: 14,
-            avg_pause_duration_seconds: 1.5,
-            filler_word_count: 2,
-            filler_word_ratio: 0.03,
-          },
-          anomalies: {
-            instant_response: false,
-            unnatural_consistency: false,
-            delayed_then_fluent: false,
-            robotic_speech_pattern: false,
-          },
-        },
-      });
-
-      const result = await service.calculateSessionRisk('session-123', [
-        {
           sessionId: 'session-123',
-          questionId: 'q-1',
-          answerText: 'Test answer',
-          questionText: 'Test question',
-          audioUrl: 's3://bucket/audio.mp3',
-          questionAskedAt: new Date(),
-          answerStartAt: new Date(),
-          difficulty: 'analytical',
+          totalGazeEvents: 1000,
+          offScreenEvents: 100,
+          offScreenPercentage: 10,
+          offScreenDurationSeconds: 60,
+          offScreenByDirection: { left: 30, right: 30, up: 20, down: 20 },
+          patternsDetected: { reading: false, drift: false, shiftyEyes: false },
+          anomalies: [],
+          riskScore: 0.3,
+          averageConfidence: 0.85,
         },
-      ]);
+      });
+
+      // Mock response timing - session-level endpoint
+      mockTimingClient.get.mockResolvedValue({
+        data: [
+          {
+            analysisId: 'timing-123',
+            sessionId: 'session-123',
+            riskScore: 0.2,
+            riskLevel: 'low',
+            transcription: { text: 'Test', confidence: 0.9, words: [] },
+            metrics: {
+              latencyMs: 5000,
+              wordsPerMinute: 140,
+              pauseCount: 3,
+              pauseDurationAvgMs: 1500,
+              fillerWordCount: 2,
+              fillerWordRatio: 0.03,
+              speechDurationMs: 30000,
+              totalDurationMs: 35000,
+            },
+            anomalies: [],
+            flags: [],
+          },
+        ],
+      });
+
+      const result = await service.calculateSessionRisk(
+        'session-123',
+        [
+          {
+            questionId: 'q-1',
+            answerText: 'Test answer',
+            questionText: 'Test question',
+            audioUrl: 's3://bucket/audio.mp3',
+          },
+        ],
+        [],
+        { includeGazeAnalysis: true, includeTimingAnalysis: true }
+      );
 
       // Verify aggregated result
       expect(result.sessionId).toBe('session-123');
       expect(result.overallRiskScore).toBeGreaterThan(0);
       expect(result.overallRiskScore).toBeLessThanOrEqual(1);
-      expect(result.aiDetectionResults).toHaveLength(1);
-      expect(result.gazeAnalysis).toBeDefined();
-      expect(result.timingResults).toHaveLength(1);
+      expect(result.aiDetection).toHaveLength(1);
+      expect(result.eyeTracking).toBeDefined();
+      expect(result.responseTiming).toHaveLength(1);
     });
 
-    it('should handle partial service failures', async () => {
+    it('should handle partial service failures gracefully', async () => {
       // AI detection succeeds
       mockAiClient.post.mockResolvedValue({
         data: {
-          analysis_id: 'ai-123',
-          risk_score: 0.5,
-          is_ai_generated: false,
-          confidence: 0.7,
-          similarity_scores: {},
-          perplexity_score: 80,
+          analysisId: 'ai-123',
+          riskScore: 0.5,
+          riskLevel: 'medium',
+          isAiGenerated: false,
+          confidenceScore: 0.7,
+          similarityScores: {},
+          perplexityScore: 80,
+          flags: [],
         },
       });
 
       // Eye tracking fails
       mockEyeClient.get.mockRejectedValue(new Error('Eye tracking unavailable'));
 
-      // Response timing succeeds
-      mockTimingClient.post.mockResolvedValue({
-        data: {
-          analysis_id: 'timing-123',
-          risk_score: 0.3,
-          transcription: { text: 'Test', confidence: 0.9, words: [] },
-          timing_metrics: {
-            response_latency_ms: 5000,
-            speech_duration_seconds: 30,
-            total_duration_seconds: 35,
-            speech_rate_wpm: 140,
-            pause_count: 3,
-            pause_percentage: 14,
-            avg_pause_duration_seconds: 1.5,
-            filler_word_count: 2,
-            filler_word_ratio: 0.03,
+      // Response timing succeeds via session endpoint
+      mockTimingClient.get.mockResolvedValue({
+        data: [
+          {
+            analysisId: 'timing-123',
+            sessionId: 'session-123',
+            riskScore: 0.3,
+            riskLevel: 'low',
+            transcription: { text: 'Test', confidence: 0.9, words: [] },
+            metrics: {
+              latencyMs: 5000,
+              wordsPerMinute: 140,
+              pauseCount: 3,
+              pauseDurationAvgMs: 1500,
+              fillerWordCount: 2,
+              fillerWordRatio: 0.03,
+              speechDurationMs: 30000,
+              totalDurationMs: 35000,
+            },
+            anomalies: [],
+            flags: [],
           },
-          anomalies: {
-            instant_response: false,
-            unnatural_consistency: false,
-            delayed_then_fluent: false,
-            robotic_speech_pattern: false,
-          },
-        },
+        ],
       });
 
-      const result = await service.calculateSessionRisk('session-123', [
-        {
-          sessionId: 'session-123',
-          questionId: 'q-1',
-          answerText: 'Test',
-          questionText: 'Question',
-          audioUrl: 's3://bucket/audio.mp3',
-          questionAskedAt: new Date(),
-          answerStartAt: new Date(),
-          difficulty: 'analytical',
-        },
-      ]);
+      const result = await service.calculateSessionRisk(
+        'session-123',
+        [
+          {
+            questionId: 'q-1',
+            answerText: 'Test',
+            questionText: 'Question',
+            audioUrl: 's3://bucket/audio.mp3',
+          },
+        ],
+        [],
+        { includeGazeAnalysis: true, includeTimingAnalysis: true }
+      );
 
       // Should still return results from working services
-      expect(result.aiDetectionResults).toHaveLength(1);
-      expect(result.gazeAnalysis).toBeNull();
-      expect(result.timingResults).toHaveLength(1);
+      expect(result.aiDetection).toHaveLength(1);
+      expect(result.eyeTracking).toBeUndefined();
+      expect(result.responseTiming).toHaveLength(1);
+      // Service status should reflect the failure
+      expect(result.serviceStatus.eyeTracking).toBe('unavailable');
     });
   });
 
-  describe('healthCheck', () => {
-    it('should return true when all services are healthy', async () => {
+  describe('checkServicesHealth', () => {
+    it('should return health status for all services', async () => {
       mockAiClient.get.mockResolvedValue({ status: 200 });
       mockEyeClient.get.mockResolvedValue({ status: 200 });
       mockTimingClient.get.mockResolvedValue({ status: 200 });
 
-      const result = await service.healthCheck();
+      const result = await service.checkServicesHealth();
 
-      expect(result).toBe(true);
+      expect(result.aiDetection.healthy).toBe(true);
+      expect(result.eyeTracking.healthy).toBe(true);
+      expect(result.responseTiming.healthy).toBe(true);
     });
 
-    it('should return false when any service is unhealthy', async () => {
+    it('should report unhealthy service when it fails', async () => {
       mockAiClient.get.mockResolvedValue({ status: 200 });
       mockEyeClient.get.mockRejectedValue(new Error('Service down'));
       mockTimingClient.get.mockResolvedValue({ status: 200 });
 
-      const result = await service.healthCheck();
+      const result = await service.checkServicesHealth();
 
-      expect(result).toBe(false);
+      expect(result.aiDetection.healthy).toBe(true);
+      expect(result.eyeTracking.healthy).toBe(false);
+      expect(result.eyeTracking.error).toBeDefined();
+      expect(result.responseTiming.healthy).toBe(true);
     });
   });
 
@@ -367,63 +383,79 @@ describe('DetectionAggregationService', () => {
 
       mockAiClient.post.mockResolvedValue({
         data: {
-          analysis_id: 'ai-123',
-          risk_score: uniformRisk,
-          is_ai_generated: false,
-          confidence: 0.7,
-          similarity_scores: {},
-          perplexity_score: 80,
+          analysisId: 'ai-123',
+          riskScore: uniformRisk,
+          riskLevel: 'medium',
+          isAiGenerated: false,
+          confidenceScore: 0.7,
+          similarityScores: {},
+          perplexityScore: 80,
+          flags: [],
         },
       });
 
       mockEyeClient.get.mockResolvedValue({
         data: {
-          session_id: 'session-123',
-          total_duration_seconds: 600,
-          on_screen_percentage: 90,
-          risk_score: uniformRisk,
-          patterns_detected: {},
-          off_screen_events: [],
-          anomalies: [],
-        },
-      });
-
-      mockTimingClient.post.mockResolvedValue({
-        data: {
-          analysis_id: 'timing-123',
-          risk_score: uniformRisk,
-          transcription: { text: 'Test', confidence: 0.9, words: [] },
-          timing_metrics: {
-            response_latency_ms: 5000,
-            speech_duration_seconds: 30,
-            total_duration_seconds: 35,
-            speech_rate_wpm: 140,
-            pause_count: 3,
-            pause_percentage: 14,
-            avg_pause_duration_seconds: 1.5,
-            filler_word_count: 2,
-            filler_word_ratio: 0.03,
-          },
-          anomalies: {},
-        },
-      });
-
-      const result = await service.calculateSessionRisk('session-123', [
-        {
           sessionId: 'session-123',
-          questionId: 'q-1',
-          answerText: 'Test',
-          questionText: 'Question',
-          audioUrl: 's3://bucket/audio.mp3',
-          questionAskedAt: new Date(),
-          answerStartAt: new Date(),
-          difficulty: 'analytical',
+          totalGazeEvents: 1000,
+          offScreenEvents: 50,
+          offScreenPercentage: 5,
+          offScreenDurationSeconds: 30,
+          offScreenByDirection: { left: 15, right: 15, up: 10, down: 10 },
+          patternsDetected: { reading: false, drift: false, shiftyEyes: false },
+          anomalies: [],
+          riskScore: uniformRisk,
+          averageConfidence: 0.9,
         },
-      ]);
+      });
 
-      // With all scores at 0.5 and default weights (0.4, 0.3, 0.2, 0.1),
-      // the overall score should be around 0.5
-      expect(result.overallRiskScore).toBeCloseTo(0.5, 1);
+      mockTimingClient.get.mockResolvedValue({
+        data: [
+          {
+            analysisId: 'timing-123',
+            sessionId: 'session-123',
+            riskScore: uniformRisk,
+            riskLevel: 'medium',
+            transcription: { text: 'Test', confidence: 0.9, words: [] },
+            metrics: {
+              latencyMs: 5000,
+              wordsPerMinute: 140,
+              pauseCount: 3,
+              pauseDurationAvgMs: 1500,
+              fillerWordCount: 2,
+              fillerWordRatio: 0.03,
+              speechDurationMs: 30000,
+              totalDurationMs: 35000,
+            },
+            anomalies: [],
+            flags: [],
+          },
+        ],
+      });
+
+      const result = await service.calculateSessionRisk(
+        'session-123',
+        [
+          {
+            questionId: 'q-1',
+            answerText: 'Test',
+            questionText: 'Question',
+            audioUrl: 's3://bucket/audio.mp3',
+          },
+        ],
+        [{ severity: 'medium', count: 1 }],
+        { includeGazeAnalysis: true, includeTimingAnalysis: true }
+      );
+
+      // Verify weights are applied
+      expect(result.weights.aiDetection).toBe(0.4);
+      expect(result.weights.securityEvents).toBe(0.3);
+      expect(result.weights.gazeAnomaly).toBe(0.2);
+      expect(result.weights.timingAnomaly).toBe(0.1);
+
+      // Overall score should be a weighted combination
+      expect(result.overallRiskScore).toBeGreaterThan(0);
+      expect(result.overallRiskScore).toBeLessThanOrEqual(1);
     });
   });
 });

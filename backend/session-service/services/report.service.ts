@@ -1,5 +1,5 @@
 import prisma from '../src/database';
-import { RiskCalculator, defaultRiskCalculator } from '../lib/risk-calculator';
+import { RiskCalculator, defaultRiskCalculator, SecurityEventData } from '../lib/risk-calculator';
 import { ReportGenerator } from '../lib/report-generator';
 import {
   SessionReport,
@@ -15,17 +15,39 @@ import {
 } from '../types/report.types';
 import { SessionNotFoundError, ReportGenerationError } from '../lib/errors';
 import notificationService from './notification.service';
+import {
+  DetectionAggregationService,
+  detectionAggregationService,
+  AIDetectionInput,
+} from './detection-aggregation.service';
+import { Logger } from '../lib/logger';
+import { DetectionErrorHandler } from '../lib/detection-error-handler';
+import {
+  LiveDetectionResult,
+  DetectionResult,
+  LiveAnswerDetectionInput,
+} from '../types/detection.types';
+
+const logger = new Logger('ReportService');
 
 /**
  * Report Service
- * Handles session report generation and risk scoring
+ * Handles session report generation and risk scoring.
+ *
+ * Uses live detection services for real-time analysis with graceful
+ * fallback to database-cached scores when services are unavailable.
  */
 
 export class ReportService {
   private riskCalculator: RiskCalculator;
+  private detectionService: DetectionAggregationService;
 
-  constructor() {
-    this.riskCalculator = defaultRiskCalculator;
+  constructor(
+    riskCalculator?: RiskCalculator,
+    detectionService?: DetectionAggregationService
+  ) {
+    this.riskCalculator = riskCalculator || defaultRiskCalculator;
+    this.detectionService = detectionService || detectionAggregationService;
   }
 
   /**
@@ -166,58 +188,169 @@ export class ReportService {
   }
 
   /**
-   * Calculate comprehensive risk analysis
+   * Calculate comprehensive risk analysis using LIVE detection services.
+   * Falls back to cached database data when services are unavailable.
    */
   private async calculateRiskAnalysis(sessionId: string): Promise<RiskAnalysis> {
-    // Get answer analysis data with question info
-    const answers = await prisma.answerAnalysis.findMany({
-      where: {
-        question: {
-          sessionId,
-        },
-      },
-      include: {
-        question: true,
-      },
-    });
-
-    // Calculate AI detection score
-    const aiScores = answers
-      .filter((a) => a.riskScore !== null)
-      .map((a) => parseFloat(a.riskScore!.toString()));
-    const aiDetectionScore = aiScores.length > 0 ? Math.max(...aiScores) : 0;
-
-    // Get security events
-    const securityEvents = await prisma.securityEvent.findMany({
-      where: { sessionId },
-    });
-
-    const securityEventsScore = this.riskCalculator.calculateSecurityEventsScore(
-      securityEvents.map((e) => ({ severity: e.severity, count: 1 }))
-    );
-
-    // Get gaze data
-    const gazeEventsCount = await prisma.gazeEvent.count({
-      where: { sessionId },
-    });
-
-    const offScreenCount = await prisma.gazeEvent.count({
-      where: { sessionId, isOffScreen: true },
-    });
-
+    // Fetch session data from database
     const session = await prisma.interviewSession.findUnique({
       where: { id: sessionId },
+      include: {
+        questions: {
+          orderBy: { questionOrder: 'asc' },
+          include: {
+            answerAnalysis: true,
+          },
+        },
+        securityEvents: true,
+      },
     });
 
+    if (!session) {
+      throw new SessionNotFoundError(sessionId);
+    }
+
+    // Prepare inputs for live detection
+    const answerInputs: AIDetectionInput[] = session.questions
+      .filter((q) => q.answerAnalysis && q.answerAnalysis.length > 0)
+      .map((q) => {
+        const answer = q.answerAnalysis[0];
+        return {
+          questionId: q.id,
+          questionText: q.questionText,
+          answerText: answer.answerText || '',
+          audioUrl: answer.answerAudioUrl || undefined,
+          responseTimeMs: answer.responseTiming
+            ? Number((answer.responseTiming as Record<string, unknown>).response_latency_ms || 0)
+            : undefined,
+        };
+      });
+
+    const securityEventInputs: SecurityEventData[] = session.securityEvents.map((e) => ({
+      severity: e.severity as 'low' | 'medium' | 'high' | 'critical',
+      count: 1,
+    }));
+
+    // TRY LIVE DETECTION FIRST (always!)
+    try {
+      logger.info('Attempting live detection analysis', {
+        sessionId,
+        answerCount: answerInputs.length,
+        securityEventCount: securityEventInputs.length,
+      });
+
+      const aggregatedResult = await this.detectionService.calculateSessionRisk(
+        sessionId,
+        answerInputs,
+        securityEventInputs,
+        {
+          includeGazeAnalysis: true,
+          includeTimingAnalysis: true,
+        }
+      );
+
+      // Check if any services responded
+      const servicesAvailable = Object.entries(aggregatedResult.serviceStatus)
+        .filter(([, status]) => status === 'available')
+        .map(([name]) => name);
+
+      if (servicesAvailable.length > 0) {
+        logger.info('Using LIVE detection results', {
+          sessionId,
+          overallRiskScore: aggregatedResult.overallRiskScore,
+          servicesAvailable,
+          confidence: aggregatedResult.confidence,
+        });
+
+        // Extract flagged answers from AI detection results
+        const flaggedAnswers =
+          aggregatedResult.aiDetection
+            ?.filter((r) => r.riskScore > 0.75)
+            .map((r) => r.analysisId) || [];
+
+        return this.detectionService.toRiskAnalysis(aggregatedResult, flaggedAnswers);
+      }
+
+      // If no services available, fall through to database fallback
+      logger.warn('All detection services unavailable, falling back to database', {
+        sessionId,
+        errors: aggregatedResult.errors,
+      });
+    } catch (error) {
+      logger.error('Live detection failed, falling back to database', {
+        sessionId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+
+    // FALLBACK: Use existing database-based calculation
+    logger.info('Using database fallback for risk calculation', { sessionId });
+    return this.calculateRiskFromDatabase(session);
+  }
+
+  /**
+   * Fallback: Calculate risk from database (when live detection unavailable)
+   * This preserves the original implementation as a fallback.
+   */
+  private async calculateRiskFromDatabase(session: {
+    id: string;
+    durationMinutes: number | null;
+    questions: Array<{
+      questionOrder: number | null;
+      difficulty: string | null;
+      answerAnalysis: Array<{
+        id: string;
+        riskScore: unknown;
+        responseTiming: unknown;
+      }>;
+    }>;
+    securityEvents: Array<{ severity: string }>;
+  }): Promise<RiskAnalysis> {
+    // Flatten answers with question context for processing
+    const answersWithContext = session.questions
+      .flatMap((q) =>
+        q.answerAnalysis.map((a) => ({
+          ...a,
+          question: { difficulty: q.difficulty, questionOrder: q.questionOrder },
+        }))
+      )
+      .filter((a): a is NonNullable<typeof a> => a !== null);
+
+    // Calculate AI detection score from cached data
+    const aiScores = answersWithContext
+      .filter((a) => a.riskScore !== null)
+      .map((a) => parseFloat(String(a.riskScore)));
+    const aiDetectionScore = aiScores.length > 0 ? Math.max(...aiScores) : 0;
+
+    // Calculate security events score
+    const securityEventData: SecurityEventData[] = session.securityEvents.map((e) => ({
+      severity: e.severity as 'low' | 'medium' | 'high' | 'critical',
+      count: 1,
+    }));
+    const securityEventsScore =
+      this.riskCalculator.calculateSecurityEventsScore(securityEventData);
+
+    // Calculate gaze anomaly score from database
+    const gazeEventsCount = await prisma.gazeEvent.count({
+      where: { sessionId: session.id },
+    });
+    const offScreenCount = await prisma.gazeEvent.count({
+      where: { sessionId: session.id, isOffScreen: true },
+    });
     const gazeAnomalyScore = this.riskCalculator.calculateGazeAnomalyScore(
       gazeEventsCount,
       offScreenCount,
-      0, // Would need to calculate actual off-screen duration from timestamps
-      session?.durationMinutes || 0
+      0,
+      session.durationMinutes || 0
     );
 
-    // Calculate timing anomaly score from actual response timing data
-    const timingAnomalyScore = this.calculateTimingAnomalyScoreFromAnswers(answers);
+    // Calculate timing anomaly score from database
+    const timingAnomalyScore = this.calculateTimingAnomalyScoreFromAnswers(
+      answersWithContext.map((a) => ({
+        responseTiming: a.responseTiming,
+        question: a.question,
+      }))
+    );
 
     // Calculate overall risk
     const overallRiskScore = this.riskCalculator.calculateOverallRisk({
@@ -230,12 +363,17 @@ export class ReportService {
     const riskLevel = this.riskCalculator.getRiskLevel(overallRiskScore);
 
     // Flagged answers (risk > 0.75)
-    const flaggedAnswers = answers
-      .filter((a) => a.riskScore && parseFloat(a.riskScore.toString()) > 0.75)
+    const flaggedAnswers = answersWithContext
+      .filter((a) => a.riskScore && parseFloat(String(a.riskScore)) > 0.75)
       .map((a) => a.id);
 
     // Flagged behaviors from timing anomalies
-    const flaggedBehaviors = this.extractFlaggedBehaviors(answers);
+    const flaggedBehaviors = this.extractFlaggedBehaviors(
+      answersWithContext.map((a) => ({
+        responseTiming: a.responseTiming,
+        question: a.question,
+      }))
+    );
 
     return {
       overall_risk_score: overallRiskScore,
@@ -322,7 +460,7 @@ export class ReportService {
    */
   private extractFlaggedBehaviors(answers: Array<{
     responseTiming: unknown;
-    question: { questionOrder: number | null } | null;
+    question: { questionOrder?: number | null; difficulty?: string | null } | null;
   }>): string[] {
     const behaviors: string[] = [];
 
@@ -401,9 +539,23 @@ export class ReportService {
   }
 
   /**
-   * Generate gaze analysis summary
+   * Generate gaze analysis summary.
+   * Tries live eye tracking service first, falls back to database.
    */
   private async generateGazeAnalysis(sessionId: string): Promise<GazeAnalysisSummary | undefined> {
+    // Try live eye tracking service first
+    try {
+      const liveResult = await this.detectionService.getGazeAnalysis(sessionId);
+      logger.info('Using live gaze analysis', { sessionId });
+      return this.detectionService.toGazeAnalysisSummary(liveResult);
+    } catch (error) {
+      logger.warn('Live gaze analysis failed, using database', {
+        sessionId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+
+    // Fallback to database
     const gazeEvents = await prisma.gazeEvent.findMany({
       where: { sessionId },
     });
@@ -433,10 +585,25 @@ export class ReportService {
 
   /**
    * Generate timing analysis summary
+   * Tries live response timing service first, falls back to database
    */
   private async generateTimingAnalysis(
     sessionId: string
   ): Promise<TimingAnalysisSummary | undefined> {
+    // Try live detection service first
+    try {
+      const liveResults = await this.detectionService.analyzeAllTiming(sessionId, []);
+      if (liveResults && liveResults.length > 0) {
+        return this.detectionService.toTimingAnalysisSummary(liveResults);
+      }
+    } catch (error) {
+      logger.warn('Live timing service unavailable, falling back to database', {
+        sessionId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+
+    // Fallback to database
     const answers = await prisma.answerAnalysis.findMany({
       where: {
         question: {

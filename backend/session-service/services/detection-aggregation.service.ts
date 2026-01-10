@@ -18,6 +18,19 @@ import {
   GazeAnalysisSummary,
   TimingAnalysisSummary,
 } from '../types/report.types';
+import {
+  CaseConverter,
+  transformAIDetectionResponse,
+  transformEyeTrackingResponse,
+  transformResponseTimingResponse,
+} from '../lib/case-converter';
+import { DetectionErrorHandler } from '../lib/detection-error-handler';
+import {
+  DetectionServiceError,
+  AIDetectionResult,
+  EyeTrackingResult,
+  ResponseTimingResult,
+} from '../types/detection.types';
 
 const logger = new Logger('DetectionAggregationService');
 
@@ -250,26 +263,29 @@ export class DetectionAggregationService {
     this.config = { ...defaultConfig, ...config };
     this.riskCalculator = riskCalculator || new RiskCalculator();
 
-    // Initialize HTTP clients
+    // Initialize HTTP clients with case conversion interceptors
     this.aiDetectionClient = axios.create({
       baseURL: this.config.aiDetection.baseUrl,
       timeout: this.config.aiDetection.timeout,
       headers: { 'Content-Type': 'application/json' },
     });
+    CaseConverter.applyToAxiosInstance(this.aiDetectionClient);
 
     this.eyeTrackingClient = axios.create({
       baseURL: this.config.eyeTracking.baseUrl,
       timeout: this.config.eyeTracking.timeout,
       headers: { 'Content-Type': 'application/json' },
     });
+    CaseConverter.applyToAxiosInstance(this.eyeTrackingClient);
 
     this.responseTimingClient = axios.create({
       baseURL: this.config.responseTiming.baseUrl,
       timeout: this.config.responseTiming.timeout,
       headers: { 'Content-Type': 'application/json' },
     });
+    CaseConverter.applyToAxiosInstance(this.responseTimingClient);
 
-    logger.info('DetectionAggregationService initialized', {
+    logger.info('DetectionAggregationService initialized with case conversion', {
       aiDetectionUrl: this.config.aiDetection.baseUrl,
       eyeTrackingUrl: this.config.eyeTracking.baseUrl,
       responseTimingUrl: this.config.responseTiming.baseUrl,
@@ -412,27 +428,36 @@ export class DetectionAggregationService {
 
   /**
    * Analyze a single answer for AI generation.
+   * Case conversion is handled automatically by axios interceptors.
    */
   async analyzeAnswer(input: AIDetectionInput): Promise<AIDetectionResponse> {
     try {
+      // Request body is automatically converted to snake_case by interceptor
+      // Response is automatically converted to camelCase by interceptor
       const response = await this.aiDetectionClient.post<AIDetectionResponse>(
         '/api/v1/analysis/answer',
         {
-          question_id: input.questionId,
-          question_text: input.questionText,
-          answer_text: input.answerText,
-          audio_url: input.audioUrl,
-          response_time_ms: input.responseTimeMs,
+          questionId: input.questionId,
+          questionText: input.questionText,
+          answerText: input.answerText,
+          audioUrl: input.audioUrl,
+          responseTimeMs: input.responseTimeMs,
         }
       );
 
-      return response.data;
+      // Apply specialized transformation for AI Detection responses
+      return transformAIDetectionResponse<AIDetectionResponse>(response.data);
     } catch (error) {
+      const handled = await DetectionErrorHandler.handleServiceError(
+        error,
+        'ai-detection',
+        { propagateErrors: true }
+      );
       logger.error('AI detection analysis failed', {
         questionId: input.questionId,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: handled.error?.message || 'Unknown error',
       });
-      throw this.handleServiceError(error, 'AI Detection');
+      throw handled.error || this.handleServiceError(error, 'AI Detection');
     }
   }
 
@@ -453,6 +478,7 @@ export class DetectionAggregationService {
 
   /**
    * Get gaze analysis for a session.
+   * Case conversion is handled automatically by axios interceptors.
    */
   async getGazeAnalysis(sessionId: string): Promise<EyeTrackingResponse> {
     try {
@@ -460,40 +486,54 @@ export class DetectionAggregationService {
         `/api/v1/gaze/summary/${sessionId}`
       );
 
-      return response.data;
+      // Apply specialized transformation for Eye Tracking responses
+      return transformEyeTrackingResponse<EyeTrackingResponse>(response.data);
     } catch (error) {
+      const handled = await DetectionErrorHandler.handleServiceError(
+        error,
+        'eye-tracking',
+        { propagateErrors: true }
+      );
       logger.error('Eye tracking analysis failed', {
         sessionId,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: handled.error?.message || 'Unknown error',
       });
-      throw this.handleServiceError(error, 'Eye Tracking');
+      throw handled.error || this.handleServiceError(error, 'Eye Tracking');
     }
   }
 
   /**
    * Analyze timing for a single answer.
+   * Case conversion is handled automatically by axios interceptors.
    */
   async analyzeAnswerTiming(input: ResponseTimingInput): Promise<ResponseTimingResponse> {
     try {
+      // Request body is automatically converted to snake_case by interceptor
       const response = await this.responseTimingClient.post<ResponseTimingResponse>(
         '/api/v1/timing/analyze',
         {
-          session_id: input.sessionId,
-          answer_id: input.answerId,
-          audio_url: input.audioUrl,
-          question_asked_at: input.questionAskedAt?.toISOString(),
-          answer_started_at: input.answerStartedAt?.toISOString(),
+          sessionId: input.sessionId,
+          answerId: input.answerId,
+          audioUrl: input.audioUrl,
+          questionAskedAt: input.questionAskedAt?.toISOString(),
+          answerStartedAt: input.answerStartedAt?.toISOString(),
         }
       );
 
-      return response.data;
+      // Apply specialized transformation for Response Timing responses
+      return transformResponseTimingResponse<ResponseTimingResponse>(response.data);
     } catch (error) {
+      const handled = await DetectionErrorHandler.handleServiceError(
+        error,
+        'response-timing',
+        { propagateErrors: true }
+      );
       logger.error('Response timing analysis failed', {
         sessionId: input.sessionId,
         answerId: input.answerId,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: handled.error?.message || 'Unknown error',
       });
-      throw this.handleServiceError(error, 'Response Timing');
+      throw handled.error || this.handleServiceError(error, 'Response Timing');
     }
   }
 
