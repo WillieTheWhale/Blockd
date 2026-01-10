@@ -56,8 +56,8 @@ async function start(): Promise<void> {
       gracefulShutdown(app, 'uncaughtException');
     });
 
-    process.on('unhandledRejection', (reason) => {
-      app.log.error({ err: reason }, 'Unhandled Rejection');
+    process.on('unhandledRejection', (reason, promise) => {
+      app.log.error({ reason, promise: String(promise) }, 'Unhandled Rejection');
       gracefulShutdown(app, 'unhandledRejection');
     });
 

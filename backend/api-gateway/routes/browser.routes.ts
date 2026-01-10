@@ -1,9 +1,9 @@
 /**
  * Browser Client Routes
- * Proxies requests to session-service for session validation and security events
  */
 
 import { FastifyInstance } from 'fastify';
+import { optionalAuthenticate } from '../middleware/auth.middleware';
 import { publicRateLimiter, authRateLimiter } from '../middleware/rate-limit.middleware';
 import { validateBody } from '../middleware/validation.middleware';
 import {
@@ -15,28 +15,8 @@ import {
   BatchTelemetryRequest,
 } from '../schemas/browser.schema';
 import { sendSuccess } from '../lib/response';
-import { NotFoundError, BadRequestError, InternalServerError } from '../lib/errors';
-import {
-  sessionServiceClient,
-  ServiceClientError,
-} from '../lib/service-client';
-
-/**
- * Convert service client errors to appropriate HTTP errors
- */
-function handleServiceError(error: unknown): never {
-  if (error instanceof ServiceClientError) {
-    switch (error.statusCode) {
-      case 404:
-        throw new NotFoundError(error.message);
-      case 400:
-        throw new BadRequestError(error.message);
-      default:
-        throw new InternalServerError(error.message);
-    }
-  }
-  throw error;
-}
+import { NotFoundError } from '../lib/errors';
+import prisma from '../lib/prisma';
 
 export default async function browserRoutes(fastify: FastifyInstance) {
   // Validate session token
@@ -46,28 +26,29 @@ export default async function browserRoutes(fastify: FastifyInstance) {
       tags: ['Browser'],
       summary: 'Validate session token',
       description: 'Validates a session token for browser client',
+      body: validateSessionRequestSchema,
     },
     handler: async (request, reply) => {
       const { sessionToken } = request.body;
 
-      try {
-        const validation = await sessionServiceClient.post<{
-          valid: boolean;
-          sessionId?: string;
-          expiresAt?: string;
-        }>(
-          '/sessions/token/validate',
-          { sessionToken }
-        );
+      const session = await prisma.interviewSession.findUnique({
+        where: { sessionToken },
+      });
 
-        return sendSuccess(reply, validation);
-      } catch (error) {
-        // If session not found, return valid: false instead of throwing
-        if (error instanceof ServiceClientError && error.statusCode === 404) {
-          return sendSuccess(reply, { valid: false });
-        }
-        handleServiceError(error);
+      if (!session) {
+        return sendSuccess(reply, {
+          valid: false,
+        });
       }
+
+      // Check if session is active
+      const isValid = session.status === 'active' || session.status === 'scheduled';
+
+      return sendSuccess(reply, {
+        valid: isValid,
+        sessionId: isValid ? session.id : undefined,
+        expiresAt: session.actualEnd?.toISOString(),
+      });
     },
   });
 
@@ -78,33 +59,44 @@ export default async function browserRoutes(fastify: FastifyInstance) {
       tags: ['Browser'],
       summary: 'Report security event',
       description: 'Reports a security event from the browser client',
+      body: securityEventRequestSchema,
     },
     handler: async (request, reply) => {
       const { sessionId, eventType, severity, description, metadata } = request.body;
 
-      try {
-        const event = await sessionServiceClient.post<{
-          id: string;
-          sessionId: string;
-          eventType: string;
-          severity: string;
-          description?: string;
-          metadata?: Record<string, unknown>;
-          timestamp: string;
-        }>(
-          `/sessions/${sessionId}/security-events`,
-          {
-            eventType,
-            severity,
-            description,
-            metadata,
-          }
-        );
+      // Verify session exists
+      const session = await prisma.interviewSession.findUnique({
+        where: { id: sessionId },
+      });
 
-        return sendSuccess(reply, event);
-      } catch (error) {
-        handleServiceError(error);
+      if (!session) {
+        throw new NotFoundError('Session not found');
       }
+
+      // Create security event
+      const event = await prisma.securityEvent.create({
+        data: {
+          sessionId,
+          eventType: eventType as any,
+          severity: severity as any,
+          description,
+          metadata: (metadata || {}) as any,
+        },
+      });
+
+      // Update session risk score (simplified calculation)
+      const eventCount = await prisma.securityEvent.count({
+        where: { sessionId },
+      });
+
+      const riskScore = Math.min(eventCount * 0.1, 1.0);
+
+      await prisma.interviewSession.update({
+        where: { id: sessionId },
+        data: { riskScore },
+      });
+
+      return sendSuccess(reply, event);
     },
   });
 
@@ -115,102 +107,95 @@ export default async function browserRoutes(fastify: FastifyInstance) {
       tags: ['Browser'],
       summary: 'Submit batch telemetry',
       description: 'Submits a batch of telemetry data from browser client',
+      body: batchTelemetryRequestSchema,
     },
     handler: async (request, reply) => {
       const { events } = request.body;
 
-      try {
-        // Group events by session ID and forward to session-service
-        const sessionGroups = new Map<string, typeof events>();
-
-        for (const event of events) {
-          const sessionId = event.sessionId;
-          if (!sessionGroups.has(sessionId)) {
-            sessionGroups.set(sessionId, []);
-          }
-          sessionGroups.get(sessionId)!.push(event);
-        }
-
-        // Send telemetry batches to session-service for each session
-        const promises = Array.from(sessionGroups.entries()).map(
-          ([sessionId, sessionEvents]) =>
-            sessionServiceClient.post(
-              `/sessions/${sessionId}/telemetry/batch`,
-              { events: sessionEvents }
-            )
-        );
-
-        await Promise.all(promises);
-
+      if (events.length === 0) {
+        request.log.debug({ eventsCount: 0 }, 'Empty telemetry batch received');
         return sendSuccess(reply, {
-          processed: events.length,
-          message: 'Telemetry data processed successfully',
+          processed: 0,
+          message: 'No telemetry data to process',
         });
-      } catch (error) {
-        handleServiceError(error);
       }
-    },
-  });
 
-  // Get session info for browser client
-  fastify.get<{ Params: { sessionToken: string } }>('/session/:sessionToken', {
-    preHandler: [publicRateLimiter],
-    schema: {
-      tags: ['Browser'],
-      summary: 'Get session info by token',
-      description: 'Retrieves session information for the browser client',
-      params: {
-        type: 'object',
-        properties: {
-          sessionToken: { type: 'string' },
+      // Validate all session IDs exist and are active
+      const sessionIds = [...new Set(events.map(e => e.sessionId))];
+      const sessions = await prisma.interviewSession.findMany({
+        where: {
+          id: { in: sessionIds },
+          status: { in: ['active', 'scheduled'] },
         },
-      },
-    },
-    handler: async (request, reply) => {
-      const { sessionToken } = request.params;
+        select: { id: true },
+      });
 
-      try {
-        const session = await sessionServiceClient.get<{
-          id: string;
-          status: string;
-          scheduledStart?: string;
-          actualStart?: string;
-          metadata?: Record<string, unknown>;
-        }>(
-          `/sessions/token/${sessionToken}`
-        );
+      const validSessionIds = new Set(sessions.map(s => s.id));
+      const validEvents = events.filter(e => validSessionIds.has(e.sessionId));
 
-        return sendSuccess(reply, session);
-      } catch (error) {
-        handleServiceError(error);
+      // Log skipped events for monitoring and debugging
+      const invalidSessionIds = sessionIds.filter(id => !validSessionIds.has(id));
+      if (invalidSessionIds.length > 0) {
+        request.log.warn({
+          telemetry_skip: {
+            totalEvents: events.length,
+            invalidSessionIds: invalidSessionIds.length,
+            invalidIds: invalidSessionIds.slice(0, 5), // Log first 5 for debugging
+            reason: 'session_not_found_or_inactive',
+          },
+        }, `Skipping telemetry for ${invalidSessionIds.length} invalid/inactive sessions`);
       }
-    },
-  });
 
-  // Heartbeat endpoint for browser client
-  fastify.post<{ Body: { sessionId: string; timestamp: string } }>('/heartbeat', {
-    preHandler: [authRateLimiter],
-    schema: {
-      tags: ['Browser'],
-      summary: 'Session heartbeat',
-      description: 'Sends a heartbeat to indicate browser client is still active',
-    },
-    handler: async (request, reply) => {
-      const { sessionId, timestamp } = request.body;
-
-      try {
-        await sessionServiceClient.post(
-          `/sessions/${sessionId}/heartbeat`,
-          { timestamp }
-        );
-
+      if (validEvents.length === 0) {
+        request.log.warn({
+          telemetry_skip: {
+            totalEvents: events.length,
+            sessionIdsAttempted: sessionIds.length,
+            reason: 'no_valid_sessions',
+          },
+        }, 'All telemetry events skipped - no valid sessions found');
         return sendSuccess(reply, {
-          acknowledged: true,
-          serverTime: new Date().toISOString(),
+          processed: 0,
+          message: 'No valid sessions found for telemetry data',
         });
-      } catch (error) {
-        handleServiceError(error);
       }
+
+      // Use parameterized batch insert for security
+      // Process events in batches to avoid parameter limit
+      const BATCH_SIZE = 50;
+      let processedCount = 0;
+
+      for (let i = 0; i < validEvents.length; i += BATCH_SIZE) {
+        const batch = validEvents.slice(i, i + BATCH_SIZE);
+
+        // Use Prisma's createMany for safe parameterized inserts
+        // Note: For TimescaleDB hypertables, this works because Prisma uses proper INSERT statements
+        await prisma.browserTelemetry.createMany({
+          data: batch.map(event => ({
+            sessionId: event.sessionId,
+            timestamp: new Date(event.timestamp),
+            cpuPercent: event.cpuPercent ?? null,
+            memoryMb: event.memoryMb ?? null,
+            activeProcesses: event.activeProcesses ?? [],
+            windowTitle: event.windowTitle ?? null,
+            browserTabsCount: event.browserTabsCount ?? null,
+            networkRequests: (event.networkRequests ?? []) as any,
+            metadata: (event.metadata ?? {}) as any,
+          })),
+          skipDuplicates: true,
+        });
+
+        processedCount += batch.length;
+      }
+
+      const skipped = events.length - validEvents.length;
+      return sendSuccess(reply, {
+        processed: processedCount,
+        skipped,
+        message: skipped > 0
+          ? `Processed ${processedCount} events, skipped ${skipped} invalid events`
+          : 'Telemetry data processed successfully',
+      });
     },
   });
 }

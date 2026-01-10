@@ -1,11 +1,18 @@
 /**
  * Authentication Routes
- * Proxies requests to auth-service
+ * Handles user registration, login, and MFA
  */
 
-import { FastifyInstance, FastifyRequest } from 'fastify';
-import { authenticate, strictRateLimiter } from '../middleware/auth.middleware';
-import { publicRateLimiter } from '../middleware/rate-limit.middleware';
+import { FastifyInstance } from 'fastify';
+import { authenticate } from '../middleware/auth.middleware';
+import {
+  publicRateLimiter,
+  strictRateLimiter,
+  loginRateLimiter,
+  mfaRateLimiter,
+  recordMfaSuccess,
+  recordMfaFailure,
+} from '../middleware/rate-limit.middleware';
 import { validateBody } from '../middleware/validation.middleware';
 import {
   registerRequestSchema,
@@ -21,43 +28,30 @@ import {
   MfaSetupRequest,
   MfaVerifyRequest,
 } from '../schemas/auth.schema';
+import { generateTokenPair, verifyRefreshToken, revokeRefreshToken, revokeAllRefreshTokens } from '../lib/jwt';
 import { sendSuccess, sendCreated } from '../lib/response';
-import { BadRequestError, UnauthorizedError, InternalServerError } from '../lib/errors';
-import {
-  authServiceClient,
-  ServiceClientError,
-  extractAuthToken,
-  ServiceTypes,
-} from '../lib/service-client';
+import { BadRequestError, UnauthorizedError } from '../lib/errors';
+import prisma from '../lib/prisma';
+import { hashPassword, verifyPassword, validatePasswordStrength, isCommonPassword } from '../lib/password';
+import { generateMFASecret, verifyTOTPCode, generateBackupCodes, isValidTOTPFormat, isValidBackupCodeFormat } from '../lib/mfa';
 
 /**
- * Helper to forward authentication context to auth-service
+ * Mask email address for secure logging
+ * Preserves domain for analysis while protecting user identity
+ * Example: "john.doe@company.com" -> "joh***@company.com"
  */
-function getForwardHeaders(request: FastifyRequest): {
-  authToken?: string;
-  userId?: string;
-} {
-  return {
-    authToken: extractAuthToken(request.headers.authorization),
-    userId: request.user?.userId,
-  };
-}
+function maskEmail(email: string): string {
+  const atIndex = email.indexOf('@');
+  if (atIndex === -1) return '***';
 
-/**
- * Convert service client errors to appropriate HTTP errors
- */
-function handleServiceError(error: unknown): never {
-  if (error instanceof ServiceClientError) {
-    switch (error.statusCode) {
-      case 401:
-        throw new UnauthorizedError(error.message);
-      case 400:
-        throw new BadRequestError(error.message);
-      default:
-        throw new InternalServerError(error.message);
-    }
+  const localPart = email.substring(0, atIndex);
+  const domain = email.substring(atIndex);
+
+  if (localPart.length <= 3) {
+    return `${'*'.repeat(localPart.length)}${domain}`;
   }
-  throw error;
+
+  return `${localPart.substring(0, 3)}***${domain}`;
 }
 
 export default async function authRoutes(fastify: FastifyInstance) {
@@ -73,29 +67,70 @@ export default async function authRoutes(fastify: FastifyInstance) {
     handler: async (request, reply) => {
       const { email, password, firstName, lastName, role, organizationId } = request.body;
 
-      try {
-        const response = await authServiceClient.post<ServiceTypes.AuthResponse>(
-          '/auth/register',
-          {
-            email,
-            password,
-            firstName,
-            lastName,
-            role,
-            organizationId,
-          }
-        );
+      // Check if user already exists
+      const existingUser = await prisma.user.findUnique({
+        where: { email },
+      });
 
-        return sendCreated(reply, response);
-      } catch (error) {
-        handleServiceError(error);
+      if (existingUser) {
+        throw new BadRequestError('User with this email already exists');
       }
+
+      // Validate password strength
+      const passwordValidation = validatePasswordStrength(password);
+      if (!passwordValidation.valid) {
+        throw new BadRequestError(`Password requirements not met: ${passwordValidation.errors.join(', ')}`);
+      }
+
+      // Check if password is too common
+      if (isCommonPassword(password)) {
+        throw new BadRequestError('Password is too common. Please choose a stronger password.');
+      }
+
+      // Hash password using bcrypt
+      const passwordHash = await hashPassword(password);
+
+      // Create user
+      const user = await prisma.user.create({
+        data: {
+          email,
+          passwordHash,
+          firstName,
+          lastName,
+          role: role as any,
+          organizationId,
+        },
+      });
+
+      // Generate tokens
+      const tokens = await generateTokenPair({
+        userId: user.id,
+        email: user.email,
+        role: user.role,
+        organizationId: user.organizationId || undefined,
+      });
+
+      const response = {
+        user: {
+          id: user.id,
+          email: user.email,
+          role: user.role,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          organizationId: user.organizationId,
+          mfaEnabled: user.mfaEnabled,
+          emailVerified: user.emailVerified,
+        },
+        tokens,
+      };
+
+      return sendCreated(reply, response);
     },
   });
 
   // Login endpoint
   fastify.post<{ Body: LoginRequest }>('/login', {
-    preHandler: [publicRateLimiter, validateBody(loginRequestSchema)],
+    preHandler: [loginRateLimiter, validateBody(loginRequestSchema)],
     schema: {
       tags: ['Authentication'],
       summary: 'Login user',
@@ -105,20 +140,119 @@ export default async function authRoutes(fastify: FastifyInstance) {
     handler: async (request, reply) => {
       const { email, password, mfaCode } = request.body;
 
-      try {
-        const response = await authServiceClient.post<ServiceTypes.AuthResponse>(
-          '/auth/login',
-          {
-            email,
-            password,
-            mfaCode,
-          }
-        );
+      // Find user
+      const user = await prisma.user.findUnique({
+        where: { email },
+      });
 
-        return sendSuccess(reply, response);
-      } catch (error) {
-        handleServiceError(error);
+      if (!user) {
+        // Record failed attempt for rate limiting
+        await recordMfaFailure(request.ip);
+
+        // Log security event for monitoring/alerting
+        // Mask email to protect privacy while preserving domain for analysis
+        const maskedEmail = maskEmail(email);
+        request.log.warn({
+          security_event: 'authentication_failure',
+          reason: 'user_not_found',
+          email_masked: maskedEmail,
+          ip: request.ip,
+          user_agent: request.headers['user-agent']?.substring(0, 100),
+          timestamp: new Date().toISOString(),
+        }, 'Failed login attempt: user not found');
+
+        throw new UnauthorizedError('Invalid email or password');
       }
+
+      // Verify password using bcrypt
+      const isValidPassword = await verifyPassword(password, user.passwordHash);
+      if (!isValidPassword) {
+        // Record failed attempt for rate limiting
+        await recordMfaFailure(user.id);
+
+        // Log security event for monitoring/alerting
+        request.log.warn({
+          security_event: 'authentication_failure',
+          reason: 'invalid_password',
+          user_id: user.id,
+          email_prefix: email.substring(0, 3) + '***',
+          ip: request.ip,
+          user_agent: request.headers['user-agent']?.substring(0, 100),
+          timestamp: new Date().toISOString(),
+        }, 'Failed login attempt: invalid password');
+
+        throw new UnauthorizedError('Invalid email or password');
+      }
+
+      // Check MFA if enabled
+      if (user.mfaEnabled) {
+        if (!mfaCode) {
+          // Return indicator that MFA is required
+          return sendSuccess(reply, {
+            requiresMfa: true,
+            message: 'MFA code required',
+          });
+        }
+
+        // Verify MFA code using speakeasy
+        if (!user.mfaSecret) {
+          throw new UnauthorizedError('MFA configuration error');
+        }
+
+        const isValidMfa = verifyTOTPCode(user.mfaSecret, mfaCode);
+        if (!isValidMfa) {
+          // Record failed MFA attempt
+          await recordMfaFailure(user.id);
+
+          // Log security event for monitoring/alerting
+          request.log.warn({
+            security_event: 'mfa_failure',
+            reason: 'invalid_mfa_code',
+            user_id: user.id,
+            ip: request.ip,
+            user_agent: request.headers['user-agent']?.substring(0, 100),
+            timestamp: new Date().toISOString(),
+          }, 'Failed MFA verification attempt');
+
+          throw new UnauthorizedError('Invalid MFA code');
+        }
+
+        // MFA success - clear failure count
+        await recordMfaSuccess(user.id);
+      }
+
+      // Update last login
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { lastLoginAt: new Date() },
+      });
+
+      // Generate tokens
+      const tokens = await generateTokenPair({
+        userId: user.id,
+        email: user.email,
+        role: user.role,
+        organizationId: user.organizationId || undefined,
+      });
+
+      // Clear any login failure tracking on successful login
+      await recordMfaSuccess(user.id);
+
+      const response = {
+        user: {
+          id: user.id,
+          email: user.email,
+          role: user.role,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          organizationId: user.organizationId,
+          mfaEnabled: user.mfaEnabled,
+          emailVerified: user.emailVerified,
+        },
+        tokens,
+      };
+
+      return sendSuccess(reply, response);
     },
   });
 
@@ -134,16 +268,30 @@ export default async function authRoutes(fastify: FastifyInstance) {
     handler: async (request, reply) => {
       const { refreshToken } = request.body;
 
-      try {
-        const response = await authServiceClient.post<{ tokens: ServiceTypes.AuthTokens }>(
-          '/auth/refresh',
-          { refreshToken }
-        );
+      // Verify refresh token
+      const payload = await verifyRefreshToken(refreshToken);
 
-        return sendSuccess(reply, response);
-      } catch (error) {
-        handleServiceError(error);
+      // Get user to ensure they still exist
+      const user = await prisma.user.findUnique({
+        where: { id: payload.userId },
+      });
+
+      if (!user || user.deletedAt) {
+        throw new UnauthorizedError('User not found or deactivated');
       }
+
+      // Generate new tokens
+      const tokens = await generateTokenPair({
+        userId: user.id,
+        email: user.email,
+        role: user.role,
+        organizationId: user.organizationId || undefined,
+      });
+
+      // Revoke old refresh token
+      await revokeRefreshToken(user.id, refreshToken);
+
+      return sendSuccess(reply, { tokens });
     },
   });
 
@@ -159,21 +307,16 @@ export default async function authRoutes(fastify: FastifyInstance) {
     },
     handler: async (request, reply) => {
       const { refreshToken } = request.body;
+      const userId = request.user!.userId;
 
-      try {
-        const response = await authServiceClient.forward<{ message: string }>(
-          'POST',
-          '/auth/logout',
-          {
-            body: { refreshToken },
-            ...getForwardHeaders(request),
-          }
-        );
-
-        return sendSuccess(reply, response);
-      } catch (error) {
-        handleServiceError(error);
+      if (refreshToken) {
+        await revokeRefreshToken(userId, refreshToken);
+      } else {
+        // Revoke all refresh tokens for the user
+        await revokeAllRefreshTokens(userId);
       }
+
+      return sendSuccess(reply, { message: 'Logged out successfully' });
     },
   });
 
@@ -189,131 +332,128 @@ export default async function authRoutes(fastify: FastifyInstance) {
     },
     handler: async (request, reply) => {
       const { enabled } = request.body;
+      const userId = request.user!.userId;
+      const userEmail = request.user!.email;
 
-      try {
-        const response = await authServiceClient.forward<{
-          secret?: string;
-          qrCode?: string;
-          backupCodes?: string[];
-          message?: string;
-        }>(
-          'POST',
-          '/auth/mfa/setup',
-          {
-            body: { enabled },
-            ...getForwardHeaders(request),
-          }
-        );
+      if (enabled) {
+        // Generate proper MFA secret using speakeasy
+        const mfaData = await generateMFASecret(userEmail);
 
-        return sendSuccess(reply, response);
-      } catch (error) {
-        handleServiceError(error);
+        // Store the secret (in production, you might want to encrypt this)
+        await prisma.user.update({
+          where: { id: userId },
+          data: {
+            mfaEnabled: false, // Not enabled until verified
+            mfaSecret: mfaData.secret,
+          },
+        });
+
+        return sendSuccess(reply, {
+          secret: mfaData.secret,
+          qrCode: mfaData.qrCodeDataUrl,
+          backupCodes: mfaData.backupCodes,
+          message: 'Scan the QR code with your authenticator app, then verify with a code',
+        });
+      } else {
+        // Disable MFA
+        await prisma.user.update({
+          where: { id: userId },
+          data: {
+            mfaEnabled: false,
+            mfaSecret: null,
+          },
+        });
+
+        return sendSuccess(reply, { message: 'MFA disabled successfully' });
       }
     },
   });
 
-  // MFA verify endpoint
+  // MFA verify endpoint (used during MFA setup)
   fastify.post<{ Body: MfaVerifyRequest }>('/mfa/verify', {
-    preHandler: [publicRateLimiter, validateBody(mfaVerifyRequestSchema)],
+    preHandler: [mfaRateLimiter, validateBody(mfaVerifyRequestSchema)],
     schema: {
       tags: ['Authentication'],
       summary: 'Verify MFA code',
-      description: 'Verifies a 2FA code',
+      description: 'Verifies a 2FA code during setup. Rate limited to 5 attempts per 15 minutes with progressive lockout.',
       body: mfaVerifyRequestSchema,
     },
     handler: async (request, reply) => {
       const { code, secret } = request.body;
 
-      try {
-        const response = await authServiceClient.post<{ verified: boolean }>(
-          '/auth/mfa/verify',
-          { code, secret }
-        );
-
-        return sendSuccess(reply, response);
-      } catch (error) {
-        handleServiceError(error);
+      // Validate code format first
+      if (!isValidTOTPFormat(code) && !isValidBackupCodeFormat(code)) {
+        throw new BadRequestError('Invalid code format. Expected 6-digit TOTP or XXXX-XXXX backup code.');
       }
+
+      // Get identifier for rate limiting tracking
+      const identifier = request.user?.userId || request.ip;
+
+      // Verify TOTP code using speakeasy
+      const isValid = verifyTOTPCode(secret, code);
+
+      if (!isValid) {
+        // Record failed attempt for progressive lockout
+        await recordMfaFailure(identifier);
+        throw new UnauthorizedError('Invalid MFA code');
+      }
+
+      // Clear failure count on success
+      await recordMfaSuccess(identifier);
+
+      return sendSuccess(reply, { verified: true });
     },
   });
 
-  // Get current user profile
-  fastify.get('/me', {
-    preHandler: [authenticate],
+  // MFA complete setup endpoint (enables MFA after verification)
+  fastify.post<{ Body: MfaVerifyRequest }>('/mfa/complete', {
+    preHandler: [authenticate, mfaRateLimiter, validateBody(mfaVerifyRequestSchema)],
     schema: {
       tags: ['Authentication'],
-      summary: 'Get current user profile',
-      description: 'Returns the authenticated user profile',
+      summary: 'Complete MFA setup',
+      description: 'Verifies MFA code and enables MFA for the user account',
+      body: mfaVerifyRequestSchema,
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
-      try {
-        const user = await authServiceClient.forward<ServiceTypes.User>(
-          'GET',
-          '/auth/me',
-          {
-            ...getForwardHeaders(request),
-          }
-        );
+      const { code } = request.body;
+      const userId = request.user!.userId;
 
-        return sendSuccess(reply, user);
-      } catch (error) {
-        handleServiceError(error);
+      // Get user's pending MFA secret
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { mfaSecret: true, mfaEnabled: true },
+      });
+
+      if (!user || !user.mfaSecret) {
+        throw new BadRequestError('MFA setup not initiated. Please call /mfa/setup first.');
       }
-    },
-  });
 
-  // Update current user profile
-  fastify.patch<{ Body: { firstName?: string; lastName?: string } }>('/me', {
-    preHandler: [authenticate],
-    schema: {
-      tags: ['Authentication'],
-      summary: 'Update current user profile',
-      description: 'Updates the authenticated user profile',
-      security: [{ bearerAuth: [] }],
-    },
-    handler: async (request, reply) => {
-      try {
-        const user = await authServiceClient.forward<ServiceTypes.User>(
-          'PATCH',
-          '/auth/me',
-          {
-            body: request.body,
-            ...getForwardHeaders(request),
-          }
-        );
-
-        return sendSuccess(reply, user);
-      } catch (error) {
-        handleServiceError(error);
+      if (user.mfaEnabled) {
+        throw new BadRequestError('MFA is already enabled for this account.');
       }
-    },
-  });
 
-  // Change password
-  fastify.post<{ Body: { currentPassword: string; newPassword: string } }>('/change-password', {
-    preHandler: [authenticate, strictRateLimiter],
-    schema: {
-      tags: ['Authentication'],
-      summary: 'Change password',
-      description: 'Changes the user password',
-      security: [{ bearerAuth: [] }],
-    },
-    handler: async (request, reply) => {
-      try {
-        const response = await authServiceClient.forward<{ message: string }>(
-          'POST',
-          '/auth/change-password',
-          {
-            body: request.body,
-            ...getForwardHeaders(request),
-          }
-        );
+      // Verify TOTP code
+      const isValid = verifyTOTPCode(user.mfaSecret, code);
 
-        return sendSuccess(reply, response);
-      } catch (error) {
-        handleServiceError(error);
+      if (!isValid) {
+        await recordMfaFailure(userId);
+        throw new UnauthorizedError('Invalid MFA code');
       }
+
+      // Enable MFA
+      await prisma.user.update({
+        where: { id: userId },
+        data: { mfaEnabled: true },
+      });
+
+      // Clear failure count
+      await recordMfaSuccess(userId);
+
+      return sendSuccess(reply, {
+        message: 'MFA enabled successfully',
+        mfaEnabled: true,
+      });
     },
   });
 }

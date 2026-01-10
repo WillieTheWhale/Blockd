@@ -95,6 +95,61 @@ export function sendError(
 }
 
 /**
+ * Trace information for error responses
+ */
+export interface TraceInfo {
+  traceId: string;
+  correlationId: string;
+}
+
+/**
+ * Error response with trace information
+ */
+export interface ErrorResponseWithTrace extends ErrorResponse {
+  trace?: {
+    traceId: string;
+    correlationId: string;
+  };
+}
+
+/**
+ * Send error response with trace context
+ * Includes traceId and correlationId for distributed tracing
+ */
+export function sendErrorWithTrace(
+  reply: FastifyReply,
+  statusCode: number,
+  message: string,
+  code: string,
+  traceInfo?: TraceInfo,
+  details?: any
+): FastifyReply {
+  const response: ErrorResponseWithTrace = {
+    success: false,
+    error: {
+      code,
+      message,
+      statusCode,
+      details,
+    },
+    meta: {
+      timestamp: new Date().toISOString(),
+      requestId: reply.request.id,
+    },
+  };
+
+  // Add trace info if available
+  if (traceInfo) {
+    response.trace = {
+      traceId: traceInfo.traceId,
+      correlationId: traceInfo.correlationId,
+    };
+  }
+
+  return reply.code(statusCode).send(response);
+}
+
+/**
  * Send paginated response
  */
 export function sendPaginated<T>(

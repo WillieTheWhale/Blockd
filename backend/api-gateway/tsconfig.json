@@ -14,7 +14,7 @@
     "declarationMap": false,
     "sourceMap": true,
     "outDir": "./dist",
-    "rootDir": ".",
+    "rootDir": "..",
     "removeComments": true,
     "noImplicitAny": false,
     "strictNullChecks": false,
@@ -38,7 +38,9 @@
       "@lib/*": ["lib/*"],
       "@middleware/*": ["middleware/*"],
       "@routes/*": ["routes/*"],
-      "@schemas/*": ["schemas/*"]
+      "@schemas/*": ["schemas/*"],
+      "@shared/*": ["../shared/*"],
+      "@blockd/shared/*": ["../shared/*"]
     }
   },
   "include": [
@@ -46,12 +48,19 @@
     "lib/**/*",
     "middleware/**/*",
     "routes/**/*",
-    "schemas/**/*"
+    "schemas/**/*",
+    "types/**/*",
+    "../shared/cache/**/*"
   ],
   "exclude": [
     "node_modules",
     "dist",
     "**/*.test.ts",
-    "test/**/*"
+    "test/**/*",
+    "../shared/cache/**/*.test.ts",
+    "../shared/auth/**/*",
+    "../shared/database/**/*",
+    "../shared/metrics/**/*",
+    "../shared/queue/**/*"
   ]
 }

@@ -1,51 +1,33 @@
 /**
- * Prisma Client for API Gateway
- *
- * Uses the shared database module with proper connection pooling.
- * API Gateway has reduced connection limit since it primarily routes
- * requests to microservices rather than direct database operations.
+ * Prisma Client Singleton
+ * Ensures a single instance of PrismaClient across the application
  */
 
-import {
-  createPrismaClient,
-  disconnectPrisma as disconnect,
-  getPoolStats as getStats,
-  healthCheck as checkHealth,
-  getServicePoolConfig,
-} from '@blockd/shared/database';
-import type { PoolStats, HealthCheckResult, PoolConfig } from '@blockd/shared/database';
+import { PrismaClient } from '@prisma/client';
 
-const SERVICE_NAME = 'api-gateway' as const;
+const globalForPrisma = globalThis as unknown as {
+  prisma: PrismaClient | undefined;
+};
 
-// Create/get the Prisma client instance
-export const prisma = createPrismaClient(SERVICE_NAME);
+export const prisma =
+  globalForPrisma.prisma ??
+  new PrismaClient({
+    log:
+      process.env.NODE_ENV === 'development'
+        ? ['query', 'info', 'warn', 'error']
+        : ['error'],
+    errorFormat: 'pretty',
+  });
 
-/**
- * Get current pool configuration
- */
-export function getPoolConfig(): PoolConfig {
-  return getServicePoolConfig(SERVICE_NAME);
+if (process.env.NODE_ENV !== 'production') {
+  globalForPrisma.prisma = prisma;
 }
 
 /**
- * Get connection pool statistics
- */
-export async function getPoolStats(): Promise<PoolStats> {
-  return getStats(prisma, SERVICE_NAME);
-}
-
-/**
- * Check database connection health
- */
-export async function healthCheck(): Promise<HealthCheckResult> {
-  return checkHealth(prisma);
-}
-
-/**
- * Gracefully disconnect Prisma
+ * Gracefully disconnect Prisma on process termination
  */
 export async function disconnectPrisma(): Promise<void> {
-  await disconnect(SERVICE_NAME);
+  await prisma.$disconnect();
 }
 
 export default prisma;

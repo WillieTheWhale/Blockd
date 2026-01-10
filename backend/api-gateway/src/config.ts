@@ -21,6 +21,10 @@ export interface Config {
   // Database Configuration
   database: {
     url: string;
+    poolSize: number;
+    poolTimeout: number;
+    idleTimeout: number;
+    connectionTimeout: number;
   };
 
   // Redis Configuration
@@ -74,6 +78,21 @@ export interface Config {
     responseTimingService: string;
     videoService: string;
     websocketService: string;
+  };
+
+  // Cache Configuration
+  cache: {
+    enabled: boolean;
+    defaultTtl: number;
+    userTtl: number;
+    sessionTtl: number;
+    organizationTtl: number;
+  };
+
+  // Shutdown Configuration
+  shutdown: {
+    timeout: number;
+    drainTimeout: number;
   };
 }
 
@@ -141,6 +160,10 @@ export const config: Config = {
       'DATABASE_URL',
       'postgresql://blockd_app:blockd_secure_password_2025@localhost:5432/blockd'
     ),
+    poolSize: getEnvNumber('DB_POOL_SIZE', 20),
+    poolTimeout: getEnvNumber('DB_POOL_TIMEOUT', 10),
+    idleTimeout: getEnvNumber('DB_IDLE_TIMEOUT', 900),
+    connectionTimeout: getEnvNumber('DB_CONNECTION_TIMEOUT', 5000),
   },
 
   redis: {
@@ -189,41 +212,264 @@ export const config: Config = {
     videoService: getEnv('VIDEO_SERVICE_URL', 'http://localhost:3006'),
     websocketService: getEnv('WEBSOCKET_SERVICE_URL', 'http://localhost:3007'),
   },
+
+  cache: {
+    enabled: getEnvBoolean('CACHE_ENABLED', true),
+    defaultTtl: getEnvNumber('CACHE_DEFAULT_TTL', 300), // 5 minutes
+    userTtl: getEnvNumber('CACHE_USER_TTL', 3600), // 1 hour
+    sessionTtl: getEnvNumber('CACHE_SESSION_TTL', 7200), // 2 hours
+    organizationTtl: getEnvNumber('CACHE_ORG_TTL', 86400), // 24 hours
+  },
+
+  shutdown: {
+    timeout: getEnvNumber('SHUTDOWN_TIMEOUT', 30000), // 30 seconds
+    drainTimeout: getEnvNumber('SHUTDOWN_DRAIN_TIMEOUT', 10000), // 10 seconds
+  },
 };
+
+/**
+ * Configuration validation result
+ */
+export interface ValidationResult {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+}
+
+/**
+ * Validate a URL format
+ */
+function isValidUrl(url: string): boolean {
+  try {
+    new URL(url);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Validate configuration on startup
  */
-export function validateConfig(): void {
+export function validateConfig(): ValidationResult {
   const errors: string[] = [];
+  const warnings: string[] = [];
 
-  // Validate JWT keys
-  if (!config.jwt.publicKey || !config.jwt.privateKey) {
-    errors.push('JWT_PUBLIC_KEY and JWT_PRIVATE_KEY must be set');
+  // ============================================================================
+  // Required Configuration Validation
+  // ============================================================================
+
+  // Validate JWT keys (critical for auth)
+  if (!config.jwt.publicKey) {
+    errors.push('JWT_PUBLIC_KEY is required for authentication');
+  }
+  if (!config.jwt.privateKey) {
+    errors.push('JWT_PRIVATE_KEY is required for token signing');
   }
 
   // Validate database URL
   if (!config.database.url) {
-    errors.push('DATABASE_URL must be set');
+    errors.push('DATABASE_URL is required');
+  } else if (!config.database.url.startsWith('postgresql://') && !config.database.url.startsWith('postgres://')) {
+    errors.push('DATABASE_URL must be a valid PostgreSQL connection string');
   }
 
   // Validate service URLs
   if (!config.services.authService) {
-    errors.push('AUTH_SERVICE_URL must be set');
-  }
-  if (!config.services.sessionService) {
-    errors.push('SESSION_SERVICE_URL must be set');
+    errors.push('AUTH_SERVICE_URL is required');
+  } else if (!isValidUrl(config.services.authService)) {
+    errors.push('AUTH_SERVICE_URL must be a valid URL');
   }
 
-  if (errors.length > 0) {
-    console.error('Configuration validation failed:');
-    errors.forEach(error => console.error(`  - ${error}`));
-    if (config.server.isProduction) {
-      throw new Error('Invalid configuration');
-    } else {
-      console.warn('⚠️  Running with invalid configuration (development mode)');
+  if (!config.services.sessionService) {
+    errors.push('SESSION_SERVICE_URL is required');
+  } else if (!isValidUrl(config.services.sessionService)) {
+    errors.push('SESSION_SERVICE_URL must be a valid URL');
+  }
+
+  // ============================================================================
+  // Optional Configuration Validation with Warnings
+  // ============================================================================
+
+  // AI Detection Service
+  if (config.services.aiDetectionService && !isValidUrl(config.services.aiDetectionService)) {
+    warnings.push('AI_DETECTION_SERVICE_URL is not a valid URL');
+  }
+
+  // Eye Tracking Service
+  if (config.services.eyeTrackingService && !isValidUrl(config.services.eyeTrackingService)) {
+    warnings.push('EYE_TRACKING_SERVICE_URL is not a valid URL');
+  }
+
+  // Redis validation
+  if (config.redis.port < 1 || config.redis.port > 65535) {
+    warnings.push(`REDIS_PORT (${config.redis.port}) is not a valid port number`);
+  }
+
+  // Database pool size
+  if (config.database.poolSize < 1 || config.database.poolSize > 100) {
+    warnings.push(`DB_POOL_SIZE (${config.database.poolSize}) should be between 1 and 100`);
+  }
+
+  // Rate limiting
+  if (config.rateLimit.public.max < 1) {
+    warnings.push('RATE_LIMIT_PUBLIC_MAX should be at least 1');
+  }
+  if (config.rateLimit.authenticated.max < config.rateLimit.public.max) {
+    warnings.push('RATE_LIMIT_AUTH_MAX should be greater than RATE_LIMIT_PUBLIC_MAX');
+  }
+
+  // ============================================================================
+  // Production-specific Validation
+  // ============================================================================
+
+  if (config.server.isProduction) {
+    // CORS should not be wildcard in production
+    if (config.cors.origin === '*') {
+      errors.push('CORS_ORIGINS cannot be "*" in production');
+    }
+
+    // Should have proper JWT keys (not empty)
+    if (config.jwt.publicKey.length < 100) {
+      warnings.push('JWT_PUBLIC_KEY appears too short for a proper RSA key');
+    }
+    if (config.jwt.privateKey.length < 100) {
+      warnings.push('JWT_PRIVATE_KEY appears too short for a proper RSA key');
+    }
+
+    // Redis password should be set
+    if (!config.redis.password) {
+      warnings.push('REDIS_PASSWORD is not set - recommended for production');
+    }
+
+    // Log level should not be debug
+    if (config.logging.level === 'debug' || config.logging.level === 'trace') {
+      warnings.push(`LOG_LEVEL is "${config.logging.level}" - consider using "info" or "warn" in production`);
+    }
+
+    // Pretty print should be disabled in production
+    if (config.logging.prettyPrint) {
+      warnings.push('LOG_PRETTY_PRINT should be disabled in production for JSON logging');
+    }
+
+    // TLS/HTTPS enforcement for service URLs in production
+    const serviceUrls = [
+      { name: 'AUTH_SERVICE_URL', url: config.services.authService },
+      { name: 'SESSION_SERVICE_URL', url: config.services.sessionService },
+      { name: 'AI_DETECTION_SERVICE_URL', url: config.services.aiDetectionService },
+      { name: 'EYE_TRACKING_SERVICE_URL', url: config.services.eyeTrackingService },
+    ];
+
+    for (const { name, url } of serviceUrls) {
+      if (url && !url.startsWith('https://') && !url.startsWith('http://localhost') && !url.startsWith('http://127.0.0.1')) {
+        warnings.push(`${name} should use HTTPS in production (current: ${url.substring(0, 30)}...)`);
+      }
+    }
+
+    // Database SSL requirement in production
+    if (!config.database.url.includes('sslmode=require') && !config.database.url.includes('ssl=true')) {
+      warnings.push('DATABASE_URL should include sslmode=require for production');
     }
   }
+
+  // ============================================================================
+  // Development-specific Validation
+  // ============================================================================
+
+  if (config.server.isDevelopment) {
+    // Check for default credentials
+    if (config.database.url.includes('blockd_secure_password_2025')) {
+      warnings.push('Using default database password - change in production');
+    }
+  }
+
+  // ============================================================================
+  // Log Results
+  // ============================================================================
+
+  const result: ValidationResult = {
+    valid: errors.length === 0,
+    errors,
+    warnings,
+  };
+
+  if (errors.length > 0) {
+    console.error('❌ Configuration validation failed:');
+    errors.forEach(error => console.error(`   ERROR: ${error}`));
+  }
+
+  if (warnings.length > 0) {
+    console.warn('⚠️  Configuration warnings:');
+    warnings.forEach(warning => console.warn(`   WARN: ${warning}`));
+  }
+
+  if (errors.length > 0 && config.server.isProduction) {
+    throw new Error(`Configuration invalid: ${errors.join(', ')}`);
+  }
+
+  if (result.valid && warnings.length === 0) {
+    console.log('✅ Configuration validation passed');
+  } else if (result.valid) {
+    console.log('✅ Configuration validation passed with warnings');
+  }
+
+  return result;
+}
+
+/**
+ * Get a summary of the current configuration (safe for logging)
+ */
+export function getConfigSummary(): Record<string, unknown> {
+  return {
+    server: {
+      port: config.server.port,
+      host: config.server.host,
+      nodeEnv: config.server.nodeEnv,
+    },
+    database: {
+      poolSize: config.database.poolSize,
+      poolTimeout: config.database.poolTimeout,
+      // Don't log the URL as it may contain credentials
+      urlConfigured: !!config.database.url,
+    },
+    redis: {
+      host: config.redis.host,
+      port: config.redis.port,
+      clusterEnabled: config.redis.clusterEnabled,
+      passwordConfigured: !!config.redis.password,
+    },
+    jwt: {
+      publicKeyConfigured: !!config.jwt.publicKey,
+      privateKeyConfigured: !!config.jwt.privateKey,
+      accessTokenExpiry: config.jwt.accessTokenExpiry,
+      refreshTokenExpiry: config.jwt.refreshTokenExpiry,
+    },
+    cors: {
+      credentialsEnabled: config.cors.credentials,
+      allowNoOrigin: config.cors.allowNoOrigin,
+      // Don't log all origins
+    },
+    rateLimit: {
+      publicMax: config.rateLimit.public.max,
+      publicWindow: config.rateLimit.public.timeWindow,
+      authMax: config.rateLimit.authenticated.max,
+      authWindow: config.rateLimit.authenticated.timeWindow,
+    },
+    logging: config.logging,
+    cache: {
+      enabled: config.cache.enabled,
+      defaultTtl: config.cache.defaultTtl,
+      userTtl: config.cache.userTtl,
+      sessionTtl: config.cache.sessionTtl,
+    },
+    shutdown: config.shutdown,
+    services: {
+      authServiceConfigured: !!config.services.authService,
+      sessionServiceConfigured: !!config.services.sessionService,
+      aiDetectionServiceConfigured: !!config.services.aiDetectionService,
+      eyeTrackingServiceConfigured: !!config.services.eyeTrackingService,
+    },
+  };
 }
 
 export default config;

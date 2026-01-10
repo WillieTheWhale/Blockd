@@ -1,8 +1,10 @@
 /**
  * Authentication Validation Schemas
+ * Includes input sanitization to prevent XSS and injection attacks
  */
 
 import { z } from 'zod';
+import { sanitizeTransform } from '../lib/sanitize';
 
 // Register request schema
 export const registerRequestSchema = z.object({
@@ -14,8 +16,8 @@ export const registerRequestSchema = z.object({
     .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
     .regex(/[0-9]/, 'Password must contain at least one number')
     .regex(/[^A-Za-z0-9]/, 'Password must contain at least one special character'),
-  firstName: z.string().min(1).max(100).optional(),
-  lastName: z.string().min(1).max(100).optional(),
+  firstName: z.string().min(1).max(100).optional().transform((val) => val ? sanitizeTransform(val) : val),
+  lastName: z.string().min(1).max(100).optional().transform((val) => val ? sanitizeTransform(val) : val),
   role: z.enum(['admin', 'interviewer', 'interviewee']).default('interviewee'),
   organizationId: z.string().uuid().optional(),
 });

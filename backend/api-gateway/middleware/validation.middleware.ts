@@ -18,7 +18,7 @@ export interface ValidationOptions {
  * Create validation middleware from Zod schemas
  */
 export function validate(options: ValidationOptions) {
-  return async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
+  return async (request: FastifyRequest, _reply: FastifyReply): Promise<void> => {
     try {
       // Validate request body
       if (options.body) {

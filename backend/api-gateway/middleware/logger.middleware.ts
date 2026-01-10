@@ -62,13 +62,75 @@ export const requestLoggingOptions = {
 
 /**
  * Custom request ID generator
- * Note: Fastify's genReqId receives IncomingMessage, not FastifyRequest
+ * Compatible with Fastify's genReqId option which receives raw IncomingMessage
  */
-export function genReqId(request: { headers: Record<string, unknown> }): string {
-  const existingId = request.headers['x-request-id'] as string;
-  if (existingId) {
+export function genReqId(request: { headers: Record<string, string | string[] | undefined> }): string {
+  const existingId = request.headers['x-request-id'];
+  if (existingId && typeof existingId === 'string') {
     return existingId;
   }
   // Generate a simple unique ID
   return `req-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+}
+
+/**
+ * Request timing symbol for storing start time
+ */
+const REQUEST_START_TIME = Symbol('requestStartTime');
+
+/**
+ * Augment FastifyRequest to include timing
+ */
+declare module 'fastify' {
+  interface FastifyRequest {
+    [REQUEST_START_TIME]?: bigint;
+  }
+}
+
+/**
+ * Hook to record request start time
+ * Register with: app.addHook('onRequest', requestTimingStart)
+ */
+export async function requestTimingStart(request: FastifyRequest): Promise<void> {
+  request[REQUEST_START_TIME] = process.hrtime.bigint();
+}
+
+/**
+ * Hook to log request duration on response
+ * Register with: app.addHook('onResponse', requestTimingEnd)
+ *
+ * Logs request duration in milliseconds along with method, path, and status code.
+ * Useful for monitoring API performance and identifying slow endpoints.
+ */
+export async function requestTimingEnd(
+  request: FastifyRequest,
+  reply: FastifyReply
+): Promise<void> {
+  const startTime = request[REQUEST_START_TIME];
+  if (!startTime) return;
+
+  const endTime = process.hrtime.bigint();
+  const durationNs = endTime - startTime;
+  const durationMs = Number(durationNs) / 1_000_000;
+
+  // Log request timing metrics
+  request.log.info({
+    request_timing: {
+      method: request.method,
+      path: request.routeOptions?.url || request.url,
+      statusCode: reply.statusCode,
+      durationMs: Math.round(durationMs * 100) / 100, // Round to 2 decimal places
+    },
+  }, `Request completed in ${durationMs.toFixed(2)}ms`);
+
+  // Log slow requests as warnings (>1000ms)
+  if (durationMs > 1000) {
+    request.log.warn({
+      slow_request: {
+        method: request.method,
+        path: request.routeOptions?.url || request.url,
+        durationMs: Math.round(durationMs),
+      },
+    }, `Slow request detected: ${durationMs.toFixed(0)}ms`);
+  }
 }

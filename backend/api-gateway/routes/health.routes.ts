@@ -1,19 +1,24 @@
 /**
  * Health Check Routes
+ * Enhanced with comprehensive dependency checks and metrics
  */
 
 import { FastifyInstance } from 'fastify';
-import { getRedisClient } from '../lib/redis-client';
-import prisma from '../lib/prisma';
 import { sendSuccess } from '../lib/response';
+import {
+  performHealthCheck,
+  performReadinessCheck,
+  performLivenessCheck,
+  performQuickHealthCheck,
+} from '../lib/health-check';
 
 export default async function healthRoutes(fastify: FastifyInstance) {
-  // Health check endpoint
+  // Comprehensive health check endpoint
   fastify.get('/health', {
     schema: {
       tags: ['Health'],
-      summary: 'Health check endpoint',
-      description: 'Returns the health status of the API Gateway and its dependencies',
+      summary: 'Comprehensive health check',
+      description: 'Returns detailed health status including all dependencies, circuit breakers, and system metrics',
       response: {
         200: {
           type: 'object',
@@ -22,14 +27,62 @@ export default async function healthRoutes(fastify: FastifyInstance) {
             data: {
               type: 'object',
               properties: {
-                status: { type: 'string' },
+                status: { type: 'string', enum: ['healthy', 'unhealthy', 'degraded'] },
                 timestamp: { type: 'string' },
-                uptime: { type: 'number' },
-                services: {
+                version: { type: 'string' },
+                environment: { type: 'string' },
+                dependencies: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      name: { type: 'string' },
+                      status: { type: 'string' },
+                      critical: { type: 'boolean' },
+                      responseTimeMs: { type: 'number' },
+                      message: { type: 'string' },
+                    },
+                  },
+                },
+                circuitBreakers: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      name: { type: 'string' },
+                      state: { type: 'string' },
+                      failures: { type: 'number' },
+                      successes: { type: 'number' },
+                    },
+                  },
+                },
+                system: {
                   type: 'object',
                   properties: {
-                    database: { type: 'string' },
-                    redis: { type: 'string' },
+                    memoryUsageMb: { type: 'number' },
+                    memoryPercentage: { type: 'number' },
+                    cpuLoadAverage: { type: 'array', items: { type: 'number' } },
+                    uptime: { type: 'number' },
+                    nodeVersion: { type: 'string' },
+                  },
+                },
+                checks: {
+                  type: 'object',
+                  properties: {
+                    critical: {
+                      type: 'object',
+                      properties: {
+                        passed: { type: 'number' },
+                        failed: { type: 'number' },
+                      },
+                    },
+                    optional: {
+                      type: 'object',
+                      properties: {
+                        passed: { type: 'number' },
+                        failed: { type: 'number' },
+                      },
+                    },
                   },
                 },
               },
@@ -43,16 +96,10 @@ export default async function healthRoutes(fastify: FastifyInstance) {
             data: {
               type: 'object',
               properties: {
-                status: { type: 'string' },
+                status: { type: 'string', enum: ['unhealthy'] },
                 timestamp: { type: 'string' },
-                uptime: { type: 'number' },
-                services: {
-                  type: 'object',
-                  properties: {
-                    database: { type: 'string' },
-                    redis: { type: 'string' },
-                  },
-                },
+                version: { type: 'string' },
+                environment: { type: 'string' },
               },
             },
           },
@@ -60,94 +107,103 @@ export default async function healthRoutes(fastify: FastifyInstance) {
       },
     },
     handler: async (request, reply) => {
-      const startTime = Date.now();
+      const healthResult = await performHealthCheck({
+        includeDependencies: true,
+        includeCircuitBreakers: true,
+        includeSystemMetrics: true,
+      });
 
-      // Check database connection
-      let dbStatus = 'healthy';
-      try {
-        await prisma.$queryRaw`SELECT 1`;
-      } catch (error) {
-        dbStatus = 'unhealthy';
-        request.log.error({ err: error }, 'Database health check failed');
+      // Log health check result
+      if (healthResult.status !== 'healthy') {
+        request.log.warn({ healthResult }, 'Health check returned non-healthy status');
       }
 
-      // Check Redis connection
-      let redisStatus = 'healthy';
-      try {
-        const redis = getRedisClient();
-        await redis.ping();
-      } catch (error) {
-        redisStatus = 'unhealthy';
-        request.log.error({ err: error }, 'Redis health check failed');
-      }
+      // Return appropriate status code
+      const isHealthy = healthResult.status === 'healthy' || healthResult.status === 'degraded';
 
-      const responseTime = Date.now() - startTime;
-      const overallStatus = dbStatus === 'healthy' && redisStatus === 'healthy'
-        ? 'healthy'
-        : 'unhealthy';
-
-      const healthData = {
-        status: overallStatus,
-        timestamp: new Date().toISOString(),
-        uptime: process.uptime(),
-        responseTime,
-        version: process.env.npm_package_version || '1.0.0',
-        services: {
-          database: dbStatus,
-          redis: redisStatus,
-        },
-        environment: process.env.NODE_ENV || 'development',
-      };
-
-      // Return 503 if unhealthy
-      if (overallStatus === 'unhealthy') {
-        return reply.code(503).send({
-          success: false,
-          data: healthData,
-        });
-      }
-
-      return sendSuccess(reply, healthData);
+      return reply.code(isHealthy ? 200 : 503).send({
+        success: healthResult.status !== 'unhealthy',
+        data: healthResult,
+      });
     },
   });
 
-  // Readiness check endpoint
+  // Quick health check for load balancer (minimal overhead)
+  fastify.get('/health/quick', {
+    schema: {
+      tags: ['Health'],
+      summary: 'Quick health check',
+      description: 'Fast health check with minimal overhead for load balancer polling',
+    },
+    handler: async (request, reply) => {
+      const result = await performQuickHealthCheck();
+
+      return reply
+        .code(result.status === 'healthy' ? 200 : 503)
+        .send(result);
+    },
+  });
+
+  // Readiness check endpoint (for Kubernetes)
   fastify.get('/ready', {
     schema: {
       tags: ['Health'],
-      summary: 'Readiness check endpoint',
-      description: 'Returns whether the service is ready to accept traffic',
+      summary: 'Readiness check',
+      description: 'Returns whether the service is ready to accept traffic (critical dependencies only)',
     },
     handler: async (request, reply) => {
-      try {
-        // Check if all critical services are available
-        await prisma.$queryRaw`SELECT 1`;
-        const redis = getRedisClient();
-        await redis.ping();
+      const result = await performReadinessCheck();
 
-        return sendSuccess(reply, { ready: true });
-      } catch (error) {
-        request.log.error({ err: error }, 'Readiness check failed');
+      if (!result.ready) {
+        request.log.warn({ result }, 'Readiness check failed');
         return reply.code(503).send({
           success: false,
           error: {
             code: 'NOT_READY',
-            message: 'Service is not ready',
+            message: 'Service is not ready to accept traffic',
           },
+          checks: result.checks,
+          timestamp: result.timestamp,
         });
       }
+
+      return sendSuccess(reply, result);
     },
   });
 
-  // Liveness check endpoint
+  // Liveness check endpoint (for Kubernetes)
   fastify.get('/live', {
     schema: {
       tags: ['Health'],
-      summary: 'Liveness check endpoint',
-      description: 'Returns whether the service is alive',
+      summary: 'Liveness check',
+      description: 'Returns whether the service process is alive',
     },
     handler: async (request, reply) => {
-      return sendSuccess(reply, { alive: true });
+      const result = await performLivenessCheck();
+      return sendSuccess(reply, result);
+    },
+  });
+
+  // Detailed dependency status
+  fastify.get('/health/dependencies', {
+    schema: {
+      tags: ['Health'],
+      summary: 'Dependency health details',
+      description: 'Returns detailed health status of all dependencies',
+    },
+    handler: async (request, reply) => {
+      const healthResult = await performHealthCheck({
+        includeDependencies: true,
+        includeCircuitBreakers: true,
+        includeSystemMetrics: false,
+      });
+
+      return sendSuccess(reply, {
+        timestamp: healthResult.timestamp,
+        dependencies: healthResult.dependencies,
+        circuitBreakers: healthResult.circuitBreakers,
+        checks: healthResult.checks,
+      });
     },
   });
 }
