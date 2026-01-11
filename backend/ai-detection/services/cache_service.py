@@ -2,6 +2,7 @@
 Cache service for AI answers and analysis results
 Uses Redis for caching
 """
+import asyncio
 import logging
 import json
 from typing import Optional, Dict, List, Any
@@ -17,6 +18,9 @@ from lib.errors import CacheError
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
+# Lock for thread-safe singleton initialization
+_cache_service_lock = asyncio.Lock()
+
 
 @dataclass
 class CacheOptions:
@@ -31,34 +35,42 @@ class AsyncRedisClient:
     def __init__(self):
         self.client: Optional[aioredis.Redis] = None
         self._initialized = False
+        self._init_lock = asyncio.Lock()
 
     async def initialize(self):
-        """Initialize the async client"""
+        """Initialize the async client with proper locking to prevent race conditions"""
+        # Fast path: already initialized
         if self._initialized:
             return
 
-        # Parse REDIS_URL if available, otherwise use individual vars
-        redis_url = os.getenv('REDIS_URL', '')
-        if redis_url:
-            self.client = aioredis.from_url(
-                redis_url,
-                decode_responses=True,
-                socket_timeout=10,
-                socket_connect_timeout=10,
-            )
-        else:
-            self.client = aioredis.Redis(
-                host=os.getenv('REDIS_HOST', 'localhost'),
-                port=int(os.getenv('REDIS_PORT', '6379')),
-                password=os.getenv('REDIS_PASSWORD'),
-                db=int(os.getenv('REDIS_DB', '0')),
-                decode_responses=True,
-                socket_timeout=10,
-                socket_connect_timeout=10,
-            )
+        # Slow path: acquire lock and initialize
+        async with self._init_lock:
+            # Double-check after acquiring lock
+            if self._initialized:
+                return
 
-        await self._test_connection()
-        self._initialized = True
+            # Parse REDIS_URL if available, otherwise use individual vars
+            redis_url = os.getenv('REDIS_URL', '')
+            if redis_url:
+                self.client = aioredis.from_url(
+                    redis_url,
+                    decode_responses=True,
+                    socket_timeout=10,
+                    socket_connect_timeout=10,
+                )
+            else:
+                self.client = aioredis.Redis(
+                    host=os.getenv('REDIS_HOST', 'localhost'),
+                    port=int(os.getenv('REDIS_PORT', '6379')),
+                    password=os.getenv('REDIS_PASSWORD'),
+                    db=int(os.getenv('REDIS_DB', '0')),
+                    decode_responses=True,
+                    socket_timeout=10,
+                    socket_connect_timeout=10,
+                )
+
+            await self._test_connection()
+            self._initialized = True
 
     async def _test_connection(self) -> None:
         """Test Redis connection"""
@@ -110,9 +122,13 @@ class AsyncRedisClient:
             raise
 
     async def close(self) -> None:
-        """Close Redis connection"""
-        if self.client:
-            await self.client.close()
+        """Close Redis connection and reset state"""
+        async with self._init_lock:
+            if self.client:
+                await self.client.close()
+                self.client = None
+            self._initialized = False
+            logger.info("Redis connection closed")
 
 
 # Singleton instance
@@ -274,18 +290,30 @@ class CacheService:
 
 
 # Singleton instance
-_cache_service = None
+_cache_service: Optional[CacheService] = None
 
 
 async def get_cache_service() -> CacheService:
     """
-    Get singleton cache service instance
+    Get singleton cache service instance.
+
+    Uses async lock to prevent race conditions during initialization.
 
     Returns:
         Cache service
     """
     global _cache_service
-    if _cache_service is None:
-        _cache_service = CacheService()
-        await _cache_service.redis_client.initialize()
+
+    # Fast path: if already initialized, return immediately
+    if _cache_service is not None:
+        return _cache_service
+
+    # Slow path: acquire lock and initialize if needed
+    async with _cache_service_lock:
+        # Double-check after acquiring lock (another task may have initialized)
+        if _cache_service is None:
+            service = CacheService()
+            await service.redis_client.initialize()
+            _cache_service = service
+
     return _cache_service

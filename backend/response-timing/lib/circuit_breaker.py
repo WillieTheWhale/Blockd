@@ -1,14 +1,14 @@
 """
-Circuit Breaker Pattern Implementation
-Prevents cascading failures when external services are unavailable
+Circuit Breaker Pattern Implementation for Response Timing Service
+Prevents cascading failures when Whisper API or S3 are unavailable
 
-Note: This implementation uses asyncio.Lock for async contexts.
-All state-modifying operations are async-safe.
+This is a copy of the circuit breaker from ai-detection service,
+configured with appropriate settings for audio processing.
 """
 import asyncio
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Callable, Dict, Optional, Any, TypeVar, Generic
 from functools import wraps
@@ -61,20 +61,10 @@ class CircuitBreaker(Generic[T]):
     """
     Circuit Breaker implementation for protecting external service calls.
 
-    States:
-    - CLOSED: Normal operation, requests pass through
-    - OPEN: Service is failing, requests are blocked (fail fast)
-    - HALF_OPEN: Testing if service recovered
-
-    Example usage:
-        breaker = CircuitBreaker(
-            name="openai",
-            config=CircuitBreakerConfig(failure_threshold=5)
-        )
-
-        @breaker
-        async def call_openai(prompt: str) -> str:
-            return await openai_client.complete(prompt)
+    Configured for response-timing use cases:
+    - Whisper API calls (can be slow, ~5 minutes)
+    - S3 downloads
+    - Internal service calls
     """
 
     def __init__(self, name: str, config: Optional[CircuitBreakerConfig] = None):
@@ -90,7 +80,6 @@ class CircuitBreaker(Generic[T]):
         """Get current circuit state, checking for automatic state transitions"""
         async with self._lock:
             if self._state == CircuitState.OPEN:
-                # Check if recovery timeout has elapsed
                 if time.time() - self._last_state_change >= self.config.recovery_timeout:
                     self._transition_to(CircuitState.HALF_OPEN)
             return self._state
@@ -127,7 +116,6 @@ class CircuitBreaker(Generic[T]):
             f"Circuit breaker '{self.name}' transitioned from {old_state.value} to {new_state.value}"
         )
 
-        # Reset counters on state change
         if new_state == CircuitState.CLOSED:
             self._stats.consecutive_failures = 0
             self._stats.consecutive_successes = 0
@@ -143,7 +131,6 @@ class CircuitBreaker(Generic[T]):
             self._stats.consecutive_successes += 1
             self._stats.consecutive_failures = 0
 
-            # Check for state transition
             if self._state == CircuitState.HALF_OPEN:
                 if self._stats.consecutive_successes >= self.config.success_threshold:
                     self._transition_to(CircuitState.CLOSED)
@@ -158,21 +145,15 @@ class CircuitBreaker(Generic[T]):
             self._stats.consecutive_failures += 1
             self._stats.consecutive_successes = 0
 
-            # Track failure times for rate calculation
             self._failure_times.append(current_time)
-            # Remove old failures outside the window
             cutoff = current_time - self.config.failure_window
             self._failure_times = [t for t in self._failure_times if t > cutoff]
 
-            # Check for state transition
             if self._state == CircuitState.HALF_OPEN:
-                # Single failure in half-open opens the circuit
                 self._transition_to(CircuitState.OPEN)
             elif self._state == CircuitState.CLOSED:
-                # Check failure threshold
                 should_open = False
 
-                # Check consecutive failure count
                 if self._stats.consecutive_failures >= self.config.failure_threshold:
                     should_open = True
                     logger.warning(
@@ -181,7 +162,6 @@ class CircuitBreaker(Generic[T]):
                         f"({self.config.failure_threshold})"
                     )
 
-                # Check failure rate (guard against division by zero)
                 if (self._stats.total_calls >= self.config.minimum_calls and
                     self._stats.total_calls > 0 and
                     len(self._failure_times) >= self.config.minimum_calls):
@@ -209,21 +189,7 @@ class CircuitBreaker(Generic[T]):
         fallback: Optional[Callable[..., T]] = None,
         **kwargs
     ) -> T:
-        """
-        Execute a function through the circuit breaker.
-
-        Args:
-            func: Async function to execute
-            *args: Positional arguments for the function
-            fallback: Optional fallback function if circuit is open
-            **kwargs: Keyword arguments for the function
-
-        Returns:
-            Result of the function or fallback
-
-        Raises:
-            CircuitOpenError: If circuit is open and no fallback is provided
-        """
+        """Execute a function through the circuit breaker."""
         state = await self.get_state()
 
         if state == CircuitState.OPEN:
@@ -252,21 +218,11 @@ class CircuitBreaker(Generic[T]):
             raise
 
     def __call__(self, func: Callable) -> Callable:
-        """
-        Decorator to wrap a function with circuit breaker protection.
-
-        Note: Only async functions are supported. Sync functions will be
-        wrapped in an async wrapper that may not work correctly in all contexts.
-
-        Example:
-            @circuit_breaker
-            async def call_external_api():
-                return await api.get_data()
-        """
+        """Decorator to wrap a function with circuit breaker protection."""
         if not asyncio.iscoroutinefunction(func):
             logger.warning(
                 f"Circuit breaker '{self.name}' wrapping non-async function '{func.__name__}'. "
-                "This may cause issues. Consider using an async function instead."
+                "Consider using an async function instead."
             )
 
         @wraps(func)
@@ -285,7 +241,7 @@ class CircuitBreaker(Generic[T]):
             logger.info(f"Circuit breaker '{self.name}' reset to closed state")
 
     def to_dict(self) -> Dict[str, Any]:
-        """Get circuit breaker status as dictionary (sync, uses cached state)"""
+        """Get circuit breaker status as dictionary"""
         return {
             "name": self.name,
             "state": self.state_sync.value,
@@ -296,14 +252,10 @@ class CircuitBreaker(Generic[T]):
                 "rejected_calls": self._stats.rejected_calls,
                 "consecutive_failures": self._stats.consecutive_failures,
                 "consecutive_successes": self._stats.consecutive_successes,
-                "last_failure_time": self._stats.last_failure_time,
-                "last_success_time": self._stats.last_success_time,
             },
             "config": {
                 "failure_threshold": self.config.failure_threshold,
-                "failure_rate_threshold": self.config.failure_rate_threshold,
                 "recovery_timeout": self.config.recovery_timeout,
-                "success_threshold": self.config.success_threshold,
             }
         }
 
@@ -314,13 +266,9 @@ class CircuitOpenError(Exception):
 
 
 class CircuitBreakerRegistry:
-    """
-    Registry for managing multiple circuit breakers.
-    Provides centralized access and monitoring.
-    """
+    """Registry for managing multiple circuit breakers."""
 
     _instance: Optional['CircuitBreakerRegistry'] = None
-    _initialized = False
 
     def __new__(cls) -> 'CircuitBreakerRegistry':
         if cls._instance is None:
@@ -349,27 +297,11 @@ class CircuitBreakerRegistry:
         return self._breakers[name]
 
     def get_all_status(self) -> Dict[str, Dict[str, Any]]:
-        """Get status of all circuit breakers (sync, uses cached state)"""
+        """Get status of all circuit breakers"""
         return {
             name: breaker.to_dict()
             for name, breaker in self._breakers.items()
         }
-
-    def get_open_circuits_sync(self) -> Dict[str, CircuitBreaker]:
-        """Get all open circuit breakers (sync, uses cached state)"""
-        return {
-            name: breaker
-            for name, breaker in self._breakers.items()
-            if breaker.state_sync == CircuitState.OPEN
-        }
-
-    async def get_open_circuits(self) -> Dict[str, CircuitBreaker]:
-        """Get all open circuit breakers (async, checks for state transitions)"""
-        open_breakers = {}
-        for name, breaker in self._breakers.items():
-            if await breaker.is_open():
-                open_breakers[name] = breaker
-        return open_breakers
 
     async def reset_all(self) -> None:
         """Reset all circuit breakers"""
@@ -377,13 +309,11 @@ class CircuitBreakerRegistry:
             await breaker.reset()
 
 
-# Global registry instance
 def get_circuit_registry() -> CircuitBreakerRegistry:
     """Get the global circuit breaker registry"""
     return CircuitBreakerRegistry()
 
 
-# Convenience function to create a circuit breaker
 def create_circuit_breaker(
     name: str,
     failure_threshold: int = 5,
@@ -391,19 +321,7 @@ def create_circuit_breaker(
     failure_rate_threshold: float = 0.5,
     **kwargs
 ) -> CircuitBreaker:
-    """
-    Create and register a circuit breaker.
-
-    Args:
-        name: Unique name for the circuit breaker
-        failure_threshold: Number of consecutive failures to open circuit
-        recovery_timeout: Seconds to wait before attempting recovery
-        failure_rate_threshold: Failure rate (0.0-1.0) to trigger open
-        **kwargs: Additional config options
-
-    Returns:
-        Configured CircuitBreaker instance
-    """
+    """Create and register a circuit breaker."""
     config = CircuitBreakerConfig(
         failure_threshold=failure_threshold,
         recovery_timeout=recovery_timeout,
@@ -413,3 +331,20 @@ def create_circuit_breaker(
     breaker = CircuitBreaker(name, config)
     get_circuit_registry().register(breaker)
     return breaker
+
+
+# Pre-configured circuit breakers for response-timing service
+whisper_breaker = create_circuit_breaker(
+    name="whisper",
+    failure_threshold=3,           # Open after 3 consecutive failures
+    recovery_timeout=60.0,         # Wait 1 minute before retry
+    failure_rate_threshold=0.5,    # Open if 50% failure rate
+    minimum_calls=5,               # Need at least 5 calls to evaluate rate
+)
+
+s3_breaker = create_circuit_breaker(
+    name="s3",
+    failure_threshold=5,           # S3 is more reliable, higher threshold
+    recovery_timeout=30.0,         # Quicker recovery attempt
+    failure_rate_threshold=0.6,
+)

@@ -7,7 +7,8 @@ when external LLM providers are unavailable.
 """
 import asyncio
 import logging
-from typing import Dict, Optional
+from typing import Dict, Optional, NamedTuple
+from enum import Enum
 from openai import AsyncOpenAI
 from anthropic import AsyncAnthropic
 import google.generativeai as genai
@@ -24,6 +25,21 @@ from src.config import get_settings
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+
+class LLMResultStatus(Enum):
+    """Status of an LLM generation attempt"""
+    SUCCESS = "success"
+    NOT_CONFIGURED = "not_configured"
+    CIRCUIT_OPEN = "circuit_open"
+    FAILED = "failed"
+
+
+class LLMResult(NamedTuple):
+    """Result of an LLM generation attempt with status"""
+    answer: Optional[str]
+    status: LLMResultStatus
+    error: Optional[str] = None
 
 
 # Circuit breaker configurations for each LLM provider
@@ -264,7 +280,7 @@ class LLMService:
             logger.error(f"Gemini API error: {e}")
             raise LLMServiceError(str(e), "gemini")
 
-    async def generate_all_answers(self, question: str) -> Dict[str, Optional[str]]:
+    async def generate_all_answers(self, question: str) -> Dict[str, LLMResult]:
         """
         Generate answers from all available LLMs in parallel.
         Uses circuit breakers to fail fast for unavailable providers.
@@ -273,34 +289,42 @@ class LLMService:
             question: Interview question
 
         Returns:
-            Dictionary of model names to answers (None if failed)
+            Dictionary of model names to LLMResult with status information
         """
-        results = {
-            "gpt-4": None,
-            "claude-3.5-sonnet": None,
-            "gemini-1.5-pro": None
-        }
+        results: Dict[str, LLMResult] = {}
 
         # Log circuit breaker states
         self._log_circuit_states()
 
-        # Define tasks for available (non-open circuit) providers
-        tasks = {}
-
-        if self.openai_client and not self.openai_circuit.is_open:
-            tasks["gpt-4"] = self.generate_gpt4_answer(question)
+        # Check GPT-4 availability
+        if not self.openai_client:
+            results["gpt-4"] = LLMResult(None, LLMResultStatus.NOT_CONFIGURED, "OpenAI API key not configured")
         elif self.openai_circuit.is_open:
+            results["gpt-4"] = LLMResult(None, LLMResultStatus.CIRCUIT_OPEN, "OpenAI circuit breaker is open")
             logger.info("Skipping GPT-4: circuit is open")
 
-        if self.anthropic_client and not self.anthropic_circuit.is_open:
-            tasks["claude-3.5-sonnet"] = self.generate_claude_answer(question)
+        # Check Claude availability
+        if not self.anthropic_client:
+            results["claude-3.5-sonnet"] = LLMResult(None, LLMResultStatus.NOT_CONFIGURED, "Anthropic API key not configured")
         elif self.anthropic_circuit.is_open:
+            results["claude-3.5-sonnet"] = LLMResult(None, LLMResultStatus.CIRCUIT_OPEN, "Anthropic circuit breaker is open")
             logger.info("Skipping Claude: circuit is open")
 
-        if settings.GOOGLE_API_KEY and not self.gemini_circuit.is_open:
-            tasks["gemini-1.5-pro"] = self.generate_gemini_answer(question)
+        # Check Gemini availability
+        if not settings.GOOGLE_API_KEY:
+            results["gemini-1.5-pro"] = LLMResult(None, LLMResultStatus.NOT_CONFIGURED, "Google API key not configured")
         elif self.gemini_circuit.is_open:
+            results["gemini-1.5-pro"] = LLMResult(None, LLMResultStatus.CIRCUIT_OPEN, "Gemini circuit breaker is open")
             logger.info("Skipping Gemini: circuit is open")
+
+        # Define tasks for available providers
+        tasks = {}
+        if "gpt-4" not in results:
+            tasks["gpt-4"] = self.generate_gpt4_answer(question)
+        if "claude-3.5-sonnet" not in results:
+            tasks["claude-3.5-sonnet"] = self.generate_claude_answer(question)
+        if "gemini-1.5-pro" not in results:
+            tasks["gemini-1.5-pro"] = self.generate_gemini_answer(question)
 
         if not tasks:
             logger.error("No LLM providers available (all circuits open or not configured)")
@@ -320,22 +344,23 @@ class LLMService:
             for (model_name, _), result in zip(tasks.items(), task_results):
                 if isinstance(result, Exception):
                     logger.error(f"{model_name} failed: {result}")
-                    results[model_name] = None
+                    results[model_name] = LLMResult(None, LLMResultStatus.FAILED, str(result))
                 else:
-                    results[model_name] = result
+                    results[model_name] = LLMResult(result, LLMResultStatus.SUCCESS)
         else:
             # Execute sequentially
             logger.info(f"Generating answers from {len(tasks)} LLMs sequentially...")
 
             for model_name, task in tasks.items():
                 try:
-                    results[model_name] = await task
+                    answer = await task
+                    results[model_name] = LLMResult(answer, LLMResultStatus.SUCCESS)
                 except Exception as e:
                     logger.error(f"{model_name} failed: {e}")
-                    results[model_name] = None
+                    results[model_name] = LLMResult(None, LLMResultStatus.FAILED, str(e))
 
         # Log summary
-        successful = sum(1 for v in results.values() if v is not None)
+        successful = sum(1 for r in results.values() if r.status == LLMResultStatus.SUCCESS)
         logger.info(f"Generated {successful}/{len(results)} answers successfully")
 
         # Log circuit states after completion
