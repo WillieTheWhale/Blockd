@@ -38,7 +38,7 @@ structlog.configure(
 )
 
 from .config import settings
-from .database import init_db
+from .database import init_db, SessionLocal
 from lib.errors import EyeTrackingError, ValidationError as EyeValidationError
 
 logger = structlog.get_logger(__name__)
@@ -97,15 +97,72 @@ app.add_middleware(
 )
 
 
-# Health check endpoint
+# Health check endpoints
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
+    """Comprehensive health check endpoint"""
+    from sqlalchemy import text
+
+    # Check database connectivity
+    db_status = "healthy"
+    db_message = None
+    try:
+        db = SessionLocal()
+        db.execute(text("SELECT 1"))
+        db.close()
+    except Exception as e:
+        db_status = "unhealthy"
+        db_message = str(e)
+
+    overall_status = "healthy" if db_status == "healthy" else "unhealthy"
+
     return {
-        "status": "healthy",
+        "status": overall_status,
         "service": settings.SERVICE_NAME,
-        "version": settings.VERSION
+        "version": settings.VERSION,
+        "checks": {
+            "database": {
+                "status": db_status,
+                "message": db_message
+            }
+        }
     }
+
+
+@app.get("/health/live")
+async def liveness_check():
+    """
+    Liveness probe for Kubernetes.
+    Returns 200 if the process is running.
+    """
+    return {"status": "ok"}
+
+
+@app.get("/health/ready")
+async def readiness_check():
+    """
+    Readiness probe for Kubernetes.
+    Returns 200 if the service is ready to accept traffic.
+    Checks database connectivity.
+    """
+    from sqlalchemy import text
+    from fastapi.responses import JSONResponse
+
+    try:
+        db = SessionLocal()
+        db.execute(text("SELECT 1"))
+        db.close()
+        return {"ready": True, "checks": {"database": True}}
+    except Exception as e:
+        logger.error("readiness_check_failed", error=str(e))
+        return JSONResponse(
+            status_code=503,
+            content={
+                "ready": False,
+                "checks": {"database": False},
+                "error": str(e)
+            }
+        )
 
 
 # Root endpoint
@@ -118,6 +175,8 @@ async def root():
         "description": "Eye Tracking Analysis Service",
         "endpoints": {
             "health": "/health",
+            "health_live": "/health/live",
+            "health_ready": "/health/ready",
             "stream": "/api/v1/gaze/stream",
             "analyze": "/api/v1/gaze/analyze",
             "summary": "/api/v1/gaze/summary/{session_id}",
