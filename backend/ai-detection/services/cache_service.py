@@ -1,9 +1,10 @@
 """
 Cache service for AI answers and analysis results
-Uses Redis for caching
+Uses Redis for caching with hash validation to prevent cache poisoning
 """
 import logging
 import json
+import hashlib
 from typing import Optional, Dict, List, Any
 from dataclasses import dataclass
 import os
@@ -127,8 +128,38 @@ def get_async_redis_client() -> AsyncRedisClient:
     return _async_redis_client
 
 
+def compute_content_hash(content: Dict) -> str:
+    """
+    Compute SHA-256 hash of cache content for integrity validation.
+
+    Args:
+        content: Dictionary content to hash
+
+    Returns:
+        Hex-encoded SHA-256 hash
+    """
+    # Serialize with sorted keys for consistent hashing
+    serialized = json.dumps(content, sort_keys=True, separators=(',', ':'))
+    return hashlib.sha256(serialized.encode()).hexdigest()
+
+
+def validate_content_hash(content: Dict, expected_hash: str) -> bool:
+    """
+    Validate that content matches expected hash.
+
+    Args:
+        content: Dictionary content to validate
+        expected_hash: Expected SHA-256 hash
+
+    Returns:
+        True if content hash matches expected hash
+    """
+    actual_hash = compute_content_hash(content)
+    return actual_hash == expected_hash
+
+
 class CacheService:
-    """Cache management for AI detection service"""
+    """Cache management for AI detection service with integrity validation"""
 
     def __init__(self):
         """Initialize cache service"""
@@ -140,13 +171,14 @@ class CacheService:
         question_hash: str
     ) -> Optional[Dict[str, Dict]]:
         """
-        Get cached AI answers for a question
+        Get cached AI answers for a question with integrity validation.
 
         Args:
             question_hash: Question hash
 
         Returns:
             Dictionary of model_name -> {answer, embedding, perplexity}
+            Returns None if cache miss or validation fails
         """
         try:
             cache_key = f"{self.cache_prefix}:ai_answers:{question_hash}"
@@ -156,8 +188,27 @@ class CacheService:
             )
 
             if cached_data:
-                logger.info(f"Cache hit (Redis) for question hash: {question_hash}")
-                return cached_data
+                # Validate cache integrity
+                stored_hash = cached_data.get("_content_hash")
+                if stored_hash:
+                    # Remove hash from content for validation
+                    content_to_validate = {k: v for k, v in cached_data.items() if k != "_content_hash"}
+                    if not validate_content_hash(content_to_validate, stored_hash):
+                        logger.warning(
+                            f"Cache integrity validation failed for question hash: {question_hash}. "
+                            "Possible cache poisoning detected. Treating as cache miss."
+                        )
+                        # Delete the corrupted cache entry
+                        await self.redis_client.client.delete(cache_key)
+                        return None
+
+                    # Return validated content without the hash field
+                    logger.info(f"Cache hit (Redis) with valid integrity for question hash: {question_hash}")
+                    return content_to_validate
+                else:
+                    # Legacy cache entry without hash - still return but log warning
+                    logger.warning(f"Cache entry missing integrity hash for question hash: {question_hash}")
+                    return cached_data
 
             logger.info(f"Cache miss for question hash: {question_hash}")
             return None
@@ -173,7 +224,9 @@ class CacheService:
         ai_answers: Dict[str, Dict]
     ):
         """
-        Save AI answers to cache (Redis)
+        Save AI answers to cache (Redis) with integrity hash.
+
+        Computes SHA-256 hash of content to detect cache poisoning on retrieval.
 
         Args:
             question_hash: Question hash
@@ -182,16 +235,26 @@ class CacheService:
         """
         try:
             cache_key = f"{self.cache_prefix}:ai_answers:{question_hash}"
+
+            # Compute content hash for integrity validation
+            content_hash = compute_content_hash(ai_answers)
+
+            # Include hash in stored data
+            cache_data = {
+                **ai_answers,
+                "_content_hash": content_hash
+            }
+
             await self.redis_client.set(
                 cache_key,
-                ai_answers,
+                cache_data,
                 CacheOptions(
                     ttl=settings.AI_ANSWER_CACHE_TTL,
                     prefix=None
                 )
             )
 
-            logger.info(f"Saved AI answers to cache for question hash: {question_hash}")
+            logger.info(f"Saved AI answers to cache for question hash: {question_hash} with integrity hash")
 
         except Exception as e:
             logger.error(f"Error saving AI answers to cache: {e}")

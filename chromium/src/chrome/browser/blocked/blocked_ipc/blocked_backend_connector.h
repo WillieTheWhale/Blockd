@@ -135,9 +135,11 @@ class BlockedBackendConnector : public KeyedService,
   std::unique_ptr<mojo::SimpleWatcher> read_watcher_;
   std::unique_ptr<mojo::SimpleWatcher> write_watcher_;
 
-  // Message queue for when connection is pending
+  // Message queue for when connection is pending.
+  // Buffer size increased to handle high-frequency gaze data streaming at 30 FPS.
+  // At 30 FPS for 5+ minutes of network interruption: 30 * 60 * 5 = 9,000 messages.
   std::queue<std::string> pending_messages_;
-  static constexpr size_t kMaxPendingMessages = 100;
+  static constexpr size_t kMaxPendingMessages = 10000;
 
   // Reconnection logic
   base::OneShotTimer reconnect_timer_;

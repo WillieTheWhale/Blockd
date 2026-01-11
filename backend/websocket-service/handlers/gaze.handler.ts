@@ -161,6 +161,7 @@ function validateGazeData(data: GazeData): boolean {
 const gazeBuffer: Map<string, GazeUpdateData[]> = new Map();
 const BUFFER_FLUSH_SIZE = 50; // Flush when buffer reaches this size
 const BUFFER_FLUSH_INTERVAL = 5000; // Flush every 5 seconds
+const BUFFER_MAX_SIZE = 5000; // Maximum buffer size per session - FIFO eviction beyond this
 
 // Track in-flight flush operations to prevent concurrent flushes
 const flushInProgress = new Set<string>();
@@ -226,6 +227,7 @@ async function flushGazeBuffer(sessionId: string): Promise<void> {
 
 /**
  * Store gaze data - buffers for batch insert
+ * Implements FIFO eviction when buffer exceeds BUFFER_MAX_SIZE to prevent memory exhaustion
  */
 async function publishGazeData(sessionId: string, data: GazeUpdateData): Promise<void> {
   try {
@@ -235,6 +237,17 @@ async function publishGazeData(sessionId: string, data: GazeUpdateData): Promise
     }
     const buffer = gazeBuffer.get(sessionId)!;
     buffer.push(data);
+
+    // FIFO eviction: if buffer exceeds max size, drop oldest entries
+    if (buffer.length > BUFFER_MAX_SIZE) {
+      const evictCount = buffer.length - BUFFER_MAX_SIZE;
+      buffer.splice(0, evictCount);
+      logger.warn('Gaze buffer exceeded max size, evicted oldest entries', {
+        sessionId,
+        evictedCount: evictCount,
+        bufferSize: buffer.length,
+      });
+    }
 
     // Flush if buffer is full
     if (buffer.length >= BUFFER_FLUSH_SIZE) {
