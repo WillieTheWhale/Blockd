@@ -1,22 +1,17 @@
 /**
  * Authentication Middleware for WebSocket Service
  *
- * Uses the shared auth module for JWT verification.
- * Verifies tokens and attaches user data to socket.
+ * Verifies JWT tokens and attaches user data to socket.
  */
 
 import { Socket } from 'socket.io';
 import { ExtendedError } from 'socket.io/dist/namespace';
-import {
-  verifyAccessToken,
-  extractTokenFromHeader,
-  JWTPayload,
-  TokenExpiredError,
-  InvalidTokenError,
-  isTokenRevoked,
-  TokenRevokedError,
-} from '@blockd/shared/auth';
+import jwt, { JwtPayload } from 'jsonwebtoken';
 import { logger } from '../lib/logger';
+import { loadConfig } from '../src/config';
+
+// Load config on startup
+const config = loadConfig();
 
 /**
  * Authentication error for WebSocket
@@ -26,6 +21,16 @@ export class AuthenticationError extends Error {
     super(message);
     this.name = 'AuthenticationError';
   }
+}
+
+/**
+ * JWT payload interface
+ */
+interface JWTPayloadData extends JwtPayload {
+  sub: string;
+  email: string;
+  role: string;
+  organizationId?: string;
 }
 
 /**
@@ -39,16 +44,15 @@ export interface SocketUserData {
 }
 
 /**
- * Extended socket with user data
+ * Extract token from Authorization header
  */
-declare module 'socket.io' {
-  interface Socket {
-    data: {
-      user?: SocketUserData;
-      connectedAt?: Date;
-      lastActivity?: Date;
-    };
+function extractTokenFromHeader(header: string | undefined): string | null {
+  if (!header) return null;
+  const parts = header.split(' ');
+  if (parts.length === 2 && parts[0].toLowerCase() === 'bearer') {
+    return parts[1];
   }
+  return null;
 }
 
 /**
@@ -76,6 +80,32 @@ function extractToken(socket: Socket): string | null {
 }
 
 /**
+ * Verify access token
+ */
+function verifyAccessToken(token: string): JWTPayloadData {
+  const secret = config.jwt.accessTokenSecret;
+  if (!secret) {
+    throw new Error('JWT secret not configured');
+  }
+
+  const decoded = jwt.verify(token, secret, {
+    algorithms: ['HS256'],
+  });
+
+  if (typeof decoded === 'string') {
+    throw new AuthenticationError('Invalid token format');
+  }
+
+  const payload = decoded as JWTPayloadData;
+
+  if (!payload.sub || !payload.email || !payload.role) {
+    throw new AuthenticationError('Invalid token payload');
+  }
+
+  return payload;
+}
+
+/**
  * Authentication middleware
  */
 export function authMiddleware() {
@@ -92,16 +122,7 @@ export function authMiddleware() {
         return next(new AuthenticationError('Authentication token required') as ExtendedError);
       }
 
-      // Check if token is revoked (for immediate logout support)
-      if (await isTokenRevoked(token)) {
-        logger.warn('Authentication failed: Token revoked', {
-          socketId: socket.id,
-          ip: socket.handshake.address,
-        });
-        return next(new AuthenticationError('Token has been revoked') as ExtendedError);
-      }
-
-      // Verify token using shared auth module
+      // Verify token
       const decoded = verifyAccessToken(token);
 
       // Attach user data to socket
@@ -130,16 +151,12 @@ export function authMiddleware() {
         error: error instanceof Error ? error.message : 'Unknown error',
       });
 
-      if (error instanceof TokenExpiredError) {
+      if (error instanceof jwt.TokenExpiredError) {
         return next(new AuthenticationError('Token has expired') as ExtendedError);
       }
 
-      if (error instanceof InvalidTokenError) {
+      if (error instanceof jwt.JsonWebTokenError) {
         return next(new AuthenticationError('Invalid token') as ExtendedError);
-      }
-
-      if (error instanceof TokenRevokedError) {
-        return next(new AuthenticationError('Token has been revoked') as ExtendedError);
       }
 
       if (error instanceof AuthenticationError) {

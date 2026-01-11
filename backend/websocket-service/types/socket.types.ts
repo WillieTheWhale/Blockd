@@ -178,6 +178,7 @@ export interface ChatMessageData {
   sender_id?: string;
   sender_role?: string;
   timestamp?: string;
+  message_id?: string;
 }
 
 export interface SessionStateData {

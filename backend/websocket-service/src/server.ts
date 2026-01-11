@@ -88,7 +88,7 @@ class WebSocketServer {
     this.io.use(loggingMiddleware());
 
     // Authentication middleware (verify JWT)
-    this.io.use(authMiddleware(this.config));
+    this.io.use(authMiddleware());
 
     // Rate limiting middleware (prevent abuse)
     this.io.use(rateLimitMiddleware({

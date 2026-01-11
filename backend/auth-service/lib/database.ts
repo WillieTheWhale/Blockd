@@ -1,51 +1,91 @@
 /**
  * Prisma Client for Auth Service
  *
- * Uses the shared database module with proper connection pooling.
+ * Provides a singleton PrismaClient instance with proper connection management.
  * Auth service handles moderate database load for user authentication
  * and session management.
  */
 
-import {
-  createPrismaClient,
-  disconnectPrisma as disconnect,
-  getPoolStats as getStats,
-  healthCheck as checkHealth,
-  getServicePoolConfig,
-} from '@blockd/shared/database';
-import type { PoolStats, HealthCheckResult, PoolConfig } from '@blockd/shared/database';
+import { PrismaClient } from '@prisma/client';
 
-const SERVICE_NAME = 'auth-service' as const;
+const SERVICE_NAME = 'auth-service';
 
-// Create/get the Prisma client instance
-export const prisma = createPrismaClient(SERVICE_NAME);
+// Use global for singleton pattern in development (prevents multiple instances during hot reload)
+const globalForPrisma = globalThis as unknown as {
+  prisma: PrismaClient | undefined;
+};
 
-/**
- * Get current pool configuration
- */
-export function getPoolConfig(): PoolConfig {
-  return getServicePoolConfig(SERVICE_NAME);
+export const prisma =
+  globalForPrisma.prisma ??
+  new PrismaClient({
+    log:
+      process.env.NODE_ENV === 'development'
+        ? ['query', 'info', 'warn', 'error']
+        : ['error'],
+    errorFormat: 'pretty',
+  });
+
+if (process.env.NODE_ENV !== 'production') {
+  globalForPrisma.prisma = prisma;
 }
 
 /**
- * Get connection pool statistics
+ * Pool statistics type for monitoring
+ */
+export interface PoolStats {
+  serviceName: string;
+  activeConnections: number;
+  idleConnections: number;
+  waitingRequests: number;
+}
+
+/**
+ * Health check result type
+ */
+export interface HealthCheckResult {
+  healthy: boolean;
+  latencyMs: number;
+  error?: string;
+}
+
+/**
+ * Get connection pool statistics (approximate)
  */
 export async function getPoolStats(): Promise<PoolStats> {
-  return getStats(prisma, SERVICE_NAME);
+  // Prisma doesn't expose pool stats directly, but we can track basic info
+  return {
+    serviceName: SERVICE_NAME,
+    activeConnections: 0, // Would need custom tracking
+    idleConnections: 0,
+    waitingRequests: 0,
+  };
 }
 
 /**
  * Check database connection health
  */
 export async function healthCheck(): Promise<HealthCheckResult> {
-  return checkHealth(prisma);
+  const start = Date.now();
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    return {
+      healthy: true,
+      latencyMs: Date.now() - start,
+    };
+  } catch (error) {
+    return {
+      healthy: false,
+      latencyMs: Date.now() - start,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
 }
 
 /**
  * Gracefully disconnect Prisma
  */
 export async function disconnectPrisma(): Promise<void> {
-  await disconnect(SERVICE_NAME);
+  await prisma.$disconnect();
 }
 
 export default prisma;

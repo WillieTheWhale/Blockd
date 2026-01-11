@@ -248,8 +248,13 @@ export async function disableMFA(
       return;
     }
 
-    // Verify password
+    // Verify password (OAuth-only users must have set a password to disable MFA)
     const { verifyPassword } = await import('../services/password.service');
+
+    if (!user.password_hash) {
+      throw new ValidationError('Password authentication required to disable MFA');
+    }
+
     const passwordValid = await verifyPassword(data.password, user.password_hash);
 
     if (!passwordValid) {

@@ -151,7 +151,12 @@ export async function login(
       throw new InvalidCredentialsError();
     }
 
-    // Verify password
+    // Verify password (OAuth-only users cannot log in with password)
+    if (!user.password_hash) {
+      await trackLoginAttempt(data.email, false, request.ip);
+      throw new InvalidCredentialsError();
+    }
+
     const passwordValid = await verifyPassword(data.password, user.password_hash);
 
     if (!passwordValid) {

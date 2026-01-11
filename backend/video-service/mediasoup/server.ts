@@ -441,6 +441,214 @@ async function createExpressApp(): Promise<Server> {
     }
   });
 
+  // Get detailed stats for a session
+  app.get('/sessions/:sessionId/stats', async (req, res) => {
+    try {
+      const { sessionId } = req.params;
+      const router = routers.get(sessionId);
+
+      if (!router) {
+        return res.status(404).json({ error: 'Session not found' });
+      }
+
+      // Collect stats from all transports, producers, and consumers for this session
+      const stats: any = {
+        sessionId,
+        timestamp: new Date().toISOString(),
+        transports: [],
+        producers: [],
+        consumers: [],
+      };
+
+      // Get transport stats
+      for (const [id, transport] of transports.entries()) {
+        try {
+          const transportStats = await transport.getStats();
+          stats.transports.push({
+            id,
+            stats: transportStats,
+          });
+        } catch (e) {
+          console.error(`Error getting stats for transport ${id}:`, e);
+        }
+      }
+
+      // Get producer stats
+      for (const [id, producer] of producers.entries()) {
+        try {
+          const producerStats = await producer.getStats();
+          stats.producers.push({
+            id,
+            kind: producer.kind,
+            paused: producer.paused,
+            stats: producerStats,
+          });
+        } catch (e) {
+          console.error(`Error getting stats for producer ${id}:`, e);
+        }
+      }
+
+      // Get consumer stats
+      for (const [id, consumer] of consumers.entries()) {
+        try {
+          const consumerStats = await consumer.getStats();
+          stats.consumers.push({
+            id,
+            kind: consumer.kind,
+            paused: consumer.paused,
+            producerPaused: consumer.producerPaused,
+            stats: consumerStats,
+          });
+        } catch (e) {
+          console.error(`Error getting stats for consumer ${id}:`, e);
+        }
+      }
+
+      res.json(stats);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get aggregate stats across all sessions
+  app.get('/stats', async (req, res) => {
+    try {
+      // Aggregate stats
+      let totalBytesReceived = 0;
+      let totalBytesSent = 0;
+      let totalPacketsReceived = 0;
+      let totalPacketsSent = 0;
+      let totalPacketsLost = 0;
+      let activeProducers = 0;
+      let activeConsumers = 0;
+
+      // Collect from all producers
+      for (const producer of producers.values()) {
+        try {
+          const stats = await producer.getStats();
+          for (const stat of stats) {
+            if (stat.type === 'inbound-rtp') {
+              totalBytesReceived += stat.bytesReceived || 0;
+              totalPacketsReceived += stat.packetsReceived || 0;
+              totalPacketsLost += stat.packetsLost || 0;
+            }
+          }
+          if (!producer.paused) {
+            activeProducers++;
+          }
+        } catch (e) {
+          // Ignore stats errors
+        }
+      }
+
+      // Collect from all consumers
+      for (const consumer of consumers.values()) {
+        try {
+          const stats = await consumer.getStats();
+          for (const stat of stats) {
+            if (stat.type === 'outbound-rtp') {
+              totalBytesSent += stat.bytesSent || 0;
+              totalPacketsSent += stat.packetsSent || 0;
+            }
+          }
+          if (!consumer.paused) {
+            activeConsumers++;
+          }
+        } catch (e) {
+          // Ignore stats errors
+        }
+      }
+
+      // Calculate packet loss rate
+      const totalPackets = totalPacketsReceived + totalPacketsLost;
+      const packetLossRate = totalPackets > 0 ? (totalPacketsLost / totalPackets) * 100 : 0;
+
+      res.json({
+        timestamp: new Date().toISOString(),
+        workers: workers.length,
+        activeSessions: routers.size,
+        transports: {
+          total: transports.size,
+        },
+        producers: {
+          total: producers.size,
+          active: activeProducers,
+        },
+        consumers: {
+          total: consumers.size,
+          active: activeConsumers,
+        },
+        bandwidth: {
+          bytesReceived: totalBytesReceived,
+          bytesSent: totalBytesSent,
+          mbpsReceived: (totalBytesReceived * 8) / 1000000,
+          mbpsSent: (totalBytesSent * 8) / 1000000,
+        },
+        packets: {
+          received: totalPacketsReceived,
+          sent: totalPacketsSent,
+          lost: totalPacketsLost,
+          lossRate: packetLossRate.toFixed(2) + '%',
+        },
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get stats for a specific producer
+  app.get('/producers/:producerId/stats', async (req, res) => {
+    try {
+      const { producerId } = req.params;
+      const producer = producers.get(producerId);
+
+      if (!producer) {
+        return res.status(404).json({ error: 'Producer not found' });
+      }
+
+      const stats = await producer.getStats();
+
+      res.json({
+        producerId,
+        kind: producer.kind,
+        type: producer.type,
+        paused: producer.paused,
+        score: producer.score,
+        stats,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get stats for a specific consumer
+  app.get('/consumers/:consumerId/stats', async (req, res) => {
+    try {
+      const { consumerId } = req.params;
+      const consumer = consumers.get(consumerId);
+
+      if (!consumer) {
+        return res.status(404).json({ error: 'Consumer not found' });
+      }
+
+      const stats = await consumer.getStats();
+
+      res.json({
+        consumerId,
+        kind: consumer.kind,
+        type: consumer.type,
+        paused: consumer.paused,
+        producerPaused: consumer.producerPaused,
+        score: consumer.score,
+        preferredLayers: consumer.preferredLayers,
+        currentLayers: consumer.currentLayers,
+        stats,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   const server = app.listen(config.listenPort, config.listenIp, () => {
     console.log(
       `mediasoup server listening on ${config.listenIp}:${config.listenPort}`
