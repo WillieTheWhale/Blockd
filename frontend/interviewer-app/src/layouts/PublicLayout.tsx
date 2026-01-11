@@ -1,6 +1,7 @@
 import { Outlet, Link, useNavigate } from 'react-router'
 import { Button } from '@/components/ui/button'
-import { Shield } from 'lucide-react'
+import { Download } from 'lucide-react'
+import { LogoWithBackground } from '@/components/brand'
 
 export function PublicLayout() {
   const navigate = useNavigate()
@@ -11,11 +12,8 @@ export function PublicLayout() {
       <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container mx-auto flex h-16 items-center justify-between px-4 md:px-6">
           {/* Logo */}
-          <Link to="/" className="flex items-center space-x-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-              <Shield className="h-5 w-5 text-primary-foreground" />
-            </div>
-            <span className="font-bold text-xl">Blockd</span>
+          <Link to="/" className="flex items-center">
+            <LogoWithBackground size="md" showText variant="primary" />
           </Link>
 
           {/* Navigation Links */}
@@ -29,6 +27,10 @@ export function PublicLayout() {
             <a href="#pricing" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
               Pricing
             </a>
+            <Link to="/download" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
+              <Download className="h-4 w-4" />
+              Download
+            </Link>
           </nav>
 
           {/* Auth Buttons */}
@@ -55,10 +57,7 @@ export function PublicLayout() {
             {/* Company */}
             <div>
               <div className="flex items-center space-x-2 mb-4">
-                <div className="flex h-6 w-6 items-center justify-center rounded bg-primary">
-                  <Shield className="h-4 w-4 text-primary-foreground" />
-                </div>
-                <span className="font-bold">Blockd</span>
+                <LogoWithBackground size="xs" showText variant="primary" />
               </div>
               <p className="text-sm text-muted-foreground">
                 AI-powered interview security platform for enterprise hiring.
@@ -71,7 +70,7 @@ export function PublicLayout() {
               <ul className="space-y-2 text-sm text-muted-foreground">
                 <li><a href="#features" className="hover:text-foreground">Features</a></li>
                 <li><a href="#pricing" className="hover:text-foreground">Pricing</a></li>
-                <li><a href="#" className="hover:text-foreground">Security</a></li>
+                <li><Link to="/download" className="hover:text-foreground">Download Browser</Link></li>
                 <li><a href="#" className="hover:text-foreground">Enterprise</a></li>
               </ul>
             </div>

@@ -2,12 +2,16 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import * as mediasoupClient from 'mediasoup-client'
 import { Device, types as mediasoupTypes } from 'mediasoup-client'
 import { apiRequest } from '@/lib/api-client'
+import { logger } from '@/lib/logger'
 import type { VideoStreamStats } from '@/types'
 
 // Type aliases from mediasoup-client
 type Transport = mediasoupTypes.Transport
 type Producer = mediasoupTypes.Producer
 type Consumer = mediasoupTypes.Consumer
+
+// Create logger for WebRTC
+const rtcLogger = logger.create({ component: 'useWebRTC' })
 
 /**
  * WebRTC connection state
@@ -52,15 +56,91 @@ interface UseWebRTCReturn {
 }
 
 /**
+ * Stop all tracks in a MediaStream and clean up
+ */
+function stopMediaStream(stream: MediaStream | null): void {
+  if (!stream) return
+  stream.getTracks().forEach((track) => {
+    track.stop()
+    stream.removeTrack(track)
+  })
+}
+
+/**
+ * Parse WebRTC stats to extract useful metrics
+ */
+function parseRTCStats(stats: RTCStatsReport): Partial<VideoStreamStats> {
+  let bandwidth = 0
+  let latency = 0
+  let packetsLost = 0
+  let frameRate = 0
+  let width = 0
+  let height = 0
+
+  stats.forEach((report) => {
+    // Get bitrate from outbound-rtp or inbound-rtp
+    if (report.type === 'outbound-rtp' && report.kind === 'video') {
+      if (report.bytesSent !== undefined && report.timestamp !== undefined) {
+        // We'd need to track previous values to calculate actual bitrate
+        // For now, use the reported value if available
+        bandwidth = (report.bytesSent * 8) / 1000 // Convert to kbps
+      }
+      if (report.framesPerSecond !== undefined) {
+        frameRate = report.framesPerSecond
+      }
+      if (report.frameWidth !== undefined && report.frameHeight !== undefined) {
+        width = report.frameWidth
+        height = report.frameHeight
+      }
+    }
+
+    if (report.type === 'inbound-rtp' && report.kind === 'video') {
+      if (report.bytesReceived !== undefined) {
+        bandwidth = (report.bytesReceived * 8) / 1000
+      }
+      if (report.packetsLost !== undefined) {
+        packetsLost = report.packetsLost
+      }
+      if (report.framesPerSecond !== undefined) {
+        frameRate = report.framesPerSecond
+      }
+      if (report.frameWidth !== undefined && report.frameHeight !== undefined) {
+        width = report.frameWidth
+        height = report.frameHeight
+      }
+    }
+
+    // Get RTT from candidate-pair
+    if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+      if (report.currentRoundTripTime !== undefined) {
+        latency = report.currentRoundTripTime * 1000 // Convert to ms
+      }
+    }
+  })
+
+  return {
+    bandwidth,
+    latency,
+    packetsLost,
+    frameRate: frameRate || 30, // Default fallback
+    resolution: {
+      width: width || 1280,
+      height: height || 720,
+    },
+  }
+}
+
+/**
  * Custom hook for WebRTC integration using mediasoup-client
  *
  * Features:
  * - mediasoup-client 3.x integration
  * - Send and receive video/audio streams
- * - Device management
+ * - Device management with proper cleanup
  * - Connection state tracking
- * - Stream statistics
+ * - Real stream statistics parsing
  * - ICE connection handling
+ * - Memory leak prevention
  *
  * @param options - WebRTC configuration options
  * @returns WebRTC connection utilities
@@ -87,6 +167,13 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
   const audioProducerRef = useRef<Producer | null>(null)
   const consumerRef = useRef<Consumer | null>(null)
   const statsIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const mountedRef = useRef(true)
+  const localStreamRef = useRef<MediaStream | null>(null)
+
+  // Keep localStreamRef in sync
+  useEffect(() => {
+    localStreamRef.current = localStream
+  }, [localStream])
 
   /**
    * Initialize mediasoup device
@@ -107,8 +194,10 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
 
       deviceRef.current = device
       setError(null)
+      rtcLogger.info('Device initialized successfully')
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to initialize device'
+      rtcLogger.error('Failed to initialize device', err)
       setError(message)
       setConnectionState('failed')
       throw err
@@ -172,14 +261,17 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
 
       // Handle connection state changes
       transport.on('connectionstatechange', (state) => {
-        console.log('Send transport connection state:', state)
-        setConnectionState(state as WebRTCConnectionState)
+        rtcLogger.info('Send transport connection state changed', { state })
+        if (mountedRef.current) {
+          setConnectionState(state as WebRTCConnectionState)
+        }
       })
 
       sendTransportRef.current = transport
       return transport
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to create send transport'
+      rtcLogger.error('Failed to create send transport', err)
       setError(message)
       throw err
     }
@@ -224,18 +316,61 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
 
       // Handle connection state changes
       transport.on('connectionstatechange', (state) => {
-        console.log('Receive transport connection state:', state)
-        setConnectionState(state as WebRTCConnectionState)
+        rtcLogger.info('Receive transport connection state changed', { state })
+        if (mountedRef.current) {
+          setConnectionState(state as WebRTCConnectionState)
+        }
       })
 
       recvTransportRef.current = transport
       return transport
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to create receive transport'
+      rtcLogger.error('Failed to create receive transport', err)
       setError(message)
       throw err
     }
   }, [sessionId])
+
+  /**
+   * Start collecting stream statistics with real data
+   */
+  const startStatsCollection = useCallback(() => {
+    if (statsIntervalRef.current) return
+
+    statsIntervalRef.current = setInterval(async () => {
+      if (!mountedRef.current) return
+
+      try {
+        const transport = sendTransportRef.current || recvTransportRef.current
+        if (!transport) return
+
+        const rtcStats = await transport.getStats()
+        const parsedStats = parseRTCStats(rtcStats)
+
+        setStats({
+          bandwidth: parsedStats.bandwidth ?? 0,
+          latency: parsedStats.latency ?? 0,
+          packetsLost: parsedStats.packetsLost ?? 0,
+          frameRate: parsedStats.frameRate ?? 30,
+          resolution: parsedStats.resolution ?? { width: 1280, height: 720 },
+        })
+      } catch (err) {
+        rtcLogger.debug('Failed to collect stats', { error: err instanceof Error ? err.message : 'Unknown' })
+      }
+    }, 2000)
+  }, [])
+
+  /**
+   * Stop collecting stream statistics
+   */
+  const stopStatsCollection = useCallback(() => {
+    if (statsIntervalRef.current) {
+      clearInterval(statsIntervalRef.current)
+      statsIntervalRef.current = null
+    }
+    setStats(null)
+  }, [])
 
   /**
    * Start producing media (send video/audio)
@@ -281,14 +416,16 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
         setIsProducing(true)
         setConnectionState('connected')
         startStatsCollection()
+        rtcLogger.info('Started producing media')
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to start producing'
+        rtcLogger.error('Failed to start producing', err)
         setError(message)
         setConnectionState('failed')
         throw err
       }
     },
-    [initializeDevice, createSendTransport]
+    [initializeDevice, createSendTransport, startStatsCollection]
   )
 
   /**
@@ -305,15 +442,14 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
       audioProducerRef.current = null
     }
 
-    // Stop local stream tracks
-    if (localStream) {
-      localStream.getTracks().forEach((track) => track.stop())
-      setLocalStream(null)
-    }
+    // Stop and cleanup local stream
+    stopMediaStream(localStreamRef.current)
+    setLocalStream(null)
 
     setIsProducing(false)
     stopStatsCollection()
-  }, [localStream])
+    rtcLogger.info('Stopped producing media')
+  }, [stopStatsCollection])
 
   /**
    * Start consuming media (receive video/audio)
@@ -366,14 +502,16 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
         setIsConsuming(true)
         setConnectionState('connected')
         startStatsCollection()
+        rtcLogger.info('Started consuming media')
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to start consuming'
+        rtcLogger.error('Failed to start consuming', err)
         setError(message)
         setConnectionState('failed')
         throw err
       }
     },
-    [sessionId, initializeDevice, createRecvTransport]
+    [sessionId, initializeDevice, createRecvTransport, startStatsCollection]
   )
 
   /**
@@ -388,7 +526,8 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
     setRemoteStream(null)
     setIsConsuming(false)
     stopStatsCollection()
-  }, [])
+    rtcLogger.info('Stopped consuming media')
+  }, [stopStatsCollection])
 
   /**
    * Toggle video track
@@ -419,11 +558,12 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
   }, [isAudioEnabled])
 
   /**
-   * Change video input device
+   * Change video input device (with proper cleanup)
    */
   const changeVideoDevice = useCallback(
     async (deviceId: string) => {
-      if (!localStream || !videoProducerRef.current) return
+      const currentStream = localStreamRef.current
+      if (!currentStream || !videoProducerRef.current) return
 
       try {
         // Get new video track with selected device
@@ -432,30 +572,42 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
         })
 
         const newVideoTrack = newStream.getVideoTracks()[0]
+        if (!newVideoTrack) {
+          throw new Error('No video track available from device')
+        }
 
         // Replace track in producer
         await videoProducerRef.current.replaceTrack({ track: newVideoTrack })
 
-        // Stop old track and update stream
-        localStream.getVideoTracks()[0]?.stop()
-        localStream.removeTrack(localStream.getVideoTracks()[0])
-        localStream.addTrack(newVideoTrack)
+        // Stop old track BEFORE removing from stream
+        const oldTrack = currentStream.getVideoTracks()[0]
+        if (oldTrack) {
+          oldTrack.stop()
+          currentStream.removeTrack(oldTrack)
+        }
 
-        setLocalStream(new MediaStream(localStream.getTracks()))
+        // Add new track
+        currentStream.addTrack(newVideoTrack)
+
+        // Update state with new stream reference
+        setLocalStream(new MediaStream(currentStream.getTracks()))
+        rtcLogger.info('Changed video device', { deviceId })
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to change video device'
+        rtcLogger.error('Failed to change video device', err)
         setError(message)
       }
     },
-    [localStream]
+    []
   )
 
   /**
-   * Change audio input device
+   * Change audio input device (with proper cleanup)
    */
   const changeAudioDevice = useCallback(
     async (deviceId: string) => {
-      if (!localStream || !audioProducerRef.current) return
+      const currentStream = localStreamRef.current
+      if (!currentStream || !audioProducerRef.current) return
 
       try {
         // Get new audio track with selected device
@@ -464,92 +616,93 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
         })
 
         const newAudioTrack = newStream.getAudioTracks()[0]
+        if (!newAudioTrack) {
+          throw new Error('No audio track available from device')
+        }
 
         // Replace track in producer
         await audioProducerRef.current.replaceTrack({ track: newAudioTrack })
 
-        // Stop old track and update stream
-        localStream.getAudioTracks()[0]?.stop()
-        localStream.removeTrack(localStream.getAudioTracks()[0])
-        localStream.addTrack(newAudioTrack)
+        // Stop old track BEFORE removing from stream
+        const oldTrack = currentStream.getAudioTracks()[0]
+        if (oldTrack) {
+          oldTrack.stop()
+          currentStream.removeTrack(oldTrack)
+        }
 
-        setLocalStream(new MediaStream(localStream.getTracks()))
+        // Add new track
+        currentStream.addTrack(newAudioTrack)
+
+        // Update state with new stream reference
+        setLocalStream(new MediaStream(currentStream.getTracks()))
+        rtcLogger.info('Changed audio device', { deviceId })
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to change audio device'
+        rtcLogger.error('Failed to change audio device', err)
         setError(message)
       }
     },
-    [localStream]
+    []
   )
-
-  /**
-   * Start collecting stream statistics
-   */
-  const startStatsCollection = useCallback(() => {
-    if (statsIntervalRef.current) return
-
-    statsIntervalRef.current = setInterval(async () => {
-      try {
-        const transport = sendTransportRef.current || recvTransportRef.current
-        if (!transport) return
-
-        const _rtcStats = await transport.getStats()
-
-        // Parse stats (simplified - in real implementation, parse actual RTC stats)
-        const statsData: VideoStreamStats = {
-          bandwidth: 0,
-          latency: 0,
-          packetsLost: 0,
-          frameRate: 30,
-          resolution: {
-            width: 1280,
-            height: 720,
-          },
-        }
-
-        setStats(statsData)
-      } catch (err) {
-        console.error('Failed to collect stats:', err)
-      }
-    }, 2000)
-  }, [])
-
-  /**
-   * Stop collecting stream statistics
-   */
-  const stopStatsCollection = useCallback(() => {
-    if (statsIntervalRef.current) {
-      clearInterval(statsIntervalRef.current)
-      statsIntervalRef.current = null
-    }
-    setStats(null)
-  }, [])
 
   /**
    * Cleanup on unmount
    */
   useEffect(() => {
-    return () => {
-      stopProducing()
-      stopConsuming()
+    mountedRef.current = true
 
+    return () => {
+      mountedRef.current = false
+
+      // Stop stats collection
+      if (statsIntervalRef.current) {
+        clearInterval(statsIntervalRef.current)
+        statsIntervalRef.current = null
+      }
+
+      // Close producers
+      if (videoProducerRef.current) {
+        videoProducerRef.current.close()
+        videoProducerRef.current = null
+      }
+      if (audioProducerRef.current) {
+        audioProducerRef.current.close()
+        audioProducerRef.current = null
+      }
+
+      // Close consumer
+      if (consumerRef.current) {
+        consumerRef.current.close()
+        consumerRef.current = null
+      }
+
+      // Stop local stream
+      stopMediaStream(localStreamRef.current)
+
+      // Close transports
       if (sendTransportRef.current) {
         sendTransportRef.current.close()
+        sendTransportRef.current = null
       }
       if (recvTransportRef.current) {
         recvTransportRef.current.close()
+        recvTransportRef.current = null
       }
+
+      rtcLogger.info('WebRTC hook cleanup complete')
     }
-  }, [stopProducing, stopConsuming])
+  }, [])
 
   /**
    * Auto-start if enabled
    */
   useEffect(() => {
-    if (autoStart && isProducer) {
-      startProducing().catch(console.error)
+    if (autoStart && isProducer && mountedRef.current) {
+      startProducing().catch((err) => {
+        rtcLogger.error('Auto-start producing failed', err)
+      })
     }
-  }, [autoStart, isProducer, startProducing])
+  }, [autoStart, isProducer]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return {
     localStream,

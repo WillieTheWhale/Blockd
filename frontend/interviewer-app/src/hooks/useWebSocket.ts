@@ -3,6 +3,7 @@ import { io, Socket } from 'socket.io-client'
 import { WS_URL } from '@/lib/constants'
 import { useRealtimeStore } from '@/stores/realtime-store'
 import { getAccessToken } from '@/lib/auth'
+import { logger } from '@/lib/logger'
 import type { SecurityEvent, GazeData, ChatMessage } from '@/types'
 
 /**
@@ -19,6 +20,9 @@ export type WebSocketEventType =
   | 'answer:received'
   | 'chat:message'
   | 'chat:typing'
+  | 'ai:detection:complete'
+  | 'ai:detection:started'
+  | 'ai:detection:progress'
 
 /**
  * WebSocket event handler type
@@ -36,6 +40,24 @@ interface UseWebSocketOptions {
 }
 
 /**
+ * Queued message for offline sending
+ */
+interface QueuedMessage {
+  event: string
+  data: unknown
+  timestamp: number
+}
+
+/**
+ * Active subscription for reconnection
+ */
+interface ActiveSubscription {
+  event: WebSocketEventType
+  handler: WebSocketEventHandler<unknown>
+  wrappedHandler: (data: unknown) => void
+}
+
+/**
  * WebSocket hook return type
  */
 interface UseWebSocketReturn {
@@ -45,17 +67,27 @@ interface UseWebSocketReturn {
   subscribe: <T = unknown>(event: WebSocketEventType, handler: WebSocketEventHandler<T>) => () => void
   connect: () => void
   disconnect: () => void
+  queueLength: number
 }
+
+// Create logger for WebSocket
+const wsLogger = logger.create({ component: 'useWebSocket' })
+
+// Message queue TTL (5 minutes)
+const MESSAGE_QUEUE_TTL = 5 * 60 * 1000
 
 /**
  * Custom hook for WebSocket integration with Socket.io
  *
  * Features:
  * - Auto-reconnection with exponential backoff
+ * - Mutex flags to prevent race conditions
+ * - Message queue for offline messages
  * - Event subscription management
  * - Type-safe event handlers
  * - Connection status tracking
  * - Integration with realtime store
+ * - Proper cleanup to prevent memory leaks
  *
  * @param options - WebSocket configuration options
  * @returns WebSocket connection utilities
@@ -71,24 +103,25 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   const socketRef = useRef<Socket | null>(null)
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const reconnectAttemptsRef = useRef(0)
+  const messageQueueRef = useRef<QueuedMessage[]>([])
+  const isConnectingRef = useRef(false)
+  const isDisconnectingRef = useRef(false)
+  const isFlushingRef = useRef(false)
+  const mountedRef = useRef(true)
+  const activeSubscriptionsRef = useRef<ActiveSubscription[]>([])
 
-  const {
-    setConnectionStatus,
-    setConnectionError,
-    setLastConnectedAt,
-    addSecurityEvent,
-    addGazeData,
-    addChatMessage,
-    soundEnabled,
-    connectionStatus,
-  } = useRealtimeStore()
+  // Get stable references to store functions
+  const setConnectionStatus = useRealtimeStore((state) => state.setConnectionStatus)
+  const setConnectionError = useRealtimeStore((state) => state.setConnectionError)
+  const setLastConnectedAt = useRealtimeStore((state) => state.setLastConnectedAt)
+  const addSecurityEvent = useRealtimeStore((state) => state.addSecurityEvent)
+  const addGazeData = useRealtimeStore((state) => state.addGazeData)
+  const addChatMessage = useRealtimeStore((state) => state.addChatMessage)
+  const soundEnabled = useRealtimeStore((state) => state.soundEnabled)
+  const connectionStatus = useRealtimeStore((state) => state.connectionStatus)
 
   /**
    * Play notification sound for critical events
-   *
-   * Note: Audio playback may fail due to browser autoplay policies
-   * requiring user interaction before audio can play. This is expected
-   * behavior and not a bug.
    */
   const playNotificationSound = useCallback(() => {
     if (!soundEnabled) return
@@ -97,103 +130,69 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       const audio = new Audio('/sounds/notification.mp3')
       audio.volume = 0.5
       audio.play().catch((error: Error) => {
-        // Log in development - common causes:
-        // - Browser autoplay policy (user hasn't interacted with page)
-        // - Audio file not found
-        // - Audio format not supported
-        if (process.env.NODE_ENV === 'development') {
-          console.debug('Audio playback failed (expected if no user interaction):', error.message)
-        }
+        wsLogger.debug('Audio playback failed (expected if no user interaction)', { error: error.message })
       })
     } catch (error) {
-      // Audio API not available or file creation failed
-      if (process.env.NODE_ENV === 'development') {
-        console.debug('Audio notification unavailable:', error instanceof Error ? error.message : 'Unknown error')
-      }
+      wsLogger.debug('Audio notification unavailable', { error: error instanceof Error ? error.message : 'Unknown' })
     }
   }, [soundEnabled])
 
   /**
-   * Handle WebSocket connection
+   * Flush queued messages after reconnection
+   * Uses mutex flag to prevent race conditions during flush
    */
-  const connect = useCallback(() => {
-    if (socketRef.current?.connected) {
+  const flushMessageQueue = useCallback((socket: Socket) => {
+    // Prevent concurrent flushes
+    if (isFlushingRef.current) {
+      wsLogger.debug('Flush already in progress, skipping')
       return
     }
 
-    try {
-      setConnectionStatus('connecting')
+    isFlushingRef.current = true
 
-      const token = getAccessToken()
-      if (!token) {
-        setConnectionError('No authentication token available')
-        return
-      }
+    const now = Date.now()
+    const validMessages = messageQueueRef.current.filter(
+      (msg) => now - msg.timestamp < MESSAGE_QUEUE_TTL
+    )
+    const expiredCount = messageQueueRef.current.length - validMessages.length
 
-      // Create socket connection
-      const socket = io(WS_URL, {
-        auth: {
-          token,
-        },
-        reconnection: false, // We handle reconnection manually
-        transports: ['websocket', 'polling'],
-        timeout: 10000,
-      })
-
-      // Connection established
-      socket.on('connect', () => {
-        console.log('WebSocket connected:', socket.id)
-        setConnectionStatus('connected')
-        setLastConnectedAt(Date.now())
-        setConnectionError(null)
-        reconnectAttemptsRef.current = 0
-
-        // Join session room if sessionId is provided
-        if (sessionId) {
-          socket.emit('join', { sessionId })
-        }
-      })
-
-      // Connection error
-      socket.on('connect_error', (error) => {
-        console.error('WebSocket connection error:', error)
-        setConnectionError(error.message)
-        handleReconnection()
-      })
-
-      // Disconnected
-      socket.on('disconnect', (reason) => {
-        console.log('WebSocket disconnected:', reason)
-        setConnectionStatus('disconnected')
-
-        // Auto-reconnect for certain disconnect reasons
-        if (reason === 'io server disconnect') {
-          // Server disconnected, try to reconnect
-          handleReconnection()
-        } else if (reason === 'transport close' || reason === 'ping timeout') {
-          // Network issues, try to reconnect
-          handleReconnection()
-        }
-      })
-
-      // Pong response (heartbeat)
-      socket.on('pong', () => {
-        // Update last activity timestamp
-        setLastConnectedAt(Date.now())
-      })
-
-      socketRef.current = socket
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to connect'
-      setConnectionError(message)
-      handleReconnection()
+    if (expiredCount > 0) {
+      wsLogger.warn(`${expiredCount} queued messages expired and were dropped`)
     }
-  }, [sessionId, setConnectionStatus, setConnectionError, setLastConnectedAt])
+
+    wsLogger.info(`Flushing ${validMessages.length} queued messages`)
+
+    // Clear queue before sending to prevent duplicates if emit is called during flush
+    messageQueueRef.current = []
+
+    for (const msg of validMessages) {
+      socket.emit(msg.event, msg.data)
+    }
+
+    isFlushingRef.current = false
+  }, [])
+
+  /**
+   * Reattach all active subscriptions after reconnection
+   */
+  const reattachSubscriptions = useCallback((socket: Socket) => {
+    const subscriptions = activeSubscriptionsRef.current
+    if (subscriptions.length === 0) return
+
+    wsLogger.info(`Reattaching ${subscriptions.length} active subscriptions`)
+
+    for (const sub of subscriptions) {
+      socket.on(sub.event, sub.wrappedHandler)
+    }
+  }, [])
 
   /**
    * Handle reconnection with exponential backoff
    */
   const handleReconnection = useCallback(() => {
+    if (!mountedRef.current) return
+    if (isConnectingRef.current || isDisconnectingRef.current) return
+
     if (reconnectAttemptsRef.current >= reconnectionAttempts) {
       setConnectionStatus('error')
       setConnectionError(`Failed to reconnect after ${reconnectionAttempts} attempts`)
@@ -204,17 +203,140 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     reconnectAttemptsRef.current += 1
 
     const delay = reconnectionDelay * Math.pow(2, reconnectAttemptsRef.current - 1)
-    console.log(`Reconnecting in ${delay}ms (attempt ${reconnectAttemptsRef.current}/${reconnectionAttempts})`)
+    wsLogger.info(`Reconnecting in ${delay}ms`, {
+      attempt: reconnectAttemptsRef.current,
+      maxAttempts: reconnectionAttempts,
+    })
 
     reconnectTimeoutRef.current = setTimeout(() => {
-      connect()
+      if (mountedRef.current && !isConnectingRef.current) {
+        connectInternal()
+      }
     }, delay)
-  }, [reconnectionAttempts, reconnectionDelay, setConnectionStatus, setConnectionError, connect])
+  }, [reconnectionAttempts, reconnectionDelay, setConnectionStatus, setConnectionError])
+
+  /**
+   * Internal connect function
+   */
+  const connectInternal = useCallback(() => {
+    // Mutex: prevent multiple simultaneous connections
+    if (isConnectingRef.current) {
+      wsLogger.debug('Connection already in progress, skipping')
+      return
+    }
+
+    if (socketRef.current?.connected) {
+      wsLogger.debug('Already connected, skipping')
+      return
+    }
+
+    isConnectingRef.current = true
+    setConnectionStatus('connecting')
+
+    try {
+      const token = getAccessToken()
+      if (!token) {
+        setConnectionError('No authentication token available')
+        isConnectingRef.current = false
+        return
+      }
+
+      // Clean up existing socket if any
+      if (socketRef.current) {
+        socketRef.current.removeAllListeners()
+        socketRef.current.disconnect()
+        socketRef.current = null
+      }
+
+      // Create socket connection
+      const socket = io(WS_URL, {
+        auth: { token },
+        reconnection: false, // We handle reconnection manually
+        transports: ['websocket', 'polling'],
+        timeout: 10000,
+      })
+
+      // Connection established
+      socket.on('connect', () => {
+        if (!mountedRef.current) {
+          socket.disconnect()
+          return
+        }
+
+        wsLogger.info('WebSocket connected', { socketId: socket.id })
+        setConnectionStatus('connected')
+        setLastConnectedAt(Date.now())
+        setConnectionError(null)
+        reconnectAttemptsRef.current = 0
+        isConnectingRef.current = false
+
+        // Join session room if sessionId is provided
+        if (sessionId) {
+          socket.emit('join', { sessionId })
+        }
+
+        // Reattach subscriptions first (so events aren't missed during flush)
+        reattachSubscriptions(socket)
+
+        // Flush queued messages
+        flushMessageQueue(socket)
+      })
+
+      // Connection error
+      socket.on('connect_error', (error) => {
+        wsLogger.error('WebSocket connection error', error)
+        setConnectionError(error.message)
+        isConnectingRef.current = false
+        handleReconnection()
+      })
+
+      // Disconnected
+      socket.on('disconnect', (reason) => {
+        wsLogger.info('WebSocket disconnected', { reason })
+        setConnectionStatus('disconnected')
+        isConnectingRef.current = false
+
+        // Auto-reconnect for certain disconnect reasons
+        if (reason === 'io server disconnect' ||
+            reason === 'transport close' ||
+            reason === 'ping timeout') {
+          handleReconnection()
+        }
+      })
+
+      // Pong response (heartbeat)
+      socket.on('pong', () => {
+        setLastConnectedAt(Date.now())
+      })
+
+      socketRef.current = socket
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to connect'
+      wsLogger.error('Failed to create socket connection', error)
+      setConnectionError(message)
+      isConnectingRef.current = false
+      handleReconnection()
+    }
+  }, [sessionId, setConnectionStatus, setConnectionError, setLastConnectedAt, reattachSubscriptions, flushMessageQueue, handleReconnection])
+
+  /**
+   * Public connect function
+   */
+  const connect = useCallback(() => {
+    if (isDisconnectingRef.current) {
+      wsLogger.debug('Disconnect in progress, deferring connect')
+      return
+    }
+    connectInternal()
+  }, [connectInternal])
 
   /**
    * Disconnect WebSocket
+   * Cleans up all subscriptions and connection state
    */
   const disconnect = useCallback(() => {
+    isDisconnectingRef.current = true
+
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current)
       reconnectTimeoutRef.current = null
@@ -224,38 +346,56 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       if (sessionId) {
         socketRef.current.emit('leave', { sessionId })
       }
+      socketRef.current.removeAllListeners()
       socketRef.current.disconnect()
       socketRef.current = null
     }
 
+    // Clear subscription registry on disconnect
+    activeSubscriptionsRef.current = []
+
     setConnectionStatus('disconnected')
     reconnectAttemptsRef.current = 0
+    isConnectingRef.current = false
+    isFlushingRef.current = false
+    isDisconnectingRef.current = false
   }, [sessionId, setConnectionStatus])
 
   /**
-   * Emit event to server
+   * Emit event to server (with offline queuing)
    */
   const emit = useCallback((event: string, data?: unknown) => {
     if (!socketRef.current?.connected) {
-      console.warn('Cannot emit event: WebSocket not connected')
+      // Queue message for later if we're reconnecting
+      if (connectionStatus === 'reconnecting' || connectionStatus === 'connecting') {
+        messageQueueRef.current.push({
+          event,
+          data,
+          timestamp: Date.now(),
+        })
+        wsLogger.debug('Message queued for later', { event, queueLength: messageQueueRef.current.length })
+        return
+      }
+
+      wsLogger.warn('Cannot emit event: WebSocket not connected', { event })
       return
     }
 
     socketRef.current.emit(event, data)
-  }, [])
+  }, [connectionStatus])
 
   /**
    * Subscribe to WebSocket event
+   * Tracks subscriptions for automatic reattachment on reconnection
    */
   const subscribe = useCallback(
     <T = unknown>(event: WebSocketEventType, handler: WebSocketEventHandler<T>) => {
-      if (!socketRef.current) {
-        console.warn('Cannot subscribe: WebSocket not initialized')
-        return () => {}
-      }
-
       // Create wrapped handler to integrate with store
+      // Guard against unmounted component by checking mountedRef
       const wrappedHandler = (data: T) => {
+        // Skip if component is unmounted to prevent memory leaks
+        if (!mountedRef.current) return
+
         // Call user handler
         handler(data)
 
@@ -276,11 +416,28 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
         }
       }
 
-      socketRef.current.on(event, wrappedHandler)
+      // Track subscription for reconnection
+      const subscription: ActiveSubscription = {
+        event,
+        handler: handler as WebSocketEventHandler<unknown>,
+        wrappedHandler: wrappedHandler as (data: unknown) => void,
+      }
+      activeSubscriptionsRef.current.push(subscription)
 
-      // Return unsubscribe function
+      // Attach to socket if connected
+      if (socketRef.current) {
+        socketRef.current.on(event, wrappedHandler)
+      }
+
+      // Return unsubscribe function that removes from both socket and registry
       return () => {
+        // Remove from socket
         socketRef.current?.off(event, wrappedHandler)
+
+        // Remove from registry
+        activeSubscriptionsRef.current = activeSubscriptionsRef.current.filter(
+          (sub) => sub.wrappedHandler !== wrappedHandler
+        )
       }
     },
     [addSecurityEvent, addGazeData, addChatMessage, playNotificationSound]
@@ -288,13 +445,18 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
 
   /**
    * Auto-connect on mount
+   * Note: We intentionally use stable refs and only depend on autoConnect
+   * to prevent reconnection loops when callbacks change
    */
   useEffect(() => {
+    mountedRef.current = true
+
     if (autoConnect) {
       connect()
     }
 
     return () => {
+      mountedRef.current = false
       disconnect()
     }
   }, [autoConnect, connect, disconnect])
@@ -321,5 +483,6 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     subscribe,
     connect,
     disconnect,
+    queueLength: messageQueueRef.current.length,
   }
 }

@@ -1,0 +1,130 @@
+# Cert-Manager Resources for Blockd Platform
+# Automated TLS certificate management with Let's Encrypt
+#
+# Prerequisites:
+# 1. Install cert-manager: kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.14.0/cert-manager.yaml
+# 2. Wait for cert-manager pods: kubectl wait --for=condition=ready pod -l app.kubernetes.io/instance=cert-manager -n cert-manager --timeout=60s
+# 3. Apply this file: kubectl apply -f cert-manager.yaml
+---
+# ClusterIssuer for Let's Encrypt Production
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: tls
+spec:
+  acme:
+    # Let's Encrypt production server
+    server: https://acme-v02.api.letsencrypt.org/directory
+    # Email for certificate notifications
+    email: ops@blockd.com
+    # Secret to store ACME account private key
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    # HTTP-01 challenge solver using ingress
+    solvers:
+      - http01:
+          ingress:
+            class: nginx
+            # Use pod annotations for ingress to pass through
+            podTemplate:
+              spec:
+                nodeSelector:
+                  kubernetes.io/os: linux
+
+---
+# ClusterIssuer for Let's Encrypt Staging (for testing)
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: tls
+spec:
+  acme:
+    # Let's Encrypt staging server (higher rate limits for testing)
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: ops@blockd.com
+    privateKeySecretRef:
+      name: letsencrypt-staging-account-key
+    solvers:
+      - http01:
+          ingress:
+            class: nginx
+
+---
+# Certificate for main domain
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: blockd-tls-cert
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: tls
+spec:
+  secretName: blockd-tls-cert
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  # Certificate validity duration (90 days is Let's Encrypt default)
+  duration: 2160h  # 90 days
+  # Renew 30 days before expiry
+  renewBefore: 720h  # 30 days
+  # Use modern key algorithm
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  # Common name
+  commonName: blockd.com
+  # Subject Alternative Names (SANs)
+  dnsNames:
+    - blockd.com
+    - www.blockd.com
+    - api.blockd.com
+    - ws.blockd.com
+
+---
+# Certificate for API subdomain (if separate)
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: blockd-api-tls-cert
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: tls
+spec:
+  secretName: blockd-api-tls-cert
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  duration: 2160h
+  renewBefore: 720h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  commonName: api.blockd.com
+  dnsNames:
+    - api.blockd.com
+
+---
+# Wildcard certificate (requires DNS-01 challenge)
+# Uncomment and configure if using wildcard domains
+# apiVersion: cert-manager.io/v1
+# kind: Certificate
+# metadata:
+#   name: blockd-wildcard-tls-cert
+#   namespace: blockd
+# spec:
+#   secretName: blockd-wildcard-tls-cert
+#   issuerRef:
+#     name: letsencrypt-prod
+#     kind: ClusterIssuer
+#   commonName: "*.blockd.com"
+#   dnsNames:
+#     - "*.blockd.com"
+#     - blockd.com

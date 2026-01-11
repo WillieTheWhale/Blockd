@@ -40,6 +40,10 @@ images:
     repository: blockd/video-service
     tag: latest
     pullPolicy: IfNotPresent
+  websocketService:
+    repository: blockd/websocket-service
+    tag: latest
+    pullPolicy: IfNotPresent
   frontend:
     repository: blockd/frontend
     tag: latest
@@ -184,6 +188,24 @@ responseTiming:
       cpu: "1000m"
   autoscaling:
     enabled: false
+
+# WebSocket Service configuration
+websocketService:
+  enabled: true
+  replicas: 2
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
 
 # Video Service configuration
 videoService:

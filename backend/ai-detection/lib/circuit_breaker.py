@@ -1,6 +1,9 @@
 """
 Circuit Breaker Pattern Implementation
 Prevents cascading failures when external services are unavailable
+
+Note: This implementation uses asyncio.Lock for async contexts.
+All state-modifying operations are async-safe.
 """
 import asyncio
 import logging
@@ -9,7 +12,6 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Callable, Dict, Optional, Any, TypeVar, Generic
 from functools import wraps
-import threading
 
 logger = logging.getLogger(__name__)
 
@@ -81,13 +83,12 @@ class CircuitBreaker(Generic[T]):
         self._state = CircuitState.CLOSED
         self._stats = CircuitStats()
         self._last_state_change = time.time()
-        self._lock = threading.RLock()
+        self._lock = asyncio.Lock()
         self._failure_times: list[float] = []
 
-    @property
-    def state(self) -> CircuitState:
+    async def get_state(self) -> CircuitState:
         """Get current circuit state, checking for automatic state transitions"""
-        with self._lock:
+        async with self._lock:
             if self._state == CircuitState.OPEN:
                 # Check if recovery timeout has elapsed
                 if time.time() - self._last_state_change >= self.config.recovery_timeout:
@@ -95,24 +96,26 @@ class CircuitBreaker(Generic[T]):
             return self._state
 
     @property
+    def state_sync(self) -> CircuitState:
+        """Get current state synchronously (no state transition check)"""
+        return self._state
+
+    @property
     def stats(self) -> CircuitStats:
         """Get circuit statistics"""
         return self._stats
 
-    @property
-    def is_closed(self) -> bool:
+    async def is_closed(self) -> bool:
         """Check if circuit is closed (allowing requests)"""
-        return self.state == CircuitState.CLOSED
+        return await self.get_state() == CircuitState.CLOSED
 
-    @property
-    def is_open(self) -> bool:
+    async def is_open(self) -> bool:
         """Check if circuit is open (blocking requests)"""
-        return self.state == CircuitState.OPEN
+        return await self.get_state() == CircuitState.OPEN
 
-    @property
-    def is_half_open(self) -> bool:
+    async def is_half_open(self) -> bool:
         """Check if circuit is in half-open state (testing)"""
-        return self.state == CircuitState.HALF_OPEN
+        return await self.get_state() == CircuitState.HALF_OPEN
 
     def _transition_to(self, new_state: CircuitState) -> None:
         """Transition to a new state"""
@@ -131,9 +134,9 @@ class CircuitBreaker(Generic[T]):
         elif new_state == CircuitState.HALF_OPEN:
             self._stats.consecutive_successes = 0
 
-    def _record_success(self) -> None:
+    async def _record_success(self) -> None:
         """Record a successful call"""
-        with self._lock:
+        async with self._lock:
             self._stats.total_calls += 1
             self._stats.successful_calls += 1
             self._stats.last_success_time = time.time()
@@ -145,9 +148,9 @@ class CircuitBreaker(Generic[T]):
                 if self._stats.consecutive_successes >= self.config.success_threshold:
                     self._transition_to(CircuitState.CLOSED)
 
-    def _record_failure(self) -> None:
+    async def _record_failure(self) -> None:
         """Record a failed call"""
-        with self._lock:
+        async with self._lock:
             current_time = time.time()
             self._stats.total_calls += 1
             self._stats.failed_calls += 1
@@ -178,8 +181,9 @@ class CircuitBreaker(Generic[T]):
                         f"({self.config.failure_threshold})"
                     )
 
-                # Check failure rate
+                # Check failure rate (guard against division by zero)
                 if (self._stats.total_calls >= self.config.minimum_calls and
+                    self._stats.total_calls > 0 and
                     len(self._failure_times) >= self.config.minimum_calls):
                     failure_rate = len(self._failure_times) / self._stats.total_calls
                     if failure_rate >= self.config.failure_rate_threshold:
@@ -193,9 +197,9 @@ class CircuitBreaker(Generic[T]):
                 if should_open:
                     self._transition_to(CircuitState.OPEN)
 
-    def _record_rejected(self) -> None:
+    async def _record_rejected(self) -> None:
         """Record a rejected call (circuit open)"""
-        with self._lock:
+        async with self._lock:
             self._stats.rejected_calls += 1
 
     async def call(
@@ -220,10 +224,10 @@ class CircuitBreaker(Generic[T]):
         Raises:
             CircuitOpenError: If circuit is open and no fallback is provided
         """
-        state = self.state
+        state = await self.get_state()
 
         if state == CircuitState.OPEN:
-            self._record_rejected()
+            await self._record_rejected()
             fallback_fn = fallback or self.config.fallback
             if fallback_fn:
                 logger.debug(f"Circuit breaker '{self.name}' is open, using fallback")
@@ -241,38 +245,39 @@ class CircuitBreaker(Generic[T]):
                 result = await func(*args, **kwargs)
             else:
                 result = func(*args, **kwargs)
-            self._record_success()
+            await self._record_success()
             return result
         except Exception as e:
-            self._record_failure()
+            await self._record_failure()
             raise
 
     def __call__(self, func: Callable) -> Callable:
         """
         Decorator to wrap a function with circuit breaker protection.
 
+        Note: Only async functions are supported. Sync functions will be
+        wrapped in an async wrapper that may not work correctly in all contexts.
+
         Example:
             @circuit_breaker
             async def call_external_api():
                 return await api.get_data()
         """
+        if not asyncio.iscoroutinefunction(func):
+            logger.warning(
+                f"Circuit breaker '{self.name}' wrapping non-async function '{func.__name__}'. "
+                "This may cause issues. Consider using an async function instead."
+            )
+
         @wraps(func)
         async def async_wrapper(*args, **kwargs):
             return await self.call(func, *args, **kwargs)
 
-        @wraps(func)
-        def sync_wrapper(*args, **kwargs):
-            return asyncio.get_event_loop().run_until_complete(
-                self.call(func, *args, **kwargs)
-            )
+        return async_wrapper
 
-        if asyncio.iscoroutinefunction(func):
-            return async_wrapper
-        return sync_wrapper
-
-    def reset(self) -> None:
+    async def reset(self) -> None:
         """Reset the circuit breaker to closed state"""
-        with self._lock:
+        async with self._lock:
             self._state = CircuitState.CLOSED
             self._stats = CircuitStats()
             self._failure_times = []
@@ -280,10 +285,10 @@ class CircuitBreaker(Generic[T]):
             logger.info(f"Circuit breaker '{self.name}' reset to closed state")
 
     def to_dict(self) -> Dict[str, Any]:
-        """Get circuit breaker status as dictionary"""
+        """Get circuit breaker status as dictionary (sync, uses cached state)"""
         return {
             "name": self.name,
-            "state": self.state.value,
+            "state": self.state_sync.value,
             "stats": {
                 "total_calls": self._stats.total_calls,
                 "successful_calls": self._stats.successful_calls,
@@ -315,14 +320,13 @@ class CircuitBreakerRegistry:
     """
 
     _instance: Optional['CircuitBreakerRegistry'] = None
-    _lock = threading.Lock()
+    _initialized = False
 
     def __new__(cls) -> 'CircuitBreakerRegistry':
-        with cls._lock:
-            if cls._instance is None:
-                cls._instance = super().__new__(cls)
-                cls._instance._breakers: Dict[str, CircuitBreaker] = {}
-            return cls._instance
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._breakers: Dict[str, CircuitBreaker] = {}
+        return cls._instance
 
     def register(self, breaker: CircuitBreaker) -> None:
         """Register a circuit breaker"""
@@ -345,24 +349,32 @@ class CircuitBreakerRegistry:
         return self._breakers[name]
 
     def get_all_status(self) -> Dict[str, Dict[str, Any]]:
-        """Get status of all circuit breakers"""
+        """Get status of all circuit breakers (sync, uses cached state)"""
         return {
             name: breaker.to_dict()
             for name, breaker in self._breakers.items()
         }
 
-    def get_open_circuits(self) -> Dict[str, CircuitBreaker]:
-        """Get all open circuit breakers"""
+    def get_open_circuits_sync(self) -> Dict[str, CircuitBreaker]:
+        """Get all open circuit breakers (sync, uses cached state)"""
         return {
             name: breaker
             for name, breaker in self._breakers.items()
-            if breaker.is_open
+            if breaker.state_sync == CircuitState.OPEN
         }
 
-    def reset_all(self) -> None:
+    async def get_open_circuits(self) -> Dict[str, CircuitBreaker]:
+        """Get all open circuit breakers (async, checks for state transitions)"""
+        open_breakers = {}
+        for name, breaker in self._breakers.items():
+            if await breaker.is_open():
+                open_breakers[name] = breaker
+        return open_breakers
+
+    async def reset_all(self) -> None:
         """Reset all circuit breakers"""
         for breaker in self._breakers.values():
-            breaker.reset()
+            await breaker.reset()
 
 
 # Global registry instance

@@ -105,6 +105,14 @@ class EyeTracker {
   void SendGazeDataToBrowser(const GazePoint& gaze);
   void UpdateState(State new_state);
 
+  // Compute the calibration transformation matrix using least squares fitting.
+  // Maps raw gaze coordinates to screen coordinates using affine transformation.
+  // Returns false if computation fails (e.g., singular matrix).
+  bool ComputeCalibrationMatrix(const std::vector<float>& gaze_x,
+                                const std::vector<float>& gaze_y,
+                                const std::vector<float>& screen_x,
+                                const std::vector<float>& screen_y);
+
   State state_ = State::kIdle;
   bool is_calibrated_ = false;
 

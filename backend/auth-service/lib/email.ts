@@ -5,6 +5,7 @@
  * Production-ready email service with multiple provider support:
  * - SendGrid (recommended for production)
  * - SMTP (generic SMTP server)
+ * - AWS SES (Amazon Simple Email Service)
  * - Console (development/testing - logs to console)
  */
 
@@ -19,6 +20,12 @@ export interface EmailOptions {
   subject: string;
   text?: string;
   html?: string;
+}
+
+export interface EmailResult {
+  success: boolean;
+  messageId?: string;
+  error?: string;
 }
 
 export interface VerificationEmailData {
@@ -49,6 +56,11 @@ export interface LoginAlertEmailData {
   userAgent?: string;
 }
 
+export interface WelcomeEmailData {
+  email: string;
+  name?: string;
+}
+
 export interface SecurityAlertEmailData {
   email: string;
   name?: string;
@@ -65,7 +77,7 @@ export interface SecurityAlertEmailData {
 // ============================================================================
 
 interface EmailProvider {
-  send(options: EmailOptions): Promise<void>;
+  send(options: EmailOptions): Promise<EmailResult>;
 }
 
 // ============================================================================
@@ -78,38 +90,44 @@ class SendGridProvider implements EmailProvider {
   private fromName: string;
 
   constructor() {
-    this.apiKey = config.email.sendgrid.apiKey;
+    this.apiKey = config.email.sendgrid?.apiKey || '';
     this.fromEmail = config.email.from;
-    this.fromName = config.email.fromName;
+    this.fromName = config.email.fromName || 'Blockd';
   }
 
-  async send(options: EmailOptions): Promise<void> {
-    const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${this.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        personalizations: [{ to: [{ email: options.to }] }],
-        from: { email: this.fromEmail, name: this.fromName },
-        subject: options.subject,
-        content: [
-          ...(options.text ? [{ type: 'text/plain', value: options.text }] : []),
-          ...(options.html ? [{ type: 'text/html', value: options.html }] : []),
-        ],
-      }),
-    });
+  async send(options: EmailOptions): Promise<EmailResult> {
+    try {
+      const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          personalizations: [{ to: [{ email: options.to }] }],
+          from: { email: this.fromEmail, name: this.fromName },
+          subject: options.subject,
+          content: [
+            ...(options.text ? [{ type: 'text/plain', value: options.text }] : []),
+            ...(options.html ? [{ type: 'text/html', value: options.html }] : []),
+          ],
+        }),
+      });
 
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`SendGrid API error: ${response.status} - ${error}`);
+      if (!response.ok) {
+        const error = await response.text();
+        return { success: false, error: `SendGrid API error: ${response.status} - ${error}` };
+      }
+
+      return { success: true, messageId: response.headers.get('x-message-id') || undefined };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
     }
   }
 }
 
 // ============================================================================
-// SMTP Provider (using nodemailer-compatible fetch-based implementation)
+// SMTP Provider (using nodemailer)
 // ============================================================================
 
 class SMTPProvider implements EmailProvider {
@@ -122,36 +140,106 @@ class SMTPProvider implements EmailProvider {
   private fromName: string;
 
   constructor() {
-    this.host = config.email.smtp.host;
-    this.port = config.email.smtp.port;
-    this.secure = config.email.smtp.secure;
-    this.user = config.email.smtp.user;
-    this.password = config.email.smtp.password;
+    this.host = config.email.smtp?.host || 'localhost';
+    this.port = config.email.smtp?.port || 587;
+    this.secure = config.email.smtp?.secure || false;
+    this.user = config.email.smtp?.user || '';
+    this.password = config.email.smtp?.password || '';
     this.fromEmail = config.email.from;
-    this.fromName = config.email.fromName;
+    this.fromName = config.email.fromName || 'Blockd';
   }
 
-  async send(options: EmailOptions): Promise<void> {
-    // Dynamic import nodemailer to avoid bundling issues
-    const nodemailer = await import('nodemailer');
+  async send(options: EmailOptions): Promise<EmailResult> {
+    try {
+      // Dynamic import nodemailer to avoid bundling issues
+      const nodemailer = await import('nodemailer');
 
-    const transporter = nodemailer.createTransport({
-      host: this.host,
-      port: this.port,
-      secure: this.secure,
-      auth: {
-        user: this.user,
-        pass: this.password,
-      },
-    });
+      const transporter = nodemailer.createTransport({
+        host: this.host,
+        port: this.port,
+        secure: this.secure,
+        auth: {
+          user: this.user,
+          pass: this.password,
+        },
+      });
 
-    await transporter.sendMail({
-      from: `"${this.fromName}" <${this.fromEmail}>`,
-      to: options.to,
-      subject: options.subject,
-      text: options.text,
-      html: options.html,
-    });
+      const result = await transporter.sendMail({
+        from: `"${this.fromName}" <${this.fromEmail}>`,
+        to: options.to,
+        subject: options.subject,
+        text: options.text,
+        html: options.html,
+      });
+
+      return { success: true, messageId: result.messageId };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+}
+
+// ============================================================================
+// AWS SES Provider
+// ============================================================================
+
+class AWSSESProvider implements EmailProvider {
+  private region: string;
+  private fromEmail: string;
+  private fromName: string;
+
+  constructor() {
+    this.region = config.email.aws?.region || 'us-east-1';
+    this.fromEmail = config.email.from;
+    this.fromName = config.email.fromName || 'Blockd';
+  }
+
+  async send(options: EmailOptions): Promise<EmailResult> {
+    try {
+      const { SESClient, SendEmailCommand } = await import('@aws-sdk/client-ses');
+
+      const client = new SESClient({
+        region: this.region,
+        ...(config.email.aws?.accessKeyId && config.email.aws?.secretAccessKey && {
+          credentials: {
+            accessKeyId: config.email.aws.accessKeyId,
+            secretAccessKey: config.email.aws.secretAccessKey,
+          },
+        }),
+      });
+
+      const command = new SendEmailCommand({
+        Source: `${this.fromName} <${this.fromEmail}>`,
+        Destination: {
+          ToAddresses: [options.to],
+        },
+        Message: {
+          Subject: {
+            Data: options.subject,
+            Charset: 'UTF-8',
+          },
+          Body: {
+            ...(options.text && {
+              Text: {
+                Data: options.text,
+                Charset: 'UTF-8',
+              },
+            }),
+            ...(options.html && {
+              Html: {
+                Data: options.html,
+                Charset: 'UTF-8',
+              },
+            }),
+          },
+        },
+      });
+
+      const result = await client.send(command);
+      return { success: true, messageId: result.MessageId };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
   }
 }
 
@@ -160,7 +248,7 @@ class SMTPProvider implements EmailProvider {
 // ============================================================================
 
 class ConsoleProvider implements EmailProvider {
-  async send(options: EmailOptions): Promise<void> {
+  async send(options: EmailOptions): Promise<EmailResult> {
     console.log('');
     console.log('═══════════════════════════════════════════════════════════════');
     console.log('📧 EMAIL (Console Provider - Development Mode)');
@@ -171,6 +259,7 @@ class ConsoleProvider implements EmailProvider {
     console.log(options.text || '[HTML content - see html field]');
     console.log('═══════════════════════════════════════════════════════════════');
     console.log('');
+    return { success: true, messageId: `console-${Date.now()}` };
   }
 }
 
@@ -189,6 +278,9 @@ function getProvider(): EmailProvider {
       break;
     case 'smtp':
       emailProvider = new SMTPProvider();
+      break;
+    case 'ses':
+      emailProvider = new AWSSESProvider();
       break;
     case 'console':
     default:
@@ -334,27 +426,26 @@ function wrapHtmlTemplate(content: string, title: string): string {
 /**
  * Send a generic email
  */
-export async function sendEmail(options: EmailOptions): Promise<void> {
+export async function sendEmail(options: EmailOptions): Promise<EmailResult> {
   if (!config.email.enabled) {
     console.log(`[EMAIL DISABLED] Would send to ${options.to}: ${options.subject}`);
-    return;
+    return { success: true, messageId: 'disabled' };
   }
 
   const provider = getProvider();
 
   try {
-    await provider.send(options);
+    return await provider.send(options);
   } catch (error) {
     console.error('Failed to send email:', error);
-    // In production, you might want to queue failed emails for retry
-    throw error;
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }
 
 /**
  * Send email verification
  */
-export async function sendVerificationEmail(data: VerificationEmailData): Promise<void> {
+export async function sendVerificationEmail(data: VerificationEmailData): Promise<EmailResult> {
   const subject = 'Verify your Blockd account';
 
   const text = `
@@ -392,13 +483,13 @@ The Blockd Team
     </div>
   `, subject);
 
-  await sendEmail({ to: data.email, subject, text, html });
+  return sendEmail({ to: data.email, subject, text, html });
 }
 
 /**
  * Send password reset email
  */
-export async function sendPasswordResetEmail(data: PasswordResetEmailData): Promise<void> {
+export async function sendPasswordResetEmail(data: PasswordResetEmailData): Promise<EmailResult> {
   const subject = 'Reset your Blockd password';
 
   const text = `
@@ -436,13 +527,13 @@ The Blockd Team
     </div>
   `, subject);
 
-  await sendEmail({ to: data.email, subject, text, html });
+  return sendEmail({ to: data.email, subject, text, html });
 }
 
 /**
  * Send MFA setup confirmation email
  */
-export async function sendMFASetupEmail(data: MFASetupEmailData): Promise<void> {
+export async function sendMFASetupEmail(data: MFASetupEmailData): Promise<EmailResult> {
   const subject = 'Two-factor authentication enabled';
 
   const text = `
@@ -475,13 +566,13 @@ The Blockd Team
     </div>
   `, subject);
 
-  await sendEmail({ to: data.email, subject, text, html });
+  return sendEmail({ to: data.email, subject, text, html });
 }
 
 /**
  * Send login alert email
  */
-export async function sendLoginAlertEmail(data: LoginAlertEmailData): Promise<void> {
+export async function sendLoginAlertEmail(data: LoginAlertEmailData): Promise<EmailResult> {
   const subject = 'New login to your Blockd account';
   const location = data.location || 'Unknown location';
   const ip = data.ipAddress || 'Unknown IP';
@@ -550,13 +641,13 @@ The Blockd Team
     </div>
   `, subject);
 
-  await sendEmail({ to: data.email, subject, text, html });
+  return sendEmail({ to: data.email, subject, text, html });
 }
 
 /**
  * Send welcome email after successful registration
  */
-export async function sendWelcomeEmail(email: string, name?: string): Promise<void> {
+export async function sendWelcomeEmail(email: string, name?: string): Promise<EmailResult> {
   const subject = 'Welcome to Blockd!';
 
   const text = `
@@ -594,14 +685,14 @@ The Blockd Team
     <p>If you have any questions, our support team is here to help at <a href="mailto:support@blockd.io">support@blockd.io</a>.</p>
   `, subject);
 
-  await sendEmail({ to: email, subject, text, html });
+  return sendEmail({ to: email, subject, text, html });
 }
 
 /**
  * Send security alert email to interviewer
  * Used when critical security events occur during an interview
  */
-export async function sendSecurityAlertEmail(data: SecurityAlertEmailData): Promise<void> {
+export async function sendSecurityAlertEmail(data: SecurityAlertEmailData): Promise<EmailResult> {
   const severityColors = {
     low: '#3b82f6',
     medium: '#f59e0b',
@@ -685,5 +776,5 @@ The Blockd Security System
     </div>
   `, subject);
 
-  await sendEmail({ to: data.email, subject, text, html });
+  return sendEmail({ to: data.email, subject, text, html });
 }

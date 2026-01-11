@@ -18,6 +18,9 @@ interface RealtimeState {
   gazeData: GazeData[]
   chatMessages: ChatMessage[]
 
+  // Event deduplication
+  processedEventIds: Set<string>
+
   // UI state
   unreadMessagesCount: number
   soundEnabled: boolean
@@ -63,6 +66,7 @@ const initialState: RealtimeState = {
   securityEvents: [],
   gazeData: [],
   chatMessages: [],
+  processedEventIds: new Set<string>(),
   unreadMessagesCount: 0,
   soundEnabled: true,
 }
@@ -90,11 +94,27 @@ export const useRealtimeStore = create<RealtimeStore>()(
           lastConnectedAt: timestamp,
         }),
 
-      // Security events
+      // Security events (with deduplication)
       addSecurityEvent: (event) =>
-        set((state) => ({
-          securityEvents: [event, ...state.securityEvents].slice(0, 100), // Keep last 100 events
-        })),
+        set((state) => {
+          // Skip if already processed (deduplication)
+          if (state.processedEventIds.has(event.id)) {
+            return state
+          }
+
+          // Add to processed set (keep last 200 IDs to prevent memory growth)
+          const newProcessedIds = new Set(state.processedEventIds)
+          newProcessedIds.add(event.id)
+          if (newProcessedIds.size > 200) {
+            const idsArray = Array.from(newProcessedIds)
+            idsArray.slice(0, newProcessedIds.size - 200).forEach((id) => newProcessedIds.delete(id))
+          }
+
+          return {
+            securityEvents: [event, ...state.securityEvents].slice(0, 100),
+            processedEventIds: newProcessedIds,
+          }
+        }),
 
       clearSecurityEvents: () =>
         set({
@@ -121,15 +141,31 @@ export const useRealtimeStore = create<RealtimeStore>()(
         return get().gazeData.filter((data) => data.sessionId === sessionId)
       },
 
-      // Chat messages
+      // Chat messages (with deduplication)
       addChatMessage: (message) =>
-        set((state) => ({
-          chatMessages: [...state.chatMessages, message],
-          unreadMessagesCount:
-            message.type === 'user' && message.senderId !== 'me'
-              ? state.unreadMessagesCount + 1
-              : state.unreadMessagesCount,
-        })),
+        set((state) => {
+          // Skip if already processed (deduplication)
+          if (state.processedEventIds.has(message.id)) {
+            return state
+          }
+
+          // Add to processed set
+          const newProcessedIds = new Set(state.processedEventIds)
+          newProcessedIds.add(message.id)
+          if (newProcessedIds.size > 200) {
+            const idsArray = Array.from(newProcessedIds)
+            idsArray.slice(0, newProcessedIds.size - 200).forEach((id) => newProcessedIds.delete(id))
+          }
+
+          return {
+            chatMessages: [...state.chatMessages, message],
+            unreadMessagesCount:
+              message.type === 'user' && message.senderId !== 'me'
+                ? state.unreadMessagesCount + 1
+                : state.unreadMessagesCount,
+            processedEventIds: newProcessedIds,
+          }
+        }),
 
       markMessageAsRead: (messageId) =>
         set((state) => ({

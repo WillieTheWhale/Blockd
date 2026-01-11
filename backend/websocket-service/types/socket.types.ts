@@ -172,6 +172,7 @@ export interface AnswerSubmitResponse {
 }
 
 export interface ChatMessageData {
+  message_id?: string;
   session_id: string;
   message: string;
   sender_id?: string;

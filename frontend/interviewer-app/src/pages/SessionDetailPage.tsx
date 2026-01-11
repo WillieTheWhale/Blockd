@@ -18,16 +18,17 @@ import {
   Clock,
   User,
   Calendar,
+  Video,
 } from 'lucide-react'
 import { VideoPlayer } from '@/components/VideoPlayer'
 import { SecurityEventsDashboard } from '@/components/SecurityEventsDashboard'
 import { GazeHeatmap } from '@/components/GazeHeatmap'
-import { AIDetectionResults } from '@/components/AIDetectionResults'
+import { AIDetectionContainer } from '@/components/interview/ai-detection'
 import { RealtimeChat } from '@/components/RealtimeChat'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { useRealtimeStore } from '@/stores/realtime-store'
 import { toast } from 'sonner'
-import type { Session, Question, AIDetectionResult } from '@/types'
+import type { Session, Question, AIDetectionResult, SecurityEvent, AIDetectionProgressEvent } from '@/types'
 import { format } from 'date-fns'
 
 export function SessionDetailPage() {
@@ -36,9 +37,10 @@ export function SessionDetailPage() {
 
   const [showGazeHeatmap, setShowGazeHeatmap] = useState(false)
   const [activeTab, setActiveTab] = useState('overview')
+  const [aiProgressEvent, setAIProgressEvent] = useState<AIDetectionProgressEvent | null>(null)
 
-  const { connectionStatus: _connectionStatus } = useRealtimeStore()
-  const { subscribe, isConnected } = useWebSocket({ sessionId: id })
+  const { addSecurityEvent } = useRealtimeStore()
+  const { subscribe, isConnected } = useWebSocket({ sessionId: id ?? '' })
 
   // Fetch session data
   const { data: session, isLoading } = useQuery({
@@ -60,8 +62,21 @@ export function SessionDetailPage() {
     enabled: !!id,
   })
 
-  // Mock AI detection results (in real app, fetch from API)
-  const mockAIResults: AIDetectionResult[] = []
+  // Fetch AI detection results
+  const {
+    data: aiDetectionResults = [],
+    isLoading: isLoadingAIResults,
+    error: aiResultsError,
+  } = useQuery({
+    queryKey: QUERY_KEYS.AI_DETECTION.LIST(id!),
+    queryFn: async () => {
+      const response = await apiClient.get<AIDetectionResult[]>(
+        API_ENDPOINTS.AI_DETECTION.LIST(id!)
+      )
+      return response.data
+    },
+    enabled: !!id,
+  })
 
   // Start session mutation
   const startSessionMutation = useMutation({
@@ -115,13 +130,50 @@ export function SessionDetailPage() {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.QUESTIONS.LIST(id) })
     })
 
+    const unsubscribeAIDetection = subscribe('ai:detection:complete', () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.AI_DETECTION.LIST(id) })
+      // Clear progress indicator on completion
+      setAIProgressEvent(null)
+    })
+
+    // Subscribe to security alerts for real-time updates
+    const unsubscribeSecurity = subscribe<SecurityEvent>('security:alert', (event) => {
+      if (event.sessionId === id) {
+        addSecurityEvent(event)
+        if (event.severity === 'critical' || event.severity === 'high') {
+          toast.warning(`Security Alert: ${event.description}`, {
+            duration: 5000,
+          })
+        }
+      }
+    })
+
+    // Subscribe to AI detection progress for live status
+    const unsubscribeAIProgress = subscribe<AIDetectionProgressEvent>('ai:detection:progress', (event) => {
+      if (event.sessionId === id) {
+        setAIProgressEvent(event)
+      }
+    })
+
+    // Subscribe to AI detection started
+    const unsubscribeAIStarted = subscribe<AIDetectionProgressEvent>('ai:detection:started', (event) => {
+      if (event.sessionId === id) {
+        setAIProgressEvent(event)
+        toast.info('AI analysis started for new answer')
+      }
+    })
+
     return () => {
       unsubscribeStarted()
       unsubscribeEnded()
       unsubscribeQuestion()
       unsubscribeAnswer()
+      unsubscribeAIDetection()
+      unsubscribeSecurity()
+      unsubscribeAIProgress()
+      unsubscribeAIStarted()
     }
-  }, [id, subscribe, queryClient])
+  }, [id, subscribe, queryClient, addSecurityEvent])
 
   // Handle export report
   const handleExportReport = async () => {
@@ -209,20 +261,36 @@ export function SessionDetailPage() {
         {/* Action Buttons */}
         <div className="flex items-center gap-2">
           {session.status === 'pending' && (
-            <Button onClick={() => startSessionMutation.mutate()} disabled={startSessionMutation.isPending}>
-              <Play className="mr-2 h-4 w-4" />
-              Start Session
-            </Button>
+            <>
+              <Link to={`/sessions/${session.id}/live`}>
+                <Button variant="outline">
+                  <Video className="mr-2 h-4 w-4" />
+                  Go Live
+                </Button>
+              </Link>
+              <Button onClick={() => startSessionMutation.mutate()} disabled={startSessionMutation.isPending}>
+                <Play className="mr-2 h-4 w-4" />
+                Start Session
+              </Button>
+            </>
           )}
           {session.status === 'in_progress' && (
-            <Button
-              variant="destructive"
-              onClick={() => endSessionMutation.mutate()}
-              disabled={endSessionMutation.isPending}
-            >
-              <Square className="mr-2 h-4 w-4" />
-              End Session
-            </Button>
+            <>
+              <Link to={`/sessions/${session.id}/live`}>
+                <Button>
+                  <Video className="mr-2 h-4 w-4" />
+                  Go Live
+                </Button>
+              </Link>
+              <Button
+                variant="destructive"
+                onClick={() => endSessionMutation.mutate()}
+                disabled={endSessionMutation.isPending}
+              >
+                <Square className="mr-2 h-4 w-4" />
+                End Session
+              </Button>
+            </>
           )}
           {session.status === 'completed' && (
             <>
@@ -390,19 +458,15 @@ export function SessionDetailPage() {
 
         {/* Analysis Tab */}
         <TabsContent value="analysis" className="space-y-4">
-          {mockAIResults.length === 0 ? (
-            <Card>
-              <CardContent className="py-12">
-                <p className="text-center text-muted-foreground">
-                  AI analysis results will appear here after answers are submitted
-                </p>
-              </CardContent>
-            </Card>
-          ) : (
-            mockAIResults.map((result) => (
-              <AIDetectionResults key={result.id} result={result} />
-            ))
-          )}
+          <AIDetectionContainer
+            results={aiDetectionResults}
+            questions={questions}
+            isLoading={isLoadingAIResults}
+            error={aiResultsError instanceof Error ? aiResultsError : null}
+            progressEvent={aiProgressEvent}
+            showSummary={true}
+            maxHeight="600px"
+          />
         </TabsContent>
 
         {/* Recording Tab */}

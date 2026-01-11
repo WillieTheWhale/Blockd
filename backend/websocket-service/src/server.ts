@@ -10,6 +10,7 @@ import {
   setupRedisAdapter,
   setupEventMonitoring,
   gracefulShutdown,
+  setHealthCheckContext,
 } from './socket';
 import { logger } from '../lib/logger';
 import { RoomManager } from '../lib/room-manager';
@@ -50,6 +51,9 @@ class WebSocketServer {
 
       // Setup Redis adapter for scaling
       this.redisAdapter = await setupRedisAdapter(this.io, this.config);
+
+      // Setup health check context (after Redis adapter is ready)
+      setHealthCheckContext(this.io, this.redisAdapter);
 
       // Setup monitoring
       setupEventMonitoring(this.io);

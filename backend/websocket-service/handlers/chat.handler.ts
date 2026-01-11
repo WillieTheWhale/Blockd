@@ -7,6 +7,7 @@ import { Server } from 'socket.io';
 import { AuthenticatedSocket, ChatMessageData } from '../types/socket.types';
 import { RoomManager, RoomType } from '../lib/room-manager';
 import { logger } from '../lib/logger';
+import { ValidationError } from '../lib/errors';
 import { prisma } from '../lib/prisma';
 import { UserRole } from '@prisma/client';
 
@@ -210,10 +211,17 @@ export async function getSessionChatHistory(
   limit: number = 50,
   offset: number = 0
 ): Promise<ChatMessageData[]> {
+  logger.debug('Getting chat history for session', {
+    sessionId,
+    limit,
+    offset,
+  });
+
   const messages = await prisma.chatMessage.findMany({
     where: {
       sessionId,
       isDeleted: false,
+      deletedAt: null, // Exclude soft-deleted messages
     },
     orderBy: {
       createdAt: 'desc',
@@ -224,12 +232,12 @@ export async function getSessionChatHistory(
 
   // Return in chronological order (oldest first)
   return messages.reverse().map((msg) => ({
+    message_id: msg.id,
     session_id: msg.sessionId,
     message: msg.message,
     sender_id: msg.senderId,
     sender_role: msg.senderRole,
     timestamp: msg.createdAt.toISOString(),
-    message_id: msg.id,
   }));
 }
 

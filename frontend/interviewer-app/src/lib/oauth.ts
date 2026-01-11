@@ -51,7 +51,10 @@ function base64UrlEncode(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer)
   let binary = ''
   for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i])
+    const byte = bytes[i]
+    if (byte !== undefined) {
+      binary += String.fromCharCode(byte)
+    }
   }
   return btoa(binary)
     .replace(/\+/g, '-')
@@ -170,9 +173,9 @@ export async function initiateOAuthFlow(
     state,
     codeVerifier,
     provider,
-    redirectPath,
     createdAt: Date.now(),
   }
+  if (redirectPath) oauthState.redirectPath = redirectPath
   storeOAuthState(oauthState)
 
   // Build authorization URL and redirect

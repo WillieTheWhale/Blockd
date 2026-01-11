@@ -23,6 +23,7 @@ data:
   SESSION_SERVICE_URL: "http://session-service.blockd.svc.cluster.local:3002"
   AI_DETECTION_SERVICE_URL: "http://ai-detection-service.blockd.svc.cluster.local:3003"
   EYE_TRACKING_SERVICE_URL: "http://eye-tracking-service.blockd.svc.cluster.local:3004"
+  RESPONSE_TIMING_SERVICE_URL: "http://response-timing-service.blockd.svc.cluster.local:3005"
   WEBSOCKET_SERVICE_URL: "http://websocket-service.blockd.svc.cluster.local:3007"
   VIDEO_SERVICE_URL: "http://video-service.blockd.svc.cluster.local:3006"
 
@@ -479,6 +480,138 @@ spec:
                   matchLabels:
                     app: celery-worker
                     component: gaze
+                topologyKey: kubernetes.io/hostname
+
+---
+# Timing Analysis Workers
+# Handles audio transcription (Whisper) and timing analysis
+# Note: These workers have longer timeouts for Whisper API calls
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-worker-timing
+  namespace: blockd
+  labels:
+    app: celery-worker
+    component: timing
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: celery-worker
+      component: timing
+  template:
+    metadata:
+      labels:
+        app: celery-worker
+        component: timing
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9808"
+    spec:
+      serviceAccountName: celery-worker
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: worker
+          image: blockd/celery-worker:latest
+          imagePullPolicy: Always
+          command:
+            - celery
+            - -A
+            - celery_app
+            - worker
+            - --loglevel=info
+            - --queues=timing_analyze
+            - --concurrency=2  # Lower concurrency due to memory-intensive Whisper
+            - --hostname=timing-worker@%h
+          envFrom:
+            - configMapRef:
+                name: celery-worker-config
+          env:
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-credentials
+                  key: username
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-credentials
+                  key: password
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: aws-credentials
+                  key: access-key-id
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aws-credentials
+                  key: secret-access-key
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: openai-credentials
+                  key: api-key
+            - name: RESPONSE_TIMING_SERVICE_URL
+              value: "http://response-timing-service.blockd.svc.cluster.local:3004"
+            - name: INTERNAL_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: blockd-secrets
+                  key: internal_service_token
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2000m"
+              memory: "4Gi"  # Higher memory for Whisper processing
+          volumeMounts:
+            - name: tmp-audio
+              mountPath: /tmp/audio
+          livenessProbe:
+            exec:
+              command:
+                - celery
+                - -A
+                - celery_app
+                - inspect
+                - ping
+                - -d
+                - celery@$HOSTNAME
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            timeoutSeconds: 10
+          readinessProbe:
+            exec:
+              command:
+                - celery
+                - -A
+                - celery_app
+                - inspect
+                - active
+                - -d
+                - celery@$HOSTNAME
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 10
+      volumes:
+        - name: tmp-audio
+          emptyDir:
+            sizeLimit: 5Gi
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: celery-worker
+                    component: timing
                 topologyKey: kubernetes.io/hostname
 
 ---

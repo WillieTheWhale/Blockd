@@ -3,6 +3,7 @@ Sentence embedding model using sentence-transformers
 Generates 384-dimensional embeddings for semantic similarity
 """
 import logging
+import threading
 from typing import List, Union
 import torch
 from sentence_transformers import SentenceTransformer
@@ -13,6 +14,9 @@ from src.config import get_settings
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+# Lock for thread-safe singleton initialization
+_embedding_model_lock = threading.Lock()
 
 
 class EmbeddingModel:
@@ -28,6 +32,7 @@ class EmbeddingModel:
         self.model_name = model_name or settings.EMBEDDING_MODEL
         self.model: SentenceTransformer = None
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self._encode_lock = threading.Lock()  # Thread-safe encoding
         logger.info(f"Embedding model will use device: {self.device}")
 
     def load(self):
@@ -76,14 +81,15 @@ class EmbeddingModel:
             if is_single:
                 texts = [texts]
 
-            # Encode
-            embeddings = self.model.encode(
-                texts,
-                batch_size=batch_size,
-                show_progress_bar=show_progress,
-                convert_to_numpy=True,
-                normalize_embeddings=normalize
-            )
+            # Thread-safe encoding (SentenceTransformer uses PyTorch which isn't thread-safe)
+            with self._encode_lock:
+                embeddings = self.model.encode(
+                    texts,
+                    batch_size=batch_size,
+                    show_progress_bar=show_progress,
+                    convert_to_numpy=True,
+                    normalize_embeddings=normalize
+                )
 
             # Convert to list
             embeddings_list = embeddings.tolist()
@@ -152,13 +158,25 @@ _embedding_model: EmbeddingModel = None
 
 def get_embedding_model() -> EmbeddingModel:
     """
-    Get singleton embedding model instance
+    Get singleton embedding model instance.
+
+    Thread-safe initialization using double-checked locking.
 
     Returns:
         Embedding model
     """
     global _embedding_model
-    if _embedding_model is None:
-        _embedding_model = EmbeddingModel()
-        _embedding_model.load()
+
+    # Fast path: already initialized
+    if _embedding_model is not None:
+        return _embedding_model
+
+    # Slow path: acquire lock and initialize
+    with _embedding_model_lock:
+        # Double-check after acquiring lock
+        if _embedding_model is None:
+            model = EmbeddingModel()
+            model.load()
+            _embedding_model = model
+
     return _embedding_model

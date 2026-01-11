@@ -5,6 +5,7 @@
 // Re-export types from constants
 export type { SessionStatus, QuestionType, DifficultyLevel, UserRole } from '@/lib/constants'
 
+
 // Import types for local use
 import type { SessionStatus, QuestionType, DifficultyLevel, UserRole } from '@/lib/constants'
 
@@ -249,28 +250,69 @@ export interface ChatMessage {
   read?: boolean
 }
 
+/**
+ * N-gram overlap scores for detecting copied phrases
+ */
+export interface NgramOverlap {
+  trigram: number
+  fourgram: number
+}
+
+/**
+ * Stylometric analysis for writing pattern detection
+ */
+export interface StylometricAnalysis {
+  vocabularyRichness: number
+  avgSentenceLength: number
+  punctuationDensity: number
+  capitalizationRatio?: number
+  fillerWordRatio?: number
+}
+
+/**
+ * Similarity scores to different AI models
+ */
+export interface SimilarityScores {
+  gpt4: number
+  claude: number
+  gemini: number
+  llama?: number
+  max: number
+  avg: number
+}
+
+/**
+ * AI Detection result with comprehensive analysis
+ */
 export interface AIDetectionResult {
   id: string
   sessionId: string
   questionId: string
   answerId: string
   riskScore: number
-  riskLevel: 'low' | 'medium' | 'high' | 'critical'
-  similarityScores: {
-    gpt4: number
-    claude: number
-    gemini: number
-  }
+  riskLevel: 'minimal' | 'low' | 'medium' | 'high' | 'critical'
+  confidence: number
+  similarityScores: SimilarityScores
+  perplexityScore: number
+  ngramOverlap: NgramOverlap
+  stylometricAnalysis: StylometricAnalysis
   flags: Array<{
     type: string
     description: string
     severity: SecurityEventSeverity
   }>
-  perplexityScore: number
-  ngramOverlap: number
   recommendation: string
   detailedAnalysis?: string
+  processingTimeMs?: number
   createdAt: string
+  // For answer comparison view
+  candidateAnswer?: string
+  aiGeneratedAnswers?: {
+    gpt4?: string
+    claude?: string
+    gemini?: string
+  }
+  questionText?: string
 }
 
 export interface VideoStreamStats {
@@ -328,4 +370,43 @@ export interface ApiErrorResponse {
   error: string
   message: string
   statusCode: number
+}
+
+/**
+ * AI Detection types for enhanced analysis features
+ */
+export type RiskLevel = 'minimal' | 'low' | 'medium' | 'high' | 'critical'
+
+export interface AIDetectionFilterState {
+  riskLevels: Set<RiskLevel>
+  minRiskScore: number
+  maxRiskScore: number
+  hasFlags: boolean | null
+}
+
+export interface AIDetectionSortConfig {
+  field: 'riskScore' | 'createdAt' | 'confidence'
+  direction: 'asc' | 'desc'
+}
+
+export interface AIDetectionAggregateStats {
+  totalResults: number
+  averageRiskScore: number
+  averageConfidence: number
+  riskDistribution: Record<RiskLevel, number>
+  flaggedCount: number
+  highestRiskScore: number
+  lowestRiskScore: number
+  processingStats: {
+    avgTimeMs: number
+    totalTimeMs: number
+  }
+}
+
+export interface AIDetectionProgressEvent {
+  sessionId: string
+  questionId: string
+  status: 'started' | 'processing' | 'completed' | 'failed'
+  progress?: number
+  estimatedTimeMs?: number
 }

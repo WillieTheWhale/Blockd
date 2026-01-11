@@ -2,6 +2,7 @@ import { Hero } from '@/components/landing/Hero'
 import { Features } from '@/components/landing/Features'
 import { HowItWorks } from '@/components/landing/HowItWorks'
 import { Pricing } from '@/components/landing/Pricing'
+import { Download } from '@/components/landing/Download'
 import { CTA } from '@/components/landing/CTA'
 
 export function LandingPage() {
@@ -11,6 +12,7 @@ export function LandingPage() {
       <Features />
       <HowItWorks />
       <Pricing />
+      <Download />
       <CTA />
     </div>
   )

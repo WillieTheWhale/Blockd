@@ -11,6 +11,7 @@ import { Separator } from '@/components/ui/separator'
 import { toast } from 'sonner'
 import { useAuthStore } from '@/stores/auth-store'
 import { loginSchema, type LoginFormData } from '@/lib/validations'
+import type { LoginCredentials } from '@/types'
 import { Loader2 } from 'lucide-react'
 import { OAuthButton } from '@/components/OAuthButton'
 
@@ -37,12 +38,14 @@ export function LoginPage() {
 
   const onSubmit = async (data: LoginFormData) => {
     try {
-      const result = await login({
+      const credentials: LoginCredentials = {
         email: data.email,
         password: data.password,
-        mfaCode: data.mfaCode,
-        rememberMe: data.rememberMe,
-      })
+      }
+      if (data.mfaCode) credentials.mfaCode = data.mfaCode
+      if (data.rememberMe !== undefined) credentials.rememberMe = data.rememberMe
+
+      const result = await login(credentials)
 
       if (result.requiresMfa) {
         setShowMfaInput(true)
@@ -153,7 +156,7 @@ export function LoginPage() {
           <div className="flex items-center space-x-2">
             <Checkbox
               id="rememberMe"
-              checked={rememberMe}
+              checked={rememberMe ?? false}
               onCheckedChange={(checked) => setValue('rememberMe', checked as boolean)}
               disabled={isLoading}
             />

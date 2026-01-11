@@ -85,7 +85,18 @@ class PerplexityModel:
                 loss = outputs.loss
                 perplexity = torch.exp(loss)
 
-            return float(perplexity.item())
+            perplexity_value = float(perplexity.item())
+
+            # Validate output - check for NaN or Inf
+            if math.isnan(perplexity_value) or math.isinf(perplexity_value):
+                logger.warning(
+                    f"Perplexity calculation produced invalid value: {perplexity_value}, "
+                    f"loss: {loss.item()}, text length: {len(text)}"
+                )
+                # Return a high but valid perplexity for invalid results
+                return 1000.0
+
+            return perplexity_value
 
         except Exception as e:
             logger.error(f"Perplexity calculation failed: {e}")
@@ -133,9 +144,16 @@ class PerplexityModel:
                     outputs = self.model(window_ids, labels=window_ids)
                     loss = outputs.loss
                     perplexity = torch.exp(loss)
-                    perplexities.append(float(perplexity.item()))
+                    perplexity_value = float(perplexity.item())
 
-            # Return average perplexity
+                    # Skip invalid values
+                    if not (math.isnan(perplexity_value) or math.isinf(perplexity_value)):
+                        perplexities.append(perplexity_value)
+
+            # Return average perplexity (or default if all were invalid)
+            if not perplexities:
+                logger.warning("All window perplexities were invalid, returning default")
+                return 1000.0
             return sum(perplexities) / len(perplexities)
 
         except Exception as e:

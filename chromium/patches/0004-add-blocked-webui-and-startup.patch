@@ -1,0 +1,164 @@
+From: Blocked Browser Team <dev@blockd.com>
+Date: Thu, 09 Jan 2026 10:00:00 +0000
+Subject: [PATCH 4/4] Add Blocked WebUI registration and startup overrides
+
+Register chrome://blocked-home WebUI and configure it as the
+default startup page and new tab page.
+
+Changes:
+- Register BlockedHomeUIConfig in chrome_web_ui_configs.cc
+- Override startup page to chrome://blocked-home
+- Override new tab page to chrome://blocked-home
+- Update BUILD.gn dependencies
+
+diff --git a/chrome/browser/ui/webui/chrome_web_ui_configs.cc b/chrome/browser/ui/webui/chrome_web_ui_configs.cc
+index 7890123..ghijklm 100644
+--- a/chrome/browser/ui/webui/chrome_web_ui_configs.cc
++++ b/chrome/browser/ui/webui/chrome_web_ui_configs.cc
+@@ -50,6 +50,10 @@
+ #include "chrome/browser/ui/webui/version/version_ui.h"
+ #include "content/public/browser/webui_config_map.h"
+
++#ifdef BLOCKED_BROWSER
++#include "chrome/browser/ui/webui/blocked_home/blocked_web_ui_configs.h"
++#endif
++
+ namespace {
+
+ void RegisterChromeWebUIConfigsImpl(content::WebUIConfigMap& map) {
+@@ -100,6 +104,11 @@ void RegisterChromeWebUIConfigsImpl(content::WebUIConfigMap& map) {
+   map.AddWebUIConfig(std::make_unique<VersionUIConfig>());
+   map.AddWebUIConfig(std::make_unique<WelcomeUIConfig>());
+
++#ifdef BLOCKED_BROWSER
++  // Register Blocked WebUI configs
++  blocked::RegisterBlockedWebUIConfigs(map);
++#endif
++
+   // Platform-specific WebUIs
+ #if BUILDFLAG(IS_ANDROID)
+   // Android-specific UIs
+diff --git a/chrome/browser/ui/webui/BUILD.gn b/chrome/browser/ui/webui/BUILD.gn
+index 8901234..hijklmn 100644
+--- a/chrome/browser/ui/webui/BUILD.gn
++++ b/chrome/browser/ui/webui/BUILD.gn
+@@ -100,6 +100,12 @@ static_library("webui") {
+     "//ui/webui",
+   ]
+
++  # Blocked browser WebUI modules
++  if (defined(blocked_browser) && blocked_browser) {
++    deps += [
++      "//chrome/browser/ui/webui/blocked_home:blocked_home",
++    ]
++  }
++
+   if (is_android) {
+     sources += android_sources
+   }
+diff --git a/chrome/browser/ui/startup/startup_browser_creator_impl.cc b/chrome/browser/ui/startup/startup_browser_creator_impl.cc
+index 9012345..ijklmno 100644
+--- a/chrome/browser/ui/startup/startup_browser_creator_impl.cc
++++ b/chrome/browser/ui/startup/startup_browser_creator_impl.cc
+@@ -50,6 +50,10 @@
+ #include "content/public/browser/web_contents.h"
+ #include "url/gurl.h"
+
++#ifdef BLOCKED_BROWSER
++#include "chrome/browser/blocked/blocked_startup/blocked_startup_config.h"
++#endif
++
+ namespace {
+
+ // Returns true if the command line contains a switch to open a URL.
+@@ -200,6 +204,17 @@ std::vector<GURL> StartupBrowserCreatorImpl::GetURLsToOpen(
+     const CommandLine& command_line,
+     bool is_first_run) {
+   std::vector<GURL> urls;
++
++#ifdef BLOCKED_BROWSER
++  // For Blocked browser, override startup URLs with blocked-home
++  if (blocked::BlockedStartupConfig::ShouldOverrideStartupPage()) {
++    urls.push_back(blocked::BlockedStartupConfig::GetDefaultHomepageURL());
++    LOG(INFO) << "Blocked: Overriding startup page to chrome://blocked-home";
++    return urls;
++  }
++#endif
++
++  // Standard Chromium startup URL logic
+
+   // Check for URLs specified on the command line.
+   if (command_line.HasSwitch(switches::kUrl)) {
+diff --git a/chrome/browser/ui/browser_tabstrip.cc b/chrome/browser/ui/browser_tabstrip.cc
+index 0123456..jklmnop 100644
+--- a/chrome/browser/ui/browser_tabstrip.cc
++++ b/chrome/browser/ui/browser_tabstrip.cc
+@@ -30,6 +30,10 @@
+ #include "content/public/browser/web_contents.h"
+ #include "url/gurl.h"
+
++#ifdef BLOCKED_BROWSER
++#include "chrome/browser/blocked/blocked_startup/blocked_startup_config.h"
++#endif
++
+ namespace chrome {
+
+ void AddTabAt(Browser* browser,
+@@ -60,6 +64,14 @@ void AddBlankTabAt(Browser* browser,
+
+ GURL GetNewTabURL(Profile* profile) {
+   if (!profile) {
++#ifdef BLOCKED_BROWSER
++    // Return Blocked home for new tabs
++    if (blocked::BlockedStartupConfig::ShouldOverrideNewTabPage()) {
++      return blocked::BlockedStartupConfig::GetNewTabURL();
++    }
++#endif
+     return GURL(chrome::kChromeUINewTabURL);
+   }
+
+@@ -70,6 +82,14 @@ GURL GetNewTabURL(Profile* profile) {
+     return ntp_url;
+   }
+
++#ifdef BLOCKED_BROWSER
++  // Override new tab page with Blocked home
++  if (blocked::BlockedStartupConfig::ShouldOverrideNewTabPage()) {
++    LOG(INFO) << "Blocked: Overriding new tab page to chrome://blocked-home";
++    return blocked::BlockedStartupConfig::GetNewTabURL();
++  }
++#endif
++
+   // Return the default NTP URL
+   return GURL(chrome::kChromeUINewTabURL);
+ }
+diff --git a/chrome/browser/prefs/browser_prefs.cc b/chrome/browser/prefs/browser_prefs.cc
+index 1234560..klmnopq 100644
+--- a/chrome/browser/prefs/browser_prefs.cc
++++ b/chrome/browser/prefs/browser_prefs.cc
+@@ -100,6 +100,10 @@
+ #include "components/prefs/pref_registry_simple.h"
+ #include "components/prefs/pref_service.h"
+
++#ifdef BLOCKED_BROWSER
++#include "chrome/browser/blocked/blocked_startup/blocked_startup_config.h"
++#endif
++
+ namespace {
+
+ void RegisterProfilePrefsImpl(PrefRegistrySimple* registry) {
+@@ -200,7 +204,14 @@ void RegisterProfilePrefsImpl(PrefRegistrySimple* registry) {
+   // Homepage preferences
+   registry->RegisterStringPref(
+       prefs::kHomePage,
++#ifdef BLOCKED_BROWSER
++      // Default to Blocked home page
++      blocked::BlockedStartupConfig::GetDefaultHomepageURL().spec());
++  registry->RegisterBooleanPref(prefs::kHomePageIsNewTabPage, false);
++#else
+       "https://www.google.com/");
++  registry->RegisterBooleanPref(prefs::kHomePageIsNewTabPage, true);
++#endif
+
+   // Startup preferences
+   registry->RegisterIntegerPref(

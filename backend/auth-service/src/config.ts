@@ -64,23 +64,29 @@ export const config = {
     timeWindow: process.env.RATE_LIMIT_WINDOW || '1 minute'
   },
 
-  // Email
+  // Email - supports multiple providers: sendgrid, smtp, ses, console
   email: {
-    provider: (process.env.EMAIL_PROVIDER || 'console') as 'sendgrid' | 'smtp' | 'console',
+    provider: (process.env.EMAIL_PROVIDER || 'console') as 'sendgrid' | 'smtp' | 'ses' | 'console',
     from: process.env.EMAIL_FROM || 'noreply@blockd.io',
     fromName: process.env.EMAIL_FROM_NAME || 'Blockd',
     enabled: process.env.EMAIL_ENABLED === 'true',
-    // SendGrid
+    // SendGrid configuration
     sendgrid: {
       apiKey: process.env.SENDGRID_API_KEY || '',
     },
-    // SMTP
+    // SMTP configuration
     smtp: {
       host: process.env.SMTP_HOST || 'localhost',
       port: parseInt(process.env.SMTP_PORT || '587'),
       secure: process.env.SMTP_SECURE === 'true',
       user: process.env.SMTP_USER || '',
       password: process.env.SMTP_PASSWORD || '',
+    },
+    // AWS SES configuration
+    aws: {
+      region: process.env.AWS_REGION || 'us-east-1',
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
     },
   },
 
@@ -131,16 +137,28 @@ export function validateConfig(): void {
     errors.push('MFA_ENCRYPTION_KEY must contain only hexadecimal characters (0-9, a-f, A-F)');
   }
 
-  // Validate email configuration (required in production)
-  const emailProvider = process.env.EMAIL_PROVIDER;
-  if (isProduction && process.env.EMAIL_ENABLED === 'true') {
+  // Validate email configuration (required in production if email is enabled)
+  if (process.env.EMAIL_ENABLED === 'true' && isProduction) {
+    const emailProvider = process.env.EMAIL_PROVIDER;
+
     if (emailProvider === 'sendgrid' && !process.env.SENDGRID_API_KEY) {
       errors.push('SENDGRID_API_KEY is required when EMAIL_PROVIDER is sendgrid');
     }
+
     if (emailProvider === 'smtp') {
       if (!process.env.SMTP_HOST) errors.push('SMTP_HOST is required when EMAIL_PROVIDER is smtp');
       if (!process.env.SMTP_USER) errors.push('SMTP_USER is required when EMAIL_PROVIDER is smtp');
       if (!process.env.SMTP_PASSWORD) errors.push('SMTP_PASSWORD is required when EMAIL_PROVIDER is smtp');
+    }
+
+    if (emailProvider === 'ses') {
+      // AWS SES can use IAM roles, so credentials are optional
+      if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) {
+        warnings.push('AWS credentials not set - email will use IAM role authentication if available');
+      }
+      if (!process.env.AWS_REGION) {
+        warnings.push('AWS_REGION not set - defaulting to us-east-1');
+      }
     }
   }
 
