@@ -82,6 +82,11 @@ export function RealtimeChat({
     return () => {
       unsubscribeMessage()
       unsubscribeTyping()
+      // Clean up typing timeout on unmount
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current)
+        typingTimeoutRef.current = null
+      }
     }
   }, [subscribe, sessionId])
 

@@ -9,17 +9,18 @@
 #include <queue>
 #include <string>
 
+#include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/sequence_checker.h"
 #include "base/timer/timer.h"
 #include "components/keyed_service/core/keyed_service.h"
-#include "net/base/io_buffer.h"
-#include "services/network/public/cpp/simple_url_loader.h"
-#include "services/network/public/mojom/url_loader_factory.mojom.h"
-#include "services/network/public/mojom/websocket.mojom.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
+#include "net/base/io_buffer.h"
+#include "net/traffic_annotation/network_traffic_annotation.h"
+#include "services/network/public/mojom/network_context.mojom.h"
+#include "services/network/public/mojom/websocket.mojom.h"
 #include "url/gurl.h"
 
 namespace blocked {
@@ -45,9 +46,12 @@ class BlockedBackendConnector : public KeyedService,
     virtual void OnMessageReceived(const std::string& message) = 0;
   };
 
+  // Constructs a connector with the backend WebSocket URL and network context.
+  // The network_context must outlive this object and is used to create the
+  // WebSocket connection.
   BlockedBackendConnector(
       const std::string& backend_url,
-      network::mojom::URLLoaderFactory* url_loader_factory);
+      network::mojom::NetworkContext* network_context);
   ~BlockedBackendConnector() override;
 
   // KeyedService implementation
@@ -119,7 +123,7 @@ class BlockedBackendConnector : public KeyedService,
   ConnectionState state_ = ConnectionState::DISCONNECTED;
 
   // Network service interfaces
-  raw_ptr<network::mojom::URLLoaderFactory> url_loader_factory_;
+  raw_ptr<network::mojom::NetworkContext> network_context_;
   mojo::Remote<network::mojom::WebSocket> websocket_;
   mojo::Receiver<network::mojom::WebSocketHandshakeClient> handshake_receiver_{
       this};

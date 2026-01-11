@@ -68,6 +68,16 @@ async def lifespan(app: FastAPI):
     # Shutdown
     logger.info("eye_tracking_service_shutting_down")
 
+    # Cleanup WebSocket connections and resources
+    try:
+        from api.stream import shutdown_connection_manager
+        await shutdown_connection_manager()
+        logger.info("connection_manager_shutdown_complete")
+    except Exception as e:
+        logger.error("connection_manager_shutdown_error", error=str(e))
+
+    logger.info("eye_tracking_service_shutdown_complete")
+
 
 # Create FastAPI application
 app = FastAPI(

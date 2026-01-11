@@ -16,7 +16,7 @@ import { USER_ROLES } from '@/lib/constants'
 import { Loader2, CheckCircle2 } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import { OAuthButton } from '@/components/OAuthButton'
-import type { UserRole } from '@/types'
+import type { UserRole, RegisterData } from '@/types'
 
 export function RegisterPage() {
   const navigate = useNavigate()
@@ -57,13 +57,16 @@ export function RegisterPage() {
 
   const onSubmit = async (data: RegisterFormData) => {
     try {
-      const result = await registerUser({
+      const registerData: RegisterData = {
         name: data.name,
         email: data.email,
         password: data.password,
         role: data.role,
-        organization: data.newOrganization || data.organization,
-      })
+      }
+      const orgValue = data.newOrganization || data.organization
+      if (orgValue) registerData.organization = orgValue
+
+      const result = await registerUser(registerData)
 
       if (result.success) {
         setShowSuccess(true)

@@ -120,6 +120,22 @@ def close_db_session(db: Session):
     db.close()
 
 
+def close_db():
+    """
+    Close database engine and all connections.
+    Called during application shutdown.
+    """
+    engine.dispose()
+
+
+def init_db():
+    """
+    Initialize database tables.
+    Creates tables if they don't exist.
+    """
+    Base.metadata.create_all(bind=engine)
+
+
 class DatabaseManager:
     """Database operations manager"""
 
@@ -132,6 +148,9 @@ class DatabaseManager:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self.owns_session:
+            if exc_type is not None:
+                # Rollback on exception
+                self.session.rollback()
             self.session.close()
 
     def get_ai_answer_cache(
@@ -198,35 +217,39 @@ class DatabaseManager:
         Returns:
             Saved cache entry
         """
-        # Check if exists
-        existing = self.get_ai_answer_cache(question_hash, model_name)
+        try:
+            # Check if exists
+            existing = self.get_ai_answer_cache(question_hash, model_name)
 
-        if existing:
-            # Update existing
-            existing.answer_text = answer_text
-            existing.embedding = embedding
-            existing.perplexity_score = perplexity_score
-            existing.token_count = token_count
-            if metadata:
-                existing.metadata = metadata
-            self.session.commit()
-            return existing
-        else:
-            # Create new
-            cache_entry = AIAnswerCache(
-                question_hash=question_hash,
-                question_text=question_text,
-                model_name=model_name,
-                answer_text=answer_text,
-                embedding=embedding,
-                perplexity_score=perplexity_score,
-                token_count=token_count,
-                metadata=metadata or {}
-            )
-            self.session.add(cache_entry)
-            self.session.commit()
-            self.session.refresh(cache_entry)
-            return cache_entry
+            if existing:
+                # Update existing
+                existing.answer_text = answer_text
+                existing.embedding = embedding
+                existing.perplexity_score = perplexity_score
+                existing.token_count = token_count
+                if metadata:
+                    existing.metadata = metadata
+                self.session.commit()
+                return existing
+            else:
+                # Create new
+                cache_entry = AIAnswerCache(
+                    question_hash=question_hash,
+                    question_text=question_text,
+                    model_name=model_name,
+                    answer_text=answer_text,
+                    embedding=embedding,
+                    perplexity_score=perplexity_score,
+                    token_count=token_count,
+                    metadata=metadata or {}
+                )
+                self.session.add(cache_entry)
+                self.session.commit()
+                self.session.refresh(cache_entry)
+                return cache_entry
+        except Exception as e:
+            self.session.rollback()
+            raise
 
     def save_answer_analysis(
         self,
@@ -257,21 +280,25 @@ class DatabaseManager:
         Returns:
             Saved analysis entry
         """
-        analysis = AnswerAnalysis(
-            question_id=question_id,
-            answer_text=answer_text,
-            risk_score=risk_score,
-            similarity_scores=similarity_scores,
-            perplexity_score=perplexity_score,
-            is_ai_generated="true" if is_ai_generated else "false",
-            confidence_score=confidence_score,
-            response_timing=response_timing or {},
-            metadata=metadata or {}
-        )
-        self.session.add(analysis)
-        self.session.commit()
-        self.session.refresh(analysis)
-        return analysis
+        try:
+            analysis = AnswerAnalysis(
+                question_id=question_id,
+                answer_text=answer_text,
+                risk_score=risk_score,
+                similarity_scores=similarity_scores,
+                perplexity_score=perplexity_score,
+                is_ai_generated="true" if is_ai_generated else "false",
+                confidence_score=confidence_score,
+                response_timing=response_timing or {},
+                metadata=metadata or {}
+            )
+            self.session.add(analysis)
+            self.session.commit()
+            self.session.refresh(analysis)
+            return analysis
+        except Exception as e:
+            self.session.rollback()
+            raise
 
     def get_question(self, question_id: uuid.UUID) -> Optional[Question]:
         """

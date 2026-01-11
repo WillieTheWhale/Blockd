@@ -66,8 +66,6 @@ export function VideoPlayer({
 
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [isMuted, setIsMuted] = useState(false)
-  const [_volume, setVolume] = useState(1)
-  const [_isPipEnabled, setIsPipEnabled] = useState(false)
   const [availableDevices, setAvailableDevices] = useState<MediaDeviceInfo[]>([])
   const [localError, setLocalError] = useState<string | null>(null)
 
@@ -157,7 +155,7 @@ export function VideoPlayer({
         })
         .catch((err: Error) => {
           // Fullscreen may fail due to browser restrictions or user settings
-          if (process.env.NODE_ENV === 'development') {
+          if (import.meta.env.DEV) {
             console.debug('Fullscreen request failed:', err.message)
           }
         })
@@ -168,7 +166,7 @@ export function VideoPlayer({
         })
         .catch((err: Error) => {
           // Exit fullscreen failure is rare but possible
-          if (process.env.NODE_ENV === 'development') {
+          if (import.meta.env.DEV) {
             console.debug('Exit fullscreen failed:', err.message)
           }
         })
@@ -203,25 +201,6 @@ export function VideoPlayer({
   }, [])
 
   /**
-   * Handle picture-in-picture toggle (for future PiP button)
-   */
-  const _handlePictureInPicture = useCallback(async () => {
-    if (!videoRef.current) return
-
-    try {
-      if (document.pictureInPictureElement) {
-        await document.exitPictureInPicture()
-        setIsPipEnabled(false)
-      } else {
-        await videoRef.current.requestPictureInPicture()
-        setIsPipEnabled(true)
-      }
-    } catch (error) {
-      console.error('Picture-in-picture error:', error)
-    }
-  }, [])
-
-  /**
    * Handle mute toggle
    */
   const handleMuteToggle = useCallback(() => {
@@ -230,17 +209,6 @@ export function VideoPlayer({
       setIsMuted(!isMuted)
     }
   }, [isMuted])
-
-  /**
-   * Handle volume change (for future volume slider)
-   */
-  const _handleVolumeChange = useCallback((newVolume: number) => {
-    if (videoRef.current) {
-      videoRef.current.volume = newVolume
-      setVolume(newVolume)
-      setIsMuted(newVolume === 0)
-    }
-  }, [])
 
   /**
    * Get connection status badge variant

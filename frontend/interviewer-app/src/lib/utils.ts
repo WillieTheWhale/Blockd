@@ -9,6 +9,17 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /**
+ * Remove undefined values from an object (for exactOptionalPropertyTypes compliance)
+ * This is needed because React Hook Form returns undefined for optional fields,
+ * but TypeScript strictOptionalPropertyTypes doesn't allow undefined values.
+ */
+export function stripUndefined<T extends object>(obj: T): T {
+  return Object.fromEntries(
+    Object.entries(obj).filter(([, v]) => v !== undefined)
+  ) as T
+}
+
+/**
  * Format date to a readable string
  */
 export function formatDate(date: Date | string): string {
@@ -97,15 +108,16 @@ export function getInitials(name: string): string {
     return ''
   }
 
-  if (parts.length === 1) {
+  const firstPart = parts[0]
+  if (parts.length === 1 && firstPart) {
     // Single name: take first two letters
-    return parts[0].slice(0, 2).toUpperCase()
+    return firstPart.slice(0, 2).toUpperCase()
   }
 
   // Multiple names: take first letter of first two words
   return parts
     .slice(0, 2)
-    .map((n) => n[0])
+    .map((n) => n[0] ?? '')
     .join('')
     .toUpperCase()
 }

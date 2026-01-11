@@ -9,13 +9,23 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <fstream>
 
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
+#include "base/functional/bind.h"
 #include "base/logging.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
+#include "build/build_config.h"
+#include "chrome/browser/blocked/blocked_security/platform/linux/linux_platform_detector.h"
+#include "chrome/browser/blocked/blocked_security/platform/linux/x11_clipboard_monitor.h"
+
+#if BUILDFLAG(IS_LINUX)
+#include <X11/Xatom.h>
+#include <X11/Xlib.h>
+#endif
 
 namespace blocked {
 
@@ -292,11 +302,83 @@ std::string LinuxSecurityMonitor::GetFocusedWindowTitle() {
 }
 
 std::string LinuxSecurityMonitor::GetFocusedWindowTitleX11() {
-  // This would require X11 library integration
-  // Simplified version returns empty string
-  // Full implementation would use XGetInputFocus and XGetWindowProperty
+#if BUILDFLAG(IS_LINUX)
+  // Check if running under Wayland - window title queries not supported.
+  const char* session_type = std::getenv("XDG_SESSION_TYPE");
+  if (session_type && std::string(session_type) == "wayland") {
+    VLOG(2) << "Wayland session detected, window title query not supported";
+    return std::string();
+  }
 
+  // Open connection to X server.
+  Display* display = XOpenDisplay(nullptr);
+  if (!display) {
+    VLOG(1) << "Failed to open X11 display";
+    return std::string();
+  }
+
+  // Get the currently focused window.
+  Window focused_window;
+  int revert_to;
+  XGetInputFocus(display, &focused_window, &revert_to);
+
+  if (focused_window == None || focused_window == PointerRoot) {
+    XCloseDisplay(display);
+    return std::string();
+  }
+
+  std::string title;
+
+  // Try _NET_WM_NAME first (UTF-8 encoded, modern standard).
+  Atom net_wm_name = XInternAtom(display, "_NET_WM_NAME", True);
+  Atom utf8_string = XInternAtom(display, "UTF8_STRING", True);
+
+  if (net_wm_name != None && utf8_string != None) {
+    Atom actual_type;
+    int actual_format;
+    unsigned long nitems, bytes_after;
+    unsigned char* prop = nullptr;
+
+    int result = XGetWindowProperty(display, focused_window, net_wm_name,
+                                    0, 1024, False, utf8_string,
+                                    &actual_type, &actual_format,
+                                    &nitems, &bytes_after, &prop);
+
+    if (result == Success && prop != nullptr && nitems > 0) {
+      title = std::string(reinterpret_cast<char*>(prop), nitems);
+      XFree(prop);
+    } else if (prop) {
+      XFree(prop);
+    }
+  }
+
+  // Fall back to WM_NAME if _NET_WM_NAME not available.
+  if (title.empty()) {
+    Atom actual_type;
+    int actual_format;
+    unsigned long nitems, bytes_after;
+    unsigned char* prop = nullptr;
+
+    int result = XGetWindowProperty(display, focused_window, XA_WM_NAME,
+                                    0, 1024, False, XA_STRING,
+                                    &actual_type, &actual_format,
+                                    &nitems, &bytes_after, &prop);
+
+    if (result == Success && prop != nullptr && nitems > 0) {
+      title = std::string(reinterpret_cast<char*>(prop), nitems);
+      XFree(prop);
+    } else if (prop) {
+      XFree(prop);
+    }
+  }
+
+  XCloseDisplay(display);
+
+  VLOG(2) << "Focused window title: " << title;
+  return title;
+#else
   return std::string();
+#endif
 }
 
 void LinuxSecurityMonitor::StartClipboardMonitoring() {
@@ -306,10 +388,28 @@ void LinuxSecurityMonitor::StartClipboardMonitoring() {
 
   LOG(INFO) << "Starting clipboard monitoring (Linux)";
 
-  // Clipboard monitoring on Linux requires X11/Wayland integration
-  // This is a simplified version
-
-  clipboard_monitoring_active_ = true;
+  // Use platform detector to choose the right clipboard monitor.
+  if (LinuxPlatformDetector::IsX11()) {
+    x11_clipboard_monitor_ = std::make_unique<X11ClipboardMonitor>();
+    if (x11_clipboard_monitor_->Start(
+            base::BindRepeating(&LinuxSecurityMonitor::OnClipboardChanged,
+                                weak_factory_.GetWeakPtr()))) {
+      clipboard_monitoring_active_ = true;
+      LOG(INFO) << "X11 clipboard monitoring started";
+    } else {
+      LOG(ERROR) << "Failed to start X11 clipboard monitoring";
+      x11_clipboard_monitor_.reset();
+    }
+  } else if (LinuxPlatformDetector::IsWayland()) {
+    // Wayland clipboard monitoring is more complex and requires portal access.
+    // For now, log a warning and skip.
+    LOG(WARNING) << "Wayland clipboard monitoring not yet implemented";
+    // TODO: Implement Wayland clipboard monitoring via org.freedesktop.portal.Desktop
+    clipboard_monitoring_active_ = false;
+  } else {
+    LOG(WARNING) << "Unknown display server, clipboard monitoring disabled";
+    clipboard_monitoring_active_ = false;
+  }
 }
 
 void LinuxSecurityMonitor::StopClipboardMonitoring() {
@@ -318,7 +418,24 @@ void LinuxSecurityMonitor::StopClipboardMonitoring() {
   }
 
   LOG(INFO) << "Stopping clipboard monitoring (Linux)";
+
+  if (x11_clipboard_monitor_) {
+    x11_clipboard_monitor_->Stop();
+    x11_clipboard_monitor_.reset();
+  }
+
   clipboard_monitoring_active_ = false;
+}
+
+void LinuxSecurityMonitor::OnClipboardChanged(const std::string& content) {
+  // Log clipboard change for security monitoring.
+  // In production, this would notify the security service.
+  VLOG(1) << "Clipboard content changed, length: " << content.length();
+
+  // Could add suspicious content detection here, e.g.:
+  // - Large text pastes
+  // - Code snippets
+  // - Known AI-generated patterns
 }
 
 }  // namespace blocked

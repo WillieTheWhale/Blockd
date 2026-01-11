@@ -60,7 +60,34 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("Shutting down AI Detection Service...")
-    # Cleanup code here if needed
+
+    # Close Redis connections
+    try:
+        from services.cache_service import get_async_redis_client
+        redis_client = get_async_redis_client()
+        if redis_client.client:
+            await redis_client.close()
+            logger.info("Redis connection closed")
+    except Exception as e:
+        logger.error(f"Error closing Redis connection: {e}")
+
+    # Reset circuit breakers
+    try:
+        from lib.circuit_breaker import get_circuit_registry
+        registry = get_circuit_registry()
+        await registry.reset_all()
+        logger.info("Circuit breakers reset")
+    except Exception as e:
+        logger.error(f"Error resetting circuit breakers: {e}")
+
+    # Close database connections
+    try:
+        from src.database import close_db
+        close_db()
+        logger.info("Database connections closed")
+    except Exception as e:
+        logger.error(f"Error closing database: {e}")
+
     logger.info("AI Detection Service shut down")
 
 

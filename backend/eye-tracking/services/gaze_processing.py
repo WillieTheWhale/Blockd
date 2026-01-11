@@ -261,3 +261,35 @@ class GazeProcessingService:
             "fps": 1.0 / avg_processing_time if avg_processing_time > 0 else 0,
             "gaze_service_stats": self.gaze_service.get_statistics()
         }
+
+    def close(self) -> None:
+        """
+        Explicitly release resources held by this service.
+        Should be called when the service is no longer needed.
+        """
+        try:
+            # Close MediaPipe FaceMesh model (releases ~200MB)
+            if hasattr(self, 'landmark_service') and self.landmark_service:
+                if hasattr(self.landmark_service, 'facemesh') and self.landmark_service.facemesh:
+                    if hasattr(self.landmark_service.facemesh, 'face_mesh'):
+                        self.landmark_service.facemesh.face_mesh.close()
+
+            # Clear any cached data
+            if hasattr(self, 'anomaly_service') and self.anomaly_service:
+                self.anomaly_service.reset()
+
+            logger.info(
+                "gaze_processing_service_closed",
+                frames_processed=self.frames_processed
+            )
+        except Exception as e:
+            logger.error("gaze_processing_service_close_error", error=str(e))
+
+    def __enter__(self):
+        """Context manager entry"""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit - ensures cleanup"""
+        self.close()
+        return False
