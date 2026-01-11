@@ -24,8 +24,10 @@ import {
   EmailNotVerifiedError,
   MFARequiredError,
   ValidationError,
+  InvalidMFACodeError,
   handleError
 } from '../lib/errors';
+import { verifyMFACode, isValidMFACodeFormat } from '../services/mfa.service';
 import { RegisterRequest, LoginRequest, RegisterResponse, LoginResponse } from '../types/auth.types';
 import { generateMFAToken } from '../services/jwt.service';
 
@@ -183,8 +185,21 @@ export async function login(
         return;
       }
 
-      // MFA code provided - verify it (handled by MFA controller in production)
-      // For now, we'll assume it's handled separately
+      // MFA code provided - verify it
+      if (!isValidMFACodeFormat(data.mfa_code)) {
+        throw new InvalidMFACodeError('Invalid MFA code format');
+      }
+
+      if (!user.mfa_secret) {
+        throw new ValidationError('MFA is enabled but secret not found');
+      }
+
+      // Verify TOTP code (backup codes should use the 2-step /auth/mfa/verify-login flow)
+      const mfaResult = await verifyMFACode(user.mfa_secret, data.mfa_code);
+      if (!mfaResult.valid) {
+        await trackLoginAttempt(data.email, false, request.ip);
+        throw new InvalidMFACodeError();
+      }
     }
 
     // Clear failed login attempts
