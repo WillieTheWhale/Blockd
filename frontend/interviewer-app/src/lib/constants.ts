@@ -2,10 +2,40 @@
  * Application-wide constants
  */
 
+/**
+ * Runtime environment validation
+ * Validates required environment variables at startup
+ */
+function validateEnv(): void {
+  const env = import.meta.env.VITE_APP_ENV || 'development'
+
+  // In production, warn if critical env vars are missing
+  if (env === 'production') {
+    const requiredVars = ['VITE_API_URL', 'VITE_WS_URL'] as const
+    const missing = requiredVars.filter(key => !import.meta.env[key])
+
+    if (missing.length > 0) {
+      console.warn(
+        `[Blockd] Missing required environment variables: ${missing.join(', ')}. ` +
+        'Using default values. This may cause issues in production.'
+      )
+    }
+  }
+}
+
+// Run validation on module load
+validateEnv()
+
 export const APP_NAME = import.meta.env.VITE_APP_NAME || 'Blockd'
 export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 export const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000'
 export const APP_ENV = import.meta.env.VITE_APP_ENV || 'development'
+
+/**
+ * Environment helper for conditional logic
+ */
+export const IS_PRODUCTION = APP_ENV === 'production'
+export const IS_DEVELOPMENT = APP_ENV === 'development'
 
 /**
  * OAuth 2.0 configuration
