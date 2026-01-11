@@ -217,6 +217,24 @@ CREATE TABLE refresh_tokens (
     revoked_at TIMESTAMPTZ
 );
 
+-- OAuth provider type
+CREATE TYPE oauth_provider AS ENUM ('google', 'microsoft');
+
+-- OAuth accounts table (for Google/Microsoft account linking)
+CREATE TABLE oauth_accounts (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    provider oauth_provider NOT NULL,
+    provider_id VARCHAR(255) NOT NULL, -- Provider's unique user ID
+    access_token TEXT, -- Encrypted access token
+    refresh_token TEXT, -- Encrypted refresh token
+    token_expires_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (provider, provider_id),
+    UNIQUE (user_id, provider)
+);
+
 -- Chat messages table (for interview session chat)
 CREATE TABLE chat_messages (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -288,6 +306,10 @@ CREATE INDEX idx_audit_logs_action ON audit_logs(action);
 -- Refresh tokens indexes
 CREATE INDEX idx_refresh_tokens_user ON refresh_tokens(user_id);
 CREATE INDEX idx_refresh_tokens_expires ON refresh_tokens(expires_at);
+
+-- OAuth accounts indexes
+CREATE INDEX idx_oauth_accounts_user ON oauth_accounts(user_id);
+CREATE INDEX idx_oauth_accounts_provider ON oauth_accounts(provider, provider_id);
 
 -- Chat messages indexes
 CREATE INDEX idx_chat_messages_session ON chat_messages(session_id);
@@ -506,6 +528,7 @@ COMMENT ON TABLE browser_telemetry IS 'Browser telemetry data from interviewee s
 COMMENT ON TABLE session_reports IS 'Stores final session analysis reports';
 COMMENT ON TABLE audit_logs IS 'Tracks all user actions for security and compliance';
 COMMENT ON TABLE refresh_tokens IS 'Stores JWT refresh tokens for authentication';
+COMMENT ON TABLE oauth_accounts IS 'Stores linked OAuth accounts for Google and Microsoft SSO';
 COMMENT ON TABLE chat_messages IS 'Stores chat messages exchanged during interview sessions';
 
 -- Analyze tables for query optimization

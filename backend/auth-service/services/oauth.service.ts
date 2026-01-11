@@ -192,25 +192,34 @@ export async function getOrCreateOAuthUser(oauthInfo: OAuthUserInfo): Promise<Us
 /**
  * Link OAuth account to existing user
  * Creates or updates the oauth_accounts record
- *
- * NOTE: After running `npx prisma generate` and `npx prisma db push`,
- * uncomment the Prisma code below. For now, this just logs the action.
  */
 export async function linkOAuthAccount(
   userId: string,
   provider: 'google' | 'microsoft',
   providerId: string,
-  _accessToken?: string,
-  _refreshToken?: string,
-  _tokenExpiresAt?: Date
+  accessToken?: string,
+  refreshToken?: string,
+  tokenExpiresAt?: Date
 ): Promise<void> {
-  // TODO: After running `npx prisma generate`, replace with:
-  // await prisma.oAuthAccount.upsert({
-  //   where: { userId_provider: { userId, provider } },
-  //   update: { providerId, accessToken, refreshToken, tokenExpiresAt, updatedAt: new Date() },
-  //   create: { userId, provider, providerId, accessToken, refreshToken, tokenExpiresAt },
-  // });
-  console.log(`OAuth: Linking ${provider} account (${providerId}) to user ${userId}`);
+  await prisma.oAuthAccount.upsert({
+    where: {
+      userId_provider: { userId, provider }
+    },
+    update: {
+      providerId,
+      accessToken: accessToken || null,
+      refreshToken: refreshToken || null,
+      tokenExpiresAt: tokenExpiresAt || null,
+    },
+    create: {
+      userId,
+      provider,
+      providerId,
+      accessToken: accessToken || null,
+      refreshToken: refreshToken || null,
+      tokenExpiresAt: tokenExpiresAt || null,
+    },
+  });
 }
 
 /**
@@ -220,13 +229,12 @@ export async function isOAuthAccountLinked(
   userId: string,
   provider: 'google' | 'microsoft'
 ): Promise<boolean> {
-  // TODO: After running `npx prisma generate`, replace with:
-  // const account = await prisma.oAuthAccount.findUnique({
-  //   where: { userId_provider: { userId, provider } },
-  // });
-  // return !!account;
-  console.log(`OAuth: Checking if ${provider} is linked to user ${userId}`);
-  return false;
+  const account = await prisma.oAuthAccount.findUnique({
+    where: {
+      userId_provider: { userId, provider }
+    },
+  });
+  return !!account;
 }
 
 /**
@@ -236,23 +244,20 @@ export async function unlinkOAuthAccount(
   userId: string,
   provider: 'google' | 'microsoft'
 ): Promise<void> {
-  // TODO: After running `npx prisma generate`, replace with:
-  // await prisma.oAuthAccount.deleteMany({ where: { userId, provider } });
-  console.log(`OAuth: Unlinking ${provider} from user ${userId}`);
+  await prisma.oAuthAccount.deleteMany({
+    where: { userId, provider }
+  });
 }
 
 /**
  * Get linked OAuth providers for user
  */
 export async function getLinkedOAuthProviders(userId: string): Promise<string[]> {
-  // TODO: After running `npx prisma generate`, replace with:
-  // const accounts = await prisma.oAuthAccount.findMany({
-  //   where: { userId },
-  //   select: { provider: true },
-  // });
-  // return accounts.map((a) => a.provider);
-  console.log(`OAuth: Getting linked providers for user ${userId}`);
-  return [];
+  const accounts = await prisma.oAuthAccount.findMany({
+    where: { userId },
+    select: { provider: true },
+  });
+  return accounts.map((a) => a.provider);
 }
 
 /**
@@ -262,14 +267,13 @@ export async function getOAuthAccountByProviderId(
   provider: 'google' | 'microsoft',
   providerId: string
 ): Promise<{ userId: string } | null> {
-  // TODO: After running `npx prisma generate`, replace with:
-  // const account = await prisma.oAuthAccount.findUnique({
-  //   where: { provider_providerId: { provider, providerId } },
-  //   select: { userId: true },
-  // });
-  // return account;
-  console.log(`OAuth: Looking up ${provider} account ${providerId}`);
-  return null;
+  const account = await prisma.oAuthAccount.findUnique({
+    where: {
+      provider_providerId: { provider, providerId }
+    },
+    select: { userId: true },
+  });
+  return account;
 }
 
 /**
