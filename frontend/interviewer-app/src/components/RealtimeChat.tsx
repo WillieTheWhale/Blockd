@@ -103,6 +103,15 @@ export function RealtimeChat({
   }, [subscribe, sessionId])
 
   /**
+   * Clear typing users on disconnect
+   */
+  useEffect(() => {
+    if (!isConnected) {
+      setTypingUsers(new Set())
+    }
+  }, [isConnected])
+
+  /**
    * Auto-scroll to bottom on mount and when messages change
    */
   useEffect(() => {

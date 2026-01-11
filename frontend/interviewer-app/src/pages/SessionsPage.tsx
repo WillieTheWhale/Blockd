@@ -144,6 +144,21 @@ export function SessionsPage() {
     return status.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
   }
 
+  const getRiskScoreColor = (score: number): string => {
+    if (score >= 0.85) return 'text-red-600 dark:text-red-400'
+    if (score >= 0.7) return 'text-orange-600 dark:text-orange-400'
+    if (score >= 0.5) return 'text-yellow-600 dark:text-yellow-400'
+    return 'text-green-600 dark:text-green-400'
+  }
+
+  const getRiskScoreLabel = (score: number): string => {
+    if (score >= 0.85) return 'Critical'
+    if (score >= 0.7) return 'High'
+    if (score >= 0.5) return 'Medium'
+    if (score >= 0.3) return 'Low'
+    return 'Minimal'
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -253,10 +268,23 @@ export function SessionsPage() {
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-2">
-                            <div className="text-sm font-medium">--</div>
-                            <span className="text-xs text-muted-foreground">(pending)</span>
-                          </div>
+                          {session.riskScore !== undefined && session.riskScore !== null ? (
+                            <div className="flex items-center gap-2">
+                              <div className={`text-sm font-medium ${getRiskScoreColor(session.riskScore)}`}>
+                                {Math.round(session.riskScore * 100)}%
+                              </div>
+                              <span className={`text-xs ${getRiskScoreColor(session.riskScore)}`}>
+                                ({getRiskScoreLabel(session.riskScore)})
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <div className="text-sm font-medium text-muted-foreground">--</div>
+                              <span className="text-xs text-muted-foreground">
+                                {session.status === SESSION_STATUS.COMPLETED ? '(not analyzed)' : '(pending)'}
+                              </span>
+                            </div>
+                          )}
                         </TableCell>
                         <TableCell className="text-right">
                           <DropdownMenu>
