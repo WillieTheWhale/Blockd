@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import {
   Eye,
   Copy,
@@ -226,39 +226,62 @@ export function SecurityEventsDashboard({
   }, [])
 
   /**
-   * Get session events (before filtering)
+   * Get session events (memoized)
    */
-  const sessionEvents = securityEvents.filter((event) => event.sessionId === sessionId)
+  const sessionEvents = useMemo(
+    () => securityEvents.filter((event) => event.sessionId === sessionId),
+    [securityEvents, sessionId]
+  )
 
   /**
-   * Filter events
+   * Filter events (memoized)
    */
-  const filteredEvents = sessionEvents.filter((event) => {
-    // Filter by severity
-    if (!filterSeverities.has(event.severity)) return false
+  const filteredEvents = useMemo(
+    () =>
+      sessionEvents.filter((event) => {
+        // Filter by severity
+        if (!filterSeverities.has(event.severity)) return false
 
-    // Filter by type
-    if (!filterTypes.has(event.type)) return false
+        // Filter by type
+        if (!filterTypes.has(event.type)) return false
 
-    return true
-  })
+        return true
+      }),
+    [sessionEvents, filterSeverities, filterTypes]
+  )
 
   /**
-   * Get event counts by severity (from session events, not filtered)
+   * Get event counts by severity (memoized)
    */
-  const severityCounts = {
-    critical: sessionEvents.filter((e) => e.severity === 'critical').length,
-    high: sessionEvents.filter((e) => e.severity === 'high').length,
-    medium: sessionEvents.filter((e) => e.severity === 'medium').length,
-    low: sessionEvents.filter((e) => e.severity === 'low').length,
-  }
+  const severityCounts = useMemo(
+    () => ({
+      critical: sessionEvents.filter((e) => e.severity === 'critical').length,
+      high: sessionEvents.filter((e) => e.severity === 'high').length,
+      medium: sessionEvents.filter((e) => e.severity === 'medium').length,
+      low: sessionEvents.filter((e) => e.severity === 'low').length,
+    }),
+    [sessionEvents]
+  )
 
   /**
-   * Get event counts by type (from session events, not filtered)
+   * Get event counts by type (memoized)
    */
-  const getTypeCount = (type: SecurityEventType): number => {
-    return sessionEvents.filter((e) => e.type === type).length
-  }
+  const typeCounts = useMemo(
+    () =>
+      sessionEvents.reduce(
+        (acc, event) => {
+          acc[event.type] = (acc[event.type] || 0) + 1
+          return acc
+        },
+        {} as Record<SecurityEventType, number>
+      ),
+    [sessionEvents]
+  )
+
+  const getTypeCount = useCallback(
+    (type: SecurityEventType): number => typeCounts[type] || 0,
+    [typeCounts]
+  )
 
   return (
     <Card className={cn('flex flex-col', className)}>

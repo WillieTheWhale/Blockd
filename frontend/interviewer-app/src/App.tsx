@@ -1,9 +1,10 @@
+import { ReactNode } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { Toaster } from '@/components/ui/toast'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
-import { ErrorBoundary } from '@/components/ErrorBoundary'
+import { ErrorBoundary, ErrorFallback } from '@/components/ErrorBoundary'
 import { MainLayout } from '@/layouts/MainLayout'
 import { AuthLayout } from '@/layouts/AuthLayout'
 import { PublicLayout } from '@/layouts/PublicLayout'
@@ -22,6 +23,18 @@ import { SettingsPage } from '@/pages/SettingsPage'
 import { AnalyticsPage } from '@/pages/AnalyticsPage'
 import { ReportsPage } from '@/pages/ReportsPage'
 import { OAuthCallbackPage } from '@/pages/OAuthCallbackPage'
+
+/**
+ * Page-level error boundary wrapper
+ * Provides granular error isolation so one page error doesn't crash the app
+ */
+function PageErrorBoundary({ children }: { children: ReactNode }) {
+  return (
+    <ErrorBoundary fallback={<ErrorFallback variant="page" />}>
+      {children}
+    </ErrorBoundary>
+  )
+}
 
 // Create a client with production-ready configuration
 const queryClient = new QueryClient({
@@ -75,7 +88,7 @@ function App() {
             {/* OAuth callback - standalone page without layout */}
             <Route path="/auth/callback" element={<OAuthCallbackPage />} />
 
-            {/* Protected routes */}
+            {/* Protected routes with page-level error boundaries */}
             <Route
               element={
                 <ProtectedRoute>
@@ -83,14 +96,14 @@ function App() {
                 </ProtectedRoute>
               }
             >
-              <Route path="/dashboard" element={<DashboardPage />} />
-              <Route path="/sessions" element={<SessionsPage />} />
-              <Route path="/sessions/create" element={<CreateSessionPage />} />
-              <Route path="/sessions/:id" element={<SessionDetailPage />} />
-              <Route path="/sessions/:id/live" element={<InterviewSessionPage />} />
-              <Route path="/analytics" element={<AnalyticsPage />} />
-              <Route path="/reports" element={<ReportsPage />} />
-              <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/dashboard" element={<PageErrorBoundary><DashboardPage /></PageErrorBoundary>} />
+              <Route path="/sessions" element={<PageErrorBoundary><SessionsPage /></PageErrorBoundary>} />
+              <Route path="/sessions/create" element={<PageErrorBoundary><CreateSessionPage /></PageErrorBoundary>} />
+              <Route path="/sessions/:id" element={<PageErrorBoundary><SessionDetailPage /></PageErrorBoundary>} />
+              <Route path="/sessions/:id/live" element={<PageErrorBoundary><InterviewSessionPage /></PageErrorBoundary>} />
+              <Route path="/analytics" element={<PageErrorBoundary><AnalyticsPage /></PageErrorBoundary>} />
+              <Route path="/reports" element={<PageErrorBoundary><ReportsPage /></PageErrorBoundary>} />
+              <Route path="/settings" element={<PageErrorBoundary><SettingsPage /></PageErrorBoundary>} />
             </Route>
 
             {/* Catch all - 404 */}

@@ -126,11 +126,23 @@ export const useRealtimeStore = create<RealtimeStore>()(
           securityEvents: state.securityEvents.filter((e) => e.id !== eventId),
         })),
 
-      // Gaze data
+      // Gaze data (with timestamp-based deduplication)
       addGazeData: (data) =>
-        set((state) => ({
-          gazeData: [data, ...state.gazeData].slice(0, 1000), // Keep last 1000 data points
-        })),
+        set((state) => {
+          // Deduplicate: skip if we already have data with same sessionId and timestamp
+          const isDuplicate = state.gazeData.some(
+            (existing) =>
+              existing.sessionId === data.sessionId &&
+              existing.timestamp === data.timestamp
+          )
+          if (isDuplicate) {
+            return state
+          }
+
+          return {
+            gazeData: [data, ...state.gazeData].slice(0, 1000), // Keep last 1000 data points
+          }
+        }),
 
       clearGazeData: () =>
         set({
@@ -158,7 +170,7 @@ export const useRealtimeStore = create<RealtimeStore>()(
           }
 
           return {
-            chatMessages: [...state.chatMessages, message],
+            chatMessages: [...state.chatMessages, message].slice(-500), // Keep last 500 messages
             unreadMessagesCount:
               message.type === 'user' && message.senderId !== 'me'
                 ? state.unreadMessagesCount + 1
