@@ -1,0 +1,594 @@
+# Loki Logging Stack for Blockd Platform
+# Centralized log aggregation with Loki + Promtail
+#
+# This configuration deploys:
+# 1. Loki - Log aggregation and storage
+# 2. Promtail - Log collection from pods
+#
+# Prerequisites:
+# 1. Grafana should be deployed (for log visualization)
+# 2. Storage class with ReadWriteOnce support
+# 3. For production: S3-compatible object storage for long-term retention
+---
+# Loki ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: loki-config
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: loki
+    app.kubernetes.io/part-of: blockd
+data:
+  loki.yaml: |
+    auth_enabled: false
+
+    server:
+      http_listen_port: 3100
+      grpc_listen_port: 9096
+      log_level: info
+
+    common:
+      instance_addr: 127.0.0.1
+      path_prefix: /loki
+      storage:
+        filesystem:
+          chunks_directory: /loki/chunks
+          rules_directory: /loki/rules
+      replication_factor: 1
+      ring:
+        kvstore:
+          store: inmemory
+
+    query_range:
+      results_cache:
+        cache:
+          embedded_cache:
+            enabled: true
+            max_size_mb: 100
+
+    schema_config:
+      configs:
+        - from: 2024-01-01
+          store: tsdb
+          object_store: filesystem
+          schema: v13
+          index:
+            prefix: index_
+            period: 24h
+
+    ruler:
+      alertmanager_url: http://alertmanager:9093
+
+    # Retention configuration
+    limits_config:
+      retention_period: 744h  # 31 days
+      enforce_metric_name: false
+      reject_old_samples: true
+      reject_old_samples_max_age: 168h
+      ingestion_rate_mb: 16
+      ingestion_burst_size_mb: 24
+      max_query_parallelism: 32
+      max_query_series: 10000
+      max_entries_limit_per_query: 5000
+
+    compactor:
+      working_directory: /loki/compactor
+      compaction_interval: 10m
+      retention_enabled: true
+      retention_delete_delay: 2h
+      retention_delete_worker_count: 150
+      delete_request_store: filesystem
+
+    analytics:
+      reporting_enabled: false
+
+---
+# Loki StatefulSet
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: loki
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: loki
+    app.kubernetes.io/part-of: blockd
+spec:
+  serviceName: loki
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: loki
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: loki
+        app.kubernetes.io/part-of: blockd
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3100"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+
+      containers:
+        - name: loki
+          image: grafana/loki:2.9.4
+          args:
+            - -config.file=/etc/loki/loki.yaml
+
+          ports:
+            - name: http
+              containerPort: 3100
+            - name: grpc
+              containerPort: 9096
+
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 2Gi
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+
+          volumeMounts:
+            - name: config
+              mountPath: /etc/loki
+            - name: storage
+              mountPath: /loki
+            - name: tmp
+              mountPath: /tmp
+
+      volumes:
+        - name: config
+          configMap:
+            name: loki-config
+        - name: tmp
+          emptyDir: {}
+
+  volumeClaimTemplates:
+    - metadata:
+        name: storage
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: gp3
+        resources:
+          requests:
+            storage: 50Gi
+
+---
+# Loki Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: loki
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: loki
+    app.kubernetes.io/part-of: blockd
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 3100
+      targetPort: http
+    - name: grpc
+      port: 9096
+      targetPort: grpc
+  selector:
+    app.kubernetes.io/name: loki
+
+---
+# Promtail ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: promtail-config
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: promtail
+    app.kubernetes.io/part-of: blockd
+data:
+  promtail.yaml: |
+    server:
+      http_listen_port: 9080
+      grpc_listen_port: 0
+      log_level: info
+
+    positions:
+      filename: /run/promtail/positions.yaml
+
+    clients:
+      - url: http://loki:3100/loki/api/v1/push
+        tenant_id: blockd
+        batchwait: 1s
+        batchsize: 1048576
+        timeout: 10s
+
+    scrape_configs:
+      # Kubernetes pod logs
+      - job_name: kubernetes-pods
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          # Only scrape pods with logging enabled
+          - source_labels: [__meta_kubernetes_pod_annotation_promtail_io_scrape]
+            action: keep
+            regex: true
+
+          # Use pod name as job label
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+
+          # Use namespace as namespace label
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+
+          # Use container name as container label
+          - source_labels: [__meta_kubernetes_pod_container_name]
+            target_label: container
+
+          # Use app label if available
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            target_label: app
+
+          # Use component label if available
+          - source_labels: [__meta_kubernetes_pod_label_component]
+            target_label: component
+
+          # Build log path
+          - source_labels: [__meta_kubernetes_pod_uid, __meta_kubernetes_pod_container_name]
+            target_label: __path__
+            separator: /
+            replacement: /var/log/pods/*$1/*.log
+
+        pipeline_stages:
+          # Parse JSON logs from Blockd services
+          - json:
+              expressions:
+                level: level
+                message: msg
+                timestamp: time
+                requestId: requestId
+                userId: userId
+                sessionId: sessionId
+                error: err
+
+          # Set log level label
+          - labels:
+              level:
+              requestId:
+              userId:
+              sessionId:
+
+          # Parse timestamp
+          - timestamp:
+              source: timestamp
+              format: RFC3339Nano
+
+          # Output message as log line
+          - output:
+              source: message
+
+      # Kubernetes system logs
+      - job_name: kubernetes-system
+        static_configs:
+          - targets:
+              - localhost
+            labels:
+              job: kubernetes-system
+              __path__: /var/log/containers/*kube-system*.log
+        pipeline_stages:
+          - json:
+              expressions:
+                stream: stream
+                log: log
+                time: time
+          - timestamp:
+              source: time
+              format: RFC3339Nano
+          - output:
+              source: log
+
+      # Blockd application logs (all namespaces starting with blockd)
+      - job_name: blockd-apps
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names:
+                - blockd
+                - blockd-staging
+                - blockd-dev
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_container_name]
+            target_label: container
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            target_label: app
+          - source_labels: [__meta_kubernetes_pod_uid, __meta_kubernetes_pod_container_name]
+            target_label: __path__
+            separator: /
+            replacement: /var/log/pods/*$1/*.log
+        pipeline_stages:
+          # Detect and parse structured JSON logs
+          - match:
+              selector: '{namespace=~"blockd.*"}'
+              stages:
+                - json:
+                    expressions:
+                      level: level
+                      msg: msg
+                      time: time
+                      requestId: requestId
+                      userId: userId
+                      sessionId: sessionId
+                      service: service
+                      duration: duration
+                      statusCode: statusCode
+                      method: method
+                      url: url
+                - labels:
+                    level:
+                    service:
+                    requestId:
+
+---
+# Promtail DaemonSet
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: promtail
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: promtail
+    app.kubernetes.io/part-of: blockd
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: promtail
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: promtail
+        app.kubernetes.io/part-of: blockd
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9080"
+    spec:
+      serviceAccountName: promtail
+
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0
+
+      tolerations:
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+
+      containers:
+        - name: promtail
+          image: grafana/promtail:2.9.4
+          args:
+            - -config.file=/etc/promtail/promtail.yaml
+            - -config.expand-env=true
+
+          ports:
+            - name: http
+              containerPort: 9080
+
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - DAC_READ_SEARCH
+            readOnlyRootFilesystem: true
+
+          env:
+            - name: HOSTNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+
+          volumeMounts:
+            - name: config
+              mountPath: /etc/promtail
+            - name: run
+              mountPath: /run/promtail
+            # Mount pod logs
+            - name: pods
+              mountPath: /var/log/pods
+              readOnly: true
+            # Mount container logs (Docker)
+            - name: containers
+              mountPath: /var/lib/docker/containers
+              readOnly: true
+
+      volumes:
+        - name: config
+          configMap:
+            name: promtail-config
+        - name: run
+          emptyDir: {}
+        - name: pods
+          hostPath:
+            path: /var/log/pods
+        - name: containers
+          hostPath:
+            path: /var/lib/docker/containers
+
+---
+# Promtail ServiceAccount
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: promtail
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: promtail
+    app.kubernetes.io/part-of: blockd
+
+---
+# Promtail ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: promtail
+  labels:
+    app.kubernetes.io/name: promtail
+    app.kubernetes.io/part-of: blockd
+rules:
+  - apiGroups: [""]
+    resources:
+      - nodes
+      - nodes/proxy
+      - services
+      - endpoints
+      - pods
+    verbs: ["get", "watch", "list"]
+
+---
+# Promtail ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: promtail
+  labels:
+    app.kubernetes.io/name: promtail
+    app.kubernetes.io/part-of: blockd
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: promtail
+subjects:
+  - kind: ServiceAccount
+    name: promtail
+    namespace: monitoring
+
+---
+# Grafana Loki DataSource ConfigMap
+# Apply this to auto-configure Loki in Grafana
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasource-loki
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/part-of: blockd
+    grafana_datasource: "1"
+data:
+  loki-datasource.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Loki
+        type: loki
+        access: proxy
+        url: http://loki:3100
+        isDefault: false
+        jsonData:
+          maxLines: 1000
+          derivedFields:
+            - datasourceUid: prometheus
+              matcherRegex: "requestId=([a-f0-9-]+)"
+              name: RequestID
+              url: "$${__value.raw}"
+
+---
+# ServiceMonitor for Loki
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: loki
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: loki
+    app.kubernetes.io/part-of: blockd
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: loki
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+
+---
+# ServiceMonitor for Promtail
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: promtail
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: promtail
+    app.kubernetes.io/part-of: blockd
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: promtail
+  podMetricsEndpoints:
+    - port: http
+      path: /metrics
+      interval: 30s

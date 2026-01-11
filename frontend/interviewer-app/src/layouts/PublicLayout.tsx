@@ -1,6 +1,7 @@
 import { Outlet, Link, useNavigate } from 'react-router'
 import { Button } from '@/components/ui/button'
-import { LogoWithBackground, LogoIcon } from '@/components/brand'
+import { Download } from 'lucide-react'
+import { LogoWithBackground } from '@/components/brand'
 
 export function PublicLayout() {
   const navigate = useNavigate()
@@ -26,6 +27,10 @@ export function PublicLayout() {
             <a href="#pricing" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
               Pricing
             </a>
+            <Link to="/download" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
+              <Download className="h-4 w-4" />
+              Download
+            </Link>
           </nav>
 
           {/* Auth Buttons */}
@@ -65,7 +70,7 @@ export function PublicLayout() {
               <ul className="space-y-2 text-sm text-muted-foreground">
                 <li><a href="#features" className="hover:text-foreground">Features</a></li>
                 <li><a href="#pricing" className="hover:text-foreground">Pricing</a></li>
-                <li><a href="#" className="hover:text-foreground">Security</a></li>
+                <li><Link to="/download" className="hover:text-foreground">Download Browser</Link></li>
                 <li><a href="#" className="hover:text-foreground">Enterprise</a></li>
               </ul>
             </div>

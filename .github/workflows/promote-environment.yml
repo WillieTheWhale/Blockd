@@ -1,0 +1,433 @@
+# Environment Promotion Workflow for Blockd Platform
+# Promotes artifacts from staging to production after validation
+#
+# Workflow: dev -> staging -> production
+# Each promotion requires passing tests and manual approval
+name: Promote Environment
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_environment:
+        description: 'Source environment to promote from'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+      target_environment:
+        description: 'Target environment to promote to'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      image_tag:
+        description: 'Image tag to promote (leave empty for latest from source)'
+        required: false
+        type: string
+      skip_tests:
+        description: 'Skip validation tests (not recommended)'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository_owner }}/blockd
+  HELM_VERSION: '3.13.0'
+  KUBECTL_VERSION: '1.28.0'
+
+jobs:
+  validate-promotion:
+    name: Validate Promotion Request
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.resolve.outputs.image_tag }}
+      valid: ${{ steps.validate.outputs.valid }}
+
+    steps:
+      - name: Validate promotion path
+        id: validate
+        run: |
+          SOURCE="${{ inputs.source_environment }}"
+          TARGET="${{ inputs.target_environment }}"
+
+          # Validate promotion path
+          if [ "$SOURCE" == "dev" ] && [ "$TARGET" == "production" ]; then
+            echo "ERROR: Cannot promote directly from dev to production. Must go through staging."
+            echo "valid=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+          if [ "$SOURCE" == "staging" ] && [ "$TARGET" == "staging" ]; then
+            echo "ERROR: Source and target cannot be the same."
+            echo "valid=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+          if [ "$SOURCE" == "production" ]; then
+            echo "ERROR: Cannot promote from production."
+            echo "valid=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+          echo "Promotion path validated: $SOURCE -> $TARGET"
+          echo "valid=true" >> $GITHUB_OUTPUT
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve image tag
+        id: resolve
+        run: |
+          if [ -n "${{ inputs.image_tag }}" ]; then
+            TAG="${{ inputs.image_tag }}"
+          else
+            # Get latest image tag from source environment
+            SOURCE="${{ inputs.source_environment }}"
+
+            # Query the current deployed tag from Kubernetes
+            aws eks update-kubeconfig --name blockd-${SOURCE}-cluster --region us-east-1 || true
+
+            # Try to get current tag from deployment
+            TAG=$(kubectl get deployment api-gateway -n $SOURCE -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | cut -d: -f2) || TAG=""
+
+            if [ -z "$TAG" ]; then
+              # Fallback: get latest tag from registry
+              TAG=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+                "https://api.github.com/orgs/${{ github.repository_owner }}/packages/container/blockd%2Fapi-gateway/versions" \
+                | jq -r '.[0].metadata.container.tags[0]' || echo "latest")
+            fi
+          fi
+
+          echo "Resolved image tag: $TAG"
+          echo "image_tag=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Verify image exists
+        run: |
+          TAG="${{ steps.resolve.outputs.image_tag }}"
+
+          # Verify all service images exist with this tag
+          SERVICES="api-gateway auth-service session-service websocket-service ai-detection eye-tracking response-timing video-service frontend"
+
+          for SERVICE in $SERVICES; do
+            echo "Checking image: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${SERVICE}:${TAG}"
+
+            # Try to pull manifest
+            docker manifest inspect "${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${SERVICE}:${TAG}" > /dev/null 2>&1 || {
+              echo "ERROR: Image not found: ${SERVICE}:${TAG}"
+              exit 1
+            }
+          done
+
+          echo "All images verified!"
+
+  run-validation-tests:
+    name: Run Validation Tests
+    runs-on: ubuntu-latest
+    needs: [validate-promotion]
+    if: needs.validate-promotion.outputs.valid == 'true' && inputs.skip_tests != true
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v${{ env.KUBECTL_VERSION }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Configure kubectl for source environment
+        run: |
+          aws eks update-kubeconfig --name blockd-${{ inputs.source_environment }}-cluster --region us-east-1
+
+      - name: Run smoke tests on source environment
+        run: |
+          SOURCE="${{ inputs.source_environment }}"
+
+          # Port-forward to source environment
+          kubectl port-forward service/api-gateway 8080:80 -n $SOURCE &
+          sleep 10
+
+          # Health checks
+          curl -f http://localhost:8080/api/v1/health || exit 1
+          curl -f http://localhost:8080/api/v1/auth/health || exit 1
+
+          echo "Source environment health checks passed!"
+
+      - name: Run API tests
+        run: |
+          npm install -g newman
+
+          SOURCE="${{ inputs.source_environment }}"
+
+          # Run Newman tests against source environment
+          newman run tests/api/postman-collections/health-checks.postman_collection.json \
+            --env-var baseUrl=http://localhost:8080 \
+            --bail || {
+            echo "API tests failed!"
+            exit 1
+          }
+
+          echo "API tests passed!"
+
+      - name: Check source environment metrics
+        run: |
+          SOURCE="${{ inputs.source_environment }}"
+
+          # Query Prometheus for error rates
+          PROMETHEUS_URL="http://prometheus.monitoring.svc.cluster.local:9090"
+
+          # Check error rate is below 1%
+          ERROR_RATE=$(kubectl exec -n monitoring deploy/prometheus-server -- \
+            curl -s "$PROMETHEUS_URL/api/v1/query" \
+            --data-urlencode "query=sum(rate(http_requests_total{namespace='$SOURCE',status_code=~'5..'}[5m])) / sum(rate(http_requests_total{namespace='$SOURCE'}[5m])) * 100" \
+            | jq -r '.data.result[0].value[1] // "0"') || ERROR_RATE="0"
+
+          echo "Current error rate: ${ERROR_RATE}%"
+
+          if [ $(echo "$ERROR_RATE > 1" | bc -l) -eq 1 ]; then
+            echo "ERROR: Error rate too high (${ERROR_RATE}%) - cannot promote"
+            exit 1
+          fi
+
+          echo "Error rate check passed!"
+
+  approval:
+    name: Manual Approval
+    runs-on: ubuntu-latest
+    needs: [validate-promotion, run-validation-tests]
+    if: always() && needs.validate-promotion.outputs.valid == 'true' && (needs.run-validation-tests.result == 'success' || inputs.skip_tests == true)
+    environment:
+      name: ${{ inputs.target_environment }}-approval
+
+    steps:
+      - name: Request approval
+        run: |
+          echo "Promotion requires manual approval"
+          echo "Source: ${{ inputs.source_environment }}"
+          echo "Target: ${{ inputs.target_environment }}"
+          echo "Image tag: ${{ needs.validate-promotion.outputs.image_tag }}"
+          echo "Requested by: ${{ github.actor }}"
+
+  promote:
+    name: Promote to Target Environment
+    runs-on: ubuntu-latest
+    needs: [validate-promotion, approval]
+    environment:
+      name: ${{ inputs.target_environment }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v${{ env.KUBECTL_VERSION }}
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v${{ env.HELM_VERSION }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag images for target environment
+        run: |
+          TAG="${{ needs.validate-promotion.outputs.image_tag }}"
+          TARGET="${{ inputs.target_environment }}"
+          NEW_TAG="${TARGET}-$(date +%Y%m%d-%H%M%S)"
+
+          SERVICES="api-gateway auth-service session-service websocket-service ai-detection eye-tracking response-timing video-service frontend"
+
+          for SERVICE in $SERVICES; do
+            SOURCE_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${SERVICE}:${TAG}"
+            TARGET_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${SERVICE}:${NEW_TAG}"
+
+            echo "Tagging ${SOURCE_IMAGE} as ${TARGET_IMAGE}"
+
+            # Pull, tag, and push
+            docker pull $SOURCE_IMAGE
+            docker tag $SOURCE_IMAGE $TARGET_IMAGE
+            docker push $TARGET_IMAGE
+          done
+
+          echo "NEW_TAG=$NEW_TAG" >> $GITHUB_ENV
+
+      - name: Configure kubectl for target environment
+        run: |
+          TARGET="${{ inputs.target_environment }}"
+          aws eks update-kubeconfig --name blockd-${TARGET}-cluster --region us-east-1
+
+      - name: Run database migrations
+        run: |
+          TARGET="${{ inputs.target_environment }}"
+          TAG="${{ env.NEW_TAG }}"
+
+          # Create migration job
+          JOB_NAME="db-migration-promote-${{ github.run_id }}"
+
+          cat <<EOF | kubectl apply -f -
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: $JOB_NAME
+            namespace: $TARGET
+          spec:
+            ttlSecondsAfterFinished: 3600
+            backoffLimit: 3
+            template:
+              spec:
+                restartPolicy: Never
+                containers:
+                  - name: prisma-migrate
+                    image: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/api-gateway:${TAG}
+                    command: ["npx"]
+                    args: ["prisma", "migrate", "deploy"]
+                    env:
+                      - name: DATABASE_URL
+                        valueFrom:
+                          secretKeyRef:
+                            name: database-credentials
+                            key: url
+          EOF
+
+          # Wait for migration
+          kubectl wait --for=condition=complete --timeout=600s job/$JOB_NAME -n $TARGET
+
+          echo "Database migration completed!"
+
+      - name: Deploy to target environment
+        run: |
+          TARGET="${{ inputs.target_environment }}"
+          TAG="${{ env.NEW_TAG }}"
+
+          helm upgrade --install blockd ./k8s/helm/blockd \
+            --namespace $TARGET \
+            --values k8s/helm/blockd/values-${TARGET}.yaml \
+            --set image.tag=$TAG \
+            --set image.repository=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }} \
+            --set environment=$TARGET \
+            --wait \
+            --timeout 15m \
+            --atomic
+
+          echo "Deployment to $TARGET completed!"
+
+      - name: Verify deployment
+        run: |
+          TARGET="${{ inputs.target_environment }}"
+
+          # Wait for all deployments
+          kubectl wait --for=condition=available --timeout=10m deployment --all -n $TARGET
+
+          # Health checks
+          kubectl run health-check-${{ github.run_id }} \
+            --image=curlimages/curl:latest \
+            --rm -i --restart=Never \
+            --namespace $TARGET \
+            -- sh -c "
+              curl -f http://api-gateway/api/v1/health || exit 1
+              echo 'Health check passed!'
+            "
+
+          echo "Deployment verified!"
+
+      - name: Create promotion record
+        run: |
+          # Create a ConfigMap to track promotion history
+          TARGET="${{ inputs.target_environment }}"
+
+          kubectl create configmap promotion-${{ github.run_id }} \
+            --namespace $TARGET \
+            --from-literal=source=${{ inputs.source_environment }} \
+            --from-literal=target=$TARGET \
+            --from-literal=tag=${{ env.NEW_TAG }} \
+            --from-literal=promoted_by=${{ github.actor }} \
+            --from-literal=promoted_at=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+            --from-literal=run_id=${{ github.run_id }} || true
+
+  notify:
+    name: Send Notification
+    runs-on: ubuntu-latest
+    needs: [validate-promotion, promote]
+    if: always()
+
+    steps:
+      - name: Send success notification
+        if: needs.promote.result == 'success'
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "Environment promotion successful",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": ":white_check_mark: *Environment Promotion Successful*\n*Source:* ${{ inputs.source_environment }}\n*Target:* ${{ inputs.target_environment }}\n*Image Tag:* ${{ needs.validate-promotion.outputs.image_tag }}\n*Promoted By:* ${{ github.actor }}"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Send failure notification
+        if: needs.promote.result == 'failure'
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "Environment promotion failed",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": ":x: *Environment Promotion Failed*\n*Source:* ${{ inputs.source_environment }}\n*Target:* ${{ inputs.target_environment }}\n*Requested By:* ${{ github.actor }}\n*Details:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

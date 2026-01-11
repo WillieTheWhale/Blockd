@@ -1,0 +1,437 @@
+# AlertManager Configuration for Blockd Platform
+# Manages alert routing, grouping, and notification delivery
+#
+# Prerequisites:
+# 1. Install kube-prometheus-stack or standalone AlertManager
+# 2. Create secrets for notification credentials (slack, pagerduty, email)
+# 3. Apply this ConfigMap/Secret to configure AlertManager
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: alertmanager-config
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: alertmanager
+    app.kubernetes.io/part-of: blockd
+type: Opaque
+stringData:
+  alertmanager.yaml: |
+    # Global configuration
+    global:
+      # Default SMTP configuration
+      smtp_smarthost: 'smtp.sendgrid.net:587'
+      smtp_from: 'alerts@blockd.com'
+      smtp_auth_username: 'apikey'
+      # smtp_auth_password: Set via external secret
+      smtp_require_tls: true
+
+      # Default Slack configuration
+      slack_api_url_file: '/etc/alertmanager/secrets/slack-webhook-url'
+
+      # Resolve timeout for alerts
+      resolve_timeout: 5m
+
+      # PagerDuty global configuration
+      pagerduty_url: 'https://events.pagerduty.com/v2/enqueue'
+
+    # Alert templates
+    templates:
+      - '/etc/alertmanager/templates/*.tmpl'
+
+    # Inhibition rules - prevent noisy alerts when higher severity exists
+    inhibit_rules:
+      # If critical alert is firing, suppress warning alerts for same component
+      - source_matchers:
+          - severity="critical"
+        target_matchers:
+          - severity="warning"
+        equal:
+          - alertname
+          - namespace
+          - component
+
+      # If cluster is down, suppress individual node alerts
+      - source_matchers:
+          - alertname="RedisClusterStateNotOK"
+        target_matchers:
+          - component="redis"
+          - severity=~"warning|high"
+        equal:
+          - namespace
+
+      # If database primary is down, suppress replica alerts
+      - source_matchers:
+          - alertname="PostgresPrimaryDown"
+        target_matchers:
+          - alertname=~"PostgresReplicaLag.*"
+        equal:
+          - namespace
+
+    # Route tree - defines how alerts are grouped and routed
+    route:
+      # Default receiver
+      receiver: 'default-slack'
+
+      # Group alerts by these labels
+      group_by:
+        - alertname
+        - namespace
+        - severity
+        - component
+
+      # Wait before sending initial notification (to collect more alerts)
+      group_wait: 30s
+
+      # Wait before sending updated notification for same group
+      group_interval: 5m
+
+      # Wait before resending notification for same alert
+      repeat_interval: 4h
+
+      # Child routes (evaluated in order)
+      routes:
+        # Critical alerts - page on-call immediately
+        - matchers:
+            - severity="critical"
+          receiver: 'pagerduty-critical'
+          continue: true  # Also send to Slack for visibility
+          group_wait: 0s
+          repeat_interval: 30m
+
+        # High severity alerts - page during business hours
+        - matchers:
+            - severity="high"
+          receiver: 'pagerduty-high'
+          continue: true
+          group_wait: 10s
+          repeat_interval: 2h
+          # Only page during business hours (9am-6pm PT)
+          mute_time_intervals:
+            - outside-business-hours
+
+        # Security events - dedicated channel + PagerDuty
+        - matchers:
+            - component="security"
+          receiver: 'security-channel'
+          continue: true
+          group_wait: 0s
+
+        # Database alerts - DBA channel
+        - matchers:
+            - component=~"postgres|redis|rabbitmq"
+          receiver: 'database-channel'
+          continue: false
+
+        # AI/ML service alerts
+        - matchers:
+            - component=~"ai-detection|eye-tracking|response-timing"
+          receiver: 'ml-channel'
+          continue: false
+
+        # Video/WebRTC alerts
+        - matchers:
+            - component=~"video|webrtc|mediasoup"
+          receiver: 'video-channel'
+          continue: false
+
+        # Infrastructure alerts
+        - matchers:
+            - component=~"kubernetes|node|network"
+          receiver: 'infra-channel'
+          continue: false
+
+        # Warning alerts - less urgent
+        - matchers:
+            - severity="warning"
+          receiver: 'default-slack'
+          group_wait: 1m
+          repeat_interval: 12h
+
+    # Time intervals for muting
+    time_intervals:
+      - name: outside-business-hours
+        time_intervals:
+          - weekdays: ['saturday', 'sunday']
+          - times:
+              - start_time: '00:00'
+                end_time: '09:00'
+          - times:
+              - start_time: '18:00'
+                end_time: '24:00'
+
+    # Receiver definitions
+    receivers:
+      # Default Slack channel
+      - name: 'default-slack'
+        slack_configs:
+          - channel: '#blockd-alerts'
+            send_resolved: true
+            title: '{{ template "slack.blockd.title" . }}'
+            text: '{{ template "slack.blockd.text" . }}'
+            color: '{{ if eq .Status "firing" }}{{ if eq .CommonLabels.severity "critical" }}danger{{ else if eq .CommonLabels.severity "warning" }}warning{{ else }}good{{ end }}{{ else }}good{{ end }}'
+            actions:
+              - type: button
+                text: 'Runbook'
+                url: '{{ (index .Alerts 0).Annotations.runbook_url }}'
+              - type: button
+                text: 'Silence'
+                url: '{{ template "slack.blockd.silence_url" . }}'
+
+      # PagerDuty for critical alerts (24/7)
+      - name: 'pagerduty-critical'
+        pagerduty_configs:
+          - service_key_file: '/etc/alertmanager/secrets/pagerduty-critical-key'
+            send_resolved: true
+            severity: critical
+            description: '{{ .CommonAnnotations.summary }}'
+            details:
+              firing: '{{ template "pagerduty.blockd.instances" .Alerts.Firing }}'
+              resolved: '{{ template "pagerduty.blockd.instances" .Alerts.Resolved }}'
+              num_firing: '{{ .Alerts.Firing | len }}'
+              num_resolved: '{{ .Alerts.Resolved | len }}'
+
+      # PagerDuty for high severity (business hours only)
+      - name: 'pagerduty-high'
+        pagerduty_configs:
+          - service_key_file: '/etc/alertmanager/secrets/pagerduty-high-key'
+            send_resolved: true
+            severity: error
+            description: '{{ .CommonAnnotations.summary }}'
+
+      # Security alerts channel
+      - name: 'security-channel'
+        slack_configs:
+          - channel: '#blockd-security'
+            send_resolved: true
+            title: 'SECURITY: {{ template "slack.blockd.title" . }}'
+            text: '{{ template "slack.blockd.text" . }}'
+            color: 'danger'
+        pagerduty_configs:
+          - service_key_file: '/etc/alertmanager/secrets/pagerduty-security-key'
+            send_resolved: true
+            severity: critical
+
+      # Database team channel
+      - name: 'database-channel'
+        slack_configs:
+          - channel: '#blockd-dba'
+            send_resolved: true
+            title: '{{ template "slack.blockd.title" . }}'
+            text: '{{ template "slack.blockd.text" . }}'
+            color: '{{ if eq .Status "firing" }}warning{{ else }}good{{ end }}'
+
+      # ML team channel
+      - name: 'ml-channel'
+        slack_configs:
+          - channel: '#blockd-ml'
+            send_resolved: true
+            title: '{{ template "slack.blockd.title" . }}'
+            text: '{{ template "slack.blockd.text" . }}'
+
+      # Video team channel
+      - name: 'video-channel'
+        slack_configs:
+          - channel: '#blockd-video'
+            send_resolved: true
+            title: '{{ template "slack.blockd.title" . }}'
+            text: '{{ template "slack.blockd.text" . }}'
+
+      # Infrastructure team channel
+      - name: 'infra-channel'
+        slack_configs:
+          - channel: '#blockd-infra'
+            send_resolved: true
+            title: '{{ template "slack.blockd.title" . }}'
+            text: '{{ template "slack.blockd.text" . }}'
+
+      # Email receiver (for compliance/audit trail)
+      - name: 'email-ops'
+        email_configs:
+          - to: 'ops-alerts@blockd.com'
+            send_resolved: true
+            headers:
+              Subject: '[{{ .Status | toUpper }}{{ if eq .Status "firing" }} x{{ .Alerts.Firing | len }}{{ end }}] {{ .GroupLabels.alertname }}'
+
+---
+# AlertManager templates ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alertmanager-templates
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: alertmanager
+    app.kubernetes.io/part-of: blockd
+data:
+  blockd.tmpl: |
+    {{/* Title for Slack messages */}}
+    {{ define "slack.blockd.title" -}}
+    [{{ .Status | toUpper }}{{ if eq .Status "firing" }} x{{ .Alerts.Firing | len }}{{ end }}] {{ .GroupLabels.alertname }}
+    {{- end }}
+
+    {{/* Text body for Slack messages */}}
+    {{ define "slack.blockd.text" -}}
+    {{ range .Alerts }}
+    *Alert:* {{ .Annotations.summary }}
+    *Severity:* {{ .Labels.severity }}
+    *Component:* {{ .Labels.component }}
+    *Namespace:* {{ .Labels.namespace }}
+    *Description:* {{ .Annotations.description }}
+    {{ if .Annotations.runbook_url }}*Runbook:* {{ .Annotations.runbook_url }}{{ end }}
+    *Started:* {{ .StartsAt.Format "2006-01-02 15:04:05 MST" }}
+    {{ if .EndsAt }}*Ended:* {{ .EndsAt.Format "2006-01-02 15:04:05 MST" }}{{ end }}
+    ---
+    {{ end }}
+    {{- end }}
+
+    {{/* Silence URL for Slack actions */}}
+    {{ define "slack.blockd.silence_url" -}}
+    {{ .ExternalURL }}/#/silences/new?filter=%7B
+    {{- range .CommonLabels.SortedPairs -}}
+    {{- if ne .Name "alertname" -}}
+    {{- .Name }}%3D%22{{- .Value -}}%22%2C%20
+    {{- end -}}
+    {{- end -}}
+    alertname%3D%22{{ .CommonLabels.alertname }}%22%7D
+    {{- end }}
+
+    {{/* PagerDuty instances format */}}
+    {{ define "pagerduty.blockd.instances" -}}
+    {{ range . }}
+    - {{ .Labels.instance }}: {{ .Annotations.summary }}
+    {{ end }}
+    {{- end }}
+
+---
+# External Secrets for AlertManager credentials
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: alertmanager-secrets
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: alertmanager
+    app.kubernetes.io/part-of: blockd
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: aws-secrets-manager
+    kind: ClusterSecretStore
+  target:
+    name: alertmanager-secrets
+    creationPolicy: Owner
+  data:
+    - secretKey: slack-webhook-url
+      remoteRef:
+        key: blockd/alertmanager
+        property: slack_webhook_url
+    - secretKey: pagerduty-critical-key
+      remoteRef:
+        key: blockd/alertmanager
+        property: pagerduty_critical_key
+    - secretKey: pagerduty-high-key
+      remoteRef:
+        key: blockd/alertmanager
+        property: pagerduty_high_key
+    - secretKey: pagerduty-security-key
+      remoteRef:
+        key: blockd/alertmanager
+        property: pagerduty_security_key
+    - secretKey: smtp-password
+      remoteRef:
+        key: blockd/alertmanager
+        property: smtp_password
+
+---
+# AlertManager Deployment (if not using kube-prometheus-stack)
+apiVersion: monitoring.coreos.com/v1
+kind: Alertmanager
+metadata:
+  name: blockd
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: alertmanager
+    app.kubernetes.io/part-of: blockd
+spec:
+  replicas: 3
+  version: v0.27.0
+  configSecret: alertmanager-config
+
+  # Resource limits
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 200m
+      memory: 512Mi
+
+  # Pod security context
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    fsGroup: 2000
+    seccompProfile:
+      type: RuntimeDefault
+
+  # Anti-affinity for HA
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: alertmanager
+            topologyKey: kubernetes.io/hostname
+
+  # Storage for silences and notifications
+  storage:
+    volumeClaimTemplate:
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi
+        storageClassName: gp3
+
+  # Mount secrets
+  volumes:
+    - name: alertmanager-secrets
+      secret:
+        secretName: alertmanager-secrets
+    - name: alertmanager-templates
+      configMap:
+        name: alertmanager-templates
+
+  volumeMounts:
+    - name: alertmanager-secrets
+      mountPath: /etc/alertmanager/secrets
+      readOnly: true
+    - name: alertmanager-templates
+      mountPath: /etc/alertmanager/templates
+      readOnly: true
+
+---
+# Service for AlertManager
+apiVersion: v1
+kind: Service
+metadata:
+  name: alertmanager
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: alertmanager
+    app.kubernetes.io/part-of: blockd
+spec:
+  type: ClusterIP
+  ports:
+    - name: web
+      port: 9093
+      targetPort: 9093
+    - name: mesh
+      port: 9094
+      targetPort: 9094
+  selector:
+    app.kubernetes.io/name: alertmanager

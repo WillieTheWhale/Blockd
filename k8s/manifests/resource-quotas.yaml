@@ -1,0 +1,85 @@
+# Resource Quotas and Limit Ranges for Blockd Platform
+# Prevents resource exhaustion and ensures fair resource allocation
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: blockd-compute-quota
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: resource-management
+spec:
+  hard:
+    # CPU limits
+    requests.cpu: "100"
+    limits.cpu: "200"
+    # Memory limits
+    requests.memory: 200Gi
+    limits.memory: 400Gi
+    # Pod limits
+    pods: "200"
+    # Replica limits
+    count/deployments.apps: "50"
+    count/statefulsets.apps: "20"
+    count/jobs.batch: "100"
+    # PVC limits
+    persistentvolumeclaims: "100"
+    requests.storage: 2Ti
+
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: blockd-object-quota
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: resource-management
+spec:
+  hard:
+    # Service limits
+    services: "50"
+    services.loadbalancers: "5"
+    services.nodeports: "10"
+    # Secret/ConfigMap limits
+    secrets: "100"
+    configmaps: "100"
+
+---
+# LimitRange - Default limits for containers without resource specifications
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: blockd-limit-range
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: resource-management
+spec:
+  limits:
+    # Default container limits
+    - type: Container
+      default:
+        cpu: "500m"
+        memory: "512Mi"
+      defaultRequest:
+        cpu: "100m"
+        memory: "128Mi"
+      min:
+        cpu: "10m"
+        memory: "32Mi"
+      max:
+        cpu: "8"
+        memory: "16Gi"
+    # PVC limits
+    - type: PersistentVolumeClaim
+      min:
+        storage: 1Gi
+      max:
+        storage: 500Gi
+    # Pod limits (aggregate of all containers)
+    - type: Pod
+      max:
+        cpu: "16"
+        memory: "32Gi"

@@ -6,11 +6,10 @@ on:
       - main
   workflow_dispatch:
     inputs:
-      skip_approval:
-        description: 'Skip manual approval'
-        required: false
-        type: boolean
-        default: false
+      deploy_reason:
+        description: 'Reason for deployment (required for audit)'
+        required: true
+        type: string
 
 env:
   REGISTRY: ghcr.io
@@ -32,10 +31,122 @@ jobs:
           echo "Commit: ${{ github.sha }}"
           echo "Author: ${{ github.actor }}"
 
+  run-migrations:
+    name: Run Database Migrations
+    runs-on: ubuntu-latest
+    needs: [approval]
+    environment:
+      name: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v${{ env.KUBECTL_VERSION }}
+
+      - name: Configure kubectl for EKS
+        run: |
+          aws eks update-kubeconfig --name blockd-production-cluster --region us-east-1
+
+      - name: Create migration job
+        run: |
+          # Generate unique job name
+          JOB_NAME="db-migration-${{ github.run_id }}"
+
+          # Create migration job manifest
+          cat <<EOF | kubectl apply -f -
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: $JOB_NAME
+            namespace: production
+            labels:
+              app: db-migration
+              run-id: "${{ github.run_id }}"
+          spec:
+            ttlSecondsAfterFinished: 3600
+            backoffLimit: 3
+            template:
+              spec:
+                restartPolicy: Never
+                securityContext:
+                  runAsNonRoot: true
+                  runAsUser: 1000
+                  fsGroup: 1000
+                  seccompProfile:
+                    type: RuntimeDefault
+                containers:
+                  - name: prisma-migrate
+                    image: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/api-gateway:${{ github.sha }}
+                    command: ["npx"]
+                    args: ["prisma", "migrate", "deploy"]
+                    securityContext:
+                      allowPrivilegeEscalation: false
+                      capabilities:
+                        drop:
+                          - ALL
+                      readOnlyRootFilesystem: false
+                    env:
+                      - name: DATABASE_URL
+                        valueFrom:
+                          secretKeyRef:
+                            name: database-credentials
+                            key: url
+                    resources:
+                      requests:
+                        cpu: 100m
+                        memory: 256Mi
+                      limits:
+                        cpu: 500m
+                        memory: 512Mi
+          EOF
+
+          echo "JOB_NAME=$JOB_NAME" >> $GITHUB_ENV
+
+      - name: Wait for migration to complete
+        run: |
+          echo "Waiting for database migration to complete..."
+
+          # Wait for job completion (timeout 10 minutes)
+          kubectl wait --for=condition=complete --timeout=600s \
+            job/${{ env.JOB_NAME }} -n production || \
+          kubectl wait --for=condition=failed --timeout=10s \
+            job/${{ env.JOB_NAME }} -n production
+
+          # Check if migration succeeded
+          STATUS=$(kubectl get job ${{ env.JOB_NAME }} -n production -o jsonpath='{.status.succeeded}')
+          if [ "$STATUS" != "1" ]; then
+            echo "Migration failed!"
+            kubectl logs job/${{ env.JOB_NAME }} -n production
+            exit 1
+          fi
+
+          echo "Migration completed successfully!"
+
+      - name: Get migration logs
+        if: always()
+        run: |
+          kubectl logs job/${{ env.JOB_NAME }} -n production || true
+
+      - name: Cleanup migration job on failure
+        if: failure()
+        run: |
+          kubectl delete job ${{ env.JOB_NAME }} -n production || true
+
   deploy-green:
     name: Deploy Green Environment
     runs-on: ubuntu-latest
-    needs: [approval]
+    needs: [approval, run-migrations]
     environment:
       name: production
       url: https://blockd.io
@@ -225,11 +336,101 @@ jobs:
 
           echo "Traffic switched to ${{ steps.envs.outputs.new }} environment"
 
-      - name: Monitor metrics for 10 minutes
+      - name: Run post-switch smoke tests
         run: |
-          echo "Monitoring application health for 10 minutes..."
+          echo "Running comprehensive smoke tests after traffic switch..."
+          PROD_URL="https://blockd.io"
+          FAILED=0
+
+          # Test all critical endpoints
+          echo "Testing API Gateway..."
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 10 $PROD_URL/api/health)
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "ERROR: API Gateway health check failed with status $HTTP_CODE"
+            FAILED=1
+          fi
+
+          echo "Testing Auth Service..."
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 10 $PROD_URL/api/auth/health)
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "ERROR: Auth Service health check failed with status $HTTP_CODE"
+            FAILED=1
+          fi
+
+          echo "Testing Session Service..."
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 10 $PROD_URL/api/sessions/health)
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "ERROR: Session Service health check failed with status $HTTP_CODE"
+            FAILED=1
+          fi
+
+          echo "Testing AI Detection Service..."
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 10 $PROD_URL/api/detection/health)
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "ERROR: AI Detection health check failed with status $HTTP_CODE"
+            FAILED=1
+          fi
+
+          echo "Testing Video Service..."
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 10 $PROD_URL/api/video/health)
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "ERROR: Video Service health check failed with status $HTTP_CODE"
+            FAILED=1
+          fi
+
+          echo "Testing WebSocket connectivity..."
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 10 $PROD_URL/api/ws/health)
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "ERROR: WebSocket health check failed with status $HTTP_CODE"
+            FAILED=1
+          fi
+
+          echo "Testing Frontend..."
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 10 $PROD_URL/)
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "ERROR: Frontend health check failed with status $HTTP_CODE"
+            FAILED=1
+          fi
+
+          if [ $FAILED -eq 1 ]; then
+            echo "Smoke tests FAILED - triggering rollback"
+            exit 1
+          fi
+
+          echo "All smoke tests passed!"
+
+      - name: Query Prometheus for error rates
+        run: |
+          echo "Querying Prometheus for error rate metrics..."
+          PROMETHEUS_URL="http://prometheus.monitoring.svc.cluster.local:9090"
+
+          # Port-forward to Prometheus
+          kubectl port-forward -n monitoring svc/prometheus-operated 9090:9090 &
+          PF_PID=$!
+          sleep 5
+
+          # Query error rate for the last 2 minutes
+          ERROR_RATE=$(curl -s "http://localhost:9090/api/v1/query" \
+            --data-urlencode 'query=sum(rate(http_requests_total{status=~"5..",namespace="production"}[2m])) / sum(rate(http_requests_total{namespace="production"}[2m])) * 100' \
+            | jq -r '.data.result[0].value[1] // "0"')
+
+          kill $PF_PID 2>/dev/null || true
+
+          echo "Current error rate: ${ERROR_RATE}%"
+
+          # Fail if error rate > 1%
+          if [ "$(echo "$ERROR_RATE > 1" | bc -l)" -eq 1 ]; then
+            echo "ERROR: Error rate ${ERROR_RATE}% exceeds 1% threshold"
+            exit 1
+          fi
+
+          echo "Error rate is within acceptable limits"
+
+      - name: Monitor metrics for 5 minutes
+        run: |
+          echo "Monitoring application health for 5 minutes..."
           START_TIME=$(date +%s)
-          END_TIME=$((START_TIME + 600))
+          END_TIME=$((START_TIME + 300))
 
           while [ $(date +%s) -lt $END_TIME ]; do
             # Check if all pods are running
@@ -241,26 +442,18 @@ jobs:
               exit 1
             fi
 
-            # Check error rate (would integrate with Prometheus here)
-            # For now, just check pod status
-            echo "Health check passed at $(date)"
+            # Check restarts
+            RESTARTING_PODS=$(kubectl get pods -n production -l version=${{ steps.envs.outputs.new }} -o jsonpath='{.items[*].status.containerStatuses[*].restartCount}' | tr ' ' '\n' | awk '{sum+=$1} END {print sum}')
+            if [ "$RESTARTING_PODS" -gt 5 ]; then
+              echo "ERROR: High restart count detected: $RESTARTING_PODS"
+              exit 1
+            fi
 
-            sleep 60
+            echo "Health check passed at $(date)"
+            sleep 30
           done
 
           echo "Monitoring period completed successfully"
-
-      - name: Verify deployment health
-        run: |
-          # Test production URL
-          PROD_URL="https://blockd.io"
-
-          echo "Testing production endpoints..."
-          curl -f $PROD_URL/api/health || exit 1
-          curl -f $PROD_URL/api/auth/health || exit 1
-          curl -f $PROD_URL/api/sessions/health || exit 1
-
-          echo "Production health check passed!"
 
       - name: Rollback on failure
         if: failure()

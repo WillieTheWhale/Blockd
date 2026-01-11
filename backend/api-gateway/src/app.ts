@@ -15,6 +15,15 @@ import { errorHandler, notFoundHandler } from '../middleware/error-handler.middl
 import { loggerConfig, genReqId, requestTimingStart, requestTimingEnd } from '../middleware/logger.middleware';
 import { csrfProtectionMiddleware } from '../middleware/csrf.middleware';
 
+// Import metrics
+import {
+  register,
+  collectDefaultMetrics,
+  fastifyMetricsPlugin,
+  httpRequestDuration,
+  httpRequestsTotal,
+} from '../../shared/metrics/index.js';
+
 // Import routes
 import healthRoutes from '../routes/health.routes';
 import authRoutes from '../routes/auth.routes';
@@ -34,6 +43,9 @@ export interface AppOptions extends FastifyServerOptions {
 export async function createApp(options: AppOptions = {}): Promise<FastifyInstance> {
   // Validate configuration
   validateConfig();
+
+  // Initialize Prometheus metrics collection
+  collectDefaultMetrics();
 
   // Create Fastify instance with security defaults
   const app = Fastify({
@@ -68,6 +80,9 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
  * Register Fastify plugins
  */
 async function registerPlugins(app: FastifyInstance): Promise<void> {
+  // Register Prometheus metrics plugin
+  await app.register(fastifyMetricsPlugin);
+
   // Register CORS
   await app.register(cors, corsOptions);
 
@@ -183,6 +198,12 @@ async function registerRoutes(app: FastifyInstance, prefix = '/api/v1'): Promise
       status: 'running',
       documentation: config.server.isDevelopment ? '/docs' : undefined,
     };
+  });
+
+  // Prometheus metrics endpoint (not versioned, for scraping)
+  app.get('/metrics', async (_request, reply) => {
+    reply.header('Content-Type', register.contentType);
+    return register.metrics();
   });
 }
 
