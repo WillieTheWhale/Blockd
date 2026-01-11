@@ -19,7 +19,11 @@ data:
   api_gateway_url: http://api-gateway:3000
   auth_service_url: http://auth-service:3001
   session_service_url: http://session-service:3002
+  websocket_service_url: http://websocket-service:3004
   ai_detection_url: http://ai-detection:8000
   eye_tracking_url: http://eye-tracking:8001
   response_timing_url: http://response-timing:8002
   video_service_url: http://video-service:8003
+
+  # CORS configuration
+  allowed_origins: "https://blockd.io,https://app.blockd.io,https://api.blockd.io"
