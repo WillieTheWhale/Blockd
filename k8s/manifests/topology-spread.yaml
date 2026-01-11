@@ -1,0 +1,259 @@
+# Topology Spread Constraints for Blockd Platform
+# Ensures high availability by spreading pods across zones and nodes
+#
+# This file provides reusable topology spread constraint templates
+# that should be applied to service deployments
+---
+# Example: API Gateway with topology spread
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+  namespace: blockd
+  labels:
+    app.kubernetes.io/name: api-gateway
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: gateway
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: api-gateway
+        app.kubernetes.io/part-of: blockd
+        app.kubernetes.io/component: gateway
+    spec:
+      # Spread pods across availability zones
+      topologySpreadConstraints:
+        # Zone-level spread (hard constraint)
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: api-gateway
+          minDomains: 2
+
+        # Node-level spread (soft constraint)
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: api-gateway
+
+      # Anti-affinity as backup
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: api-gateway
+                topologyKey: kubernetes.io/hostname
+
+      # Priority class
+      priorityClassName: blockd-high-priority
+
+      containers:
+        - name: api-gateway
+          image: ghcr.io/blockd/api-gateway:latest
+          # ... container spec
+
+---
+# Example: Auth Service with topology spread
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-service
+  namespace: blockd
+  labels:
+    app.kubernetes.io/name: auth-service
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: auth
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: auth-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: auth-service
+        app.kubernetes.io/part-of: blockd
+        app.kubernetes.io/component: auth
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: auth-service
+          minDomains: 2
+
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: auth-service
+
+      priorityClassName: blockd-high-priority
+
+      containers:
+        - name: auth-service
+          image: ghcr.io/blockd/auth-service:latest
+          # ... container spec
+
+---
+# Example: WebSocket Service (real-time priority)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: websocket-service
+  namespace: blockd
+  labels:
+    app.kubernetes.io/name: websocket-service
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: realtime
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: websocket-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: websocket-service
+        app.kubernetes.io/part-of: blockd
+        app.kubernetes.io/component: realtime
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: websocket-service
+          minDomains: 2
+
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: websocket-service
+
+      priorityClassName: blockd-realtime
+
+      containers:
+        - name: websocket-service
+          image: ghcr.io/blockd/websocket-service:latest
+          # ... container spec
+
+---
+# Example: Video Service (real-time priority)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: video-service
+  namespace: blockd
+  labels:
+    app.kubernetes.io/name: video-service
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: realtime
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: video-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: video-service
+        app.kubernetes.io/part-of: blockd
+        app.kubernetes.io/component: realtime
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: video-service
+          minDomains: 2
+
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: video-service
+
+      priorityClassName: blockd-realtime
+
+      containers:
+        - name: video-service
+          image: ghcr.io/blockd/video-service:latest
+          # ... container spec
+
+---
+# Example: AI Detection (ML workload)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-detection
+  namespace: blockd
+  labels:
+    app.kubernetes.io/name: ai-detection
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: ml
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ai-detection
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ai-detection
+        app.kubernetes.io/part-of: blockd
+        app.kubernetes.io/component: ml
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway  # ML can tolerate zone imbalance
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: ai-detection
+
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: ai-detection
+
+      # Schedule on GPU nodes if available
+      nodeSelector:
+        node.kubernetes.io/instance-type: "gpu"
+      tolerations:
+        - key: "nvidia.com/gpu"
+          operator: "Exists"
+          effect: "NoSchedule"
+
+      priorityClassName: blockd-default
+
+      containers:
+        - name: ai-detection
+          image: ghcr.io/blockd/ai-detection:latest
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+          # ... container spec

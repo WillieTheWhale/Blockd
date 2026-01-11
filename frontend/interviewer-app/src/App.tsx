@@ -8,6 +8,7 @@ import { MainLayout } from '@/layouts/MainLayout'
 import { AuthLayout } from '@/layouts/AuthLayout'
 import { PublicLayout } from '@/layouts/PublicLayout'
 import { LandingPage } from '@/pages/LandingPage'
+import { DownloadPage } from '@/pages/DownloadPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { RegisterPage } from '@/pages/RegisterPage'
 import { ForgotPasswordPage } from '@/pages/ForgotPasswordPage'
@@ -38,9 +39,10 @@ function App() {
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
           <Routes>
-            {/* Public landing page */}
+            {/* Public pages */}
             <Route element={<PublicLayout />}>
               <Route path="/" element={<LandingPage />} />
+              <Route path="/download" element={<DownloadPage />} />
             </Route>
 
             {/* Auth routes */}

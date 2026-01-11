@@ -64,10 +64,15 @@ export const config = {
     timeWindow: process.env.RATE_LIMIT_WINDOW || '1 minute'
   },
 
-  // Email (stub)
+  // Email (AWS SES)
   email: {
     from: process.env.EMAIL_FROM || 'noreply@blockd.io',
-    enabled: process.env.EMAIL_ENABLED === 'true'
+    enabled: process.env.EMAIL_ENABLED === 'true',
+    aws: {
+      region: process.env.AWS_REGION || 'us-east-1',
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+    },
   },
 
   // CORS
@@ -115,6 +120,17 @@ export function validateConfig(): void {
     errors.push(`MFA_ENCRYPTION_KEY must be 64 characters (32 bytes hex), got ${mfaKey.length} characters`);
   } else if (!/^[0-9a-fA-F]+$/.test(mfaKey)) {
     errors.push('MFA_ENCRYPTION_KEY must contain only hexadecimal characters (0-9, a-f, A-F)');
+  }
+
+  // Validate AWS SES configuration (required in production if email is enabled)
+  if (process.env.EMAIL_ENABLED === 'true' && isProduction) {
+    if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) {
+      // Only warn - AWS SDK can use IAM roles in EKS/EC2
+      warnings.push('AWS credentials not set - email will use IAM role authentication if available');
+    }
+    if (!process.env.AWS_REGION) {
+      warnings.push('AWS_REGION not set - defaulting to us-east-1');
+    }
   }
 
   // Log warnings

@@ -31,8 +31,22 @@ spec:
       labels:
         app: ai-detection
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: ai-detection
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
           image: blockd/ai-detection:latest
           imagePullPolicy: IfNotPresent
           ports:

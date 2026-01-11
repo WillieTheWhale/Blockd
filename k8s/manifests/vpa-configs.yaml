@@ -1,0 +1,331 @@
+# Vertical Pod Autoscaler Configuration for Blockd Platform
+# Automatically adjusts CPU and memory requests based on actual usage
+#
+# Prerequisites:
+# 1. Install VPA: kubectl apply -f https://github.com/kubernetes/autoscaler/releases/download/vertical-pod-autoscaler-0.14.0/vpa-v0.14.0.yaml
+# 2. Ensure metrics-server is running
+#
+# Modes:
+# - Off: VPA only provides recommendations, no automatic updates
+# - Initial: VPA only assigns resources on pod creation
+# - Auto: VPA updates pod resources automatically (recreates pods)
+---
+# API Gateway VPA (Auto mode - stateless)
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: api-gateway-vpa
+  namespace: blockd
+  labels:
+    app.kubernetes.io/name: api-gateway
+    app.kubernetes.io/part-of: blockd
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api-gateway
+  updatePolicy:
+    updateMode: "Auto"
+    minReplicas: 2  # Don't update if only 2 replicas
+  resourcePolicy:
+    containerPolicies:
+      - containerName: api-gateway
+        minAllowed:
+          cpu: 100m
+          memory: 256Mi
+        maxAllowed:
+          cpu: 4000m
+          memory: 8Gi
+        controlledResources:
+          - cpu
+          - memory
+        controlledValues: RequestsAndLimits
+
+---
+# Auth Service VPA (Auto mode - stateless)
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: auth-service-vpa
+  namespace: blockd
+  labels:
+    app.kubernetes.io/name: auth-service
+    app.kubernetes.io/part-of: blockd
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: auth-service
+  updatePolicy:
+    updateMode: "Auto"
+    minReplicas: 2
+  resourcePolicy:
+    containerPolicies:
+      - containerName: auth-service
+        minAllowed:
+          cpu: 100m
+          memory: 256Mi
+        maxAllowed:
+          cpu: 2000m
+          memory: 4Gi
+        controlledResources:
+          - cpu
+          - memory
+
+---
+# Session Service VPA (Auto mode)
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: session-service-vpa
+  namespace: blockd
+  labels:
+    app.kubernetes.io/name: session-service
+    app.kubernetes.io/part-of: blockd
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: session-service
+  updatePolicy:
+    updateMode: "Auto"
+    minReplicas: 2
+  resourcePolicy:
+    containerPolicies:
+      - containerName: session-service
+        minAllowed:
+          cpu: 100m
+          memory: 256Mi
+        maxAllowed:
+          cpu: 2000m
+          memory: 4Gi
+
+---
+# WebSocket Service VPA (Initial mode - stateful connections)
+# Using Initial mode to avoid disrupting active WebSocket connections
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: websocket-service-vpa
+  namespace: blockd
+  labels:
+    app.kubernetes.io/name: websocket-service
+    app.kubernetes.io/part-of: blockd
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: websocket-service
+  updatePolicy:
+    updateMode: "Initial"  # Only on pod creation
+  resourcePolicy:
+    containerPolicies:
+      - containerName: websocket-service
+        minAllowed:
+          cpu: 200m
+          memory: 512Mi
+        maxAllowed:
+          cpu: 4000m
+          memory: 8Gi
+        controlledResources:
+          - cpu
+          - memory
+
+---
+# Video Service VPA (Initial mode - stateful streams)
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: video-service-vpa
+  namespace: blockd
+  labels:
+    app.kubernetes.io/name: video-service
+    app.kubernetes.io/part-of: blockd
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: video-service
+  updatePolicy:
+    updateMode: "Initial"
+  resourcePolicy:
+    containerPolicies:
+      - containerName: video-service
+        minAllowed:
+          cpu: 500m
+          memory: 1Gi
+        maxAllowed:
+          cpu: 8000m
+          memory: 16Gi
+        controlledResources:
+          - cpu
+          - memory
+
+---
+# AI Detection VPA (Auto mode)
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: ai-detection-vpa
+  namespace: blockd
+  labels:
+    app.kubernetes.io/name: ai-detection
+    app.kubernetes.io/part-of: blockd
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ai-detection
+  updatePolicy:
+    updateMode: "Auto"
+    minReplicas: 1
+  resourcePolicy:
+    containerPolicies:
+      - containerName: ai-detection
+        minAllowed:
+          cpu: 500m
+          memory: 1Gi
+        maxAllowed:
+          cpu: 8000m
+          memory: 32Gi
+        controlledResources:
+          - cpu
+          - memory
+
+---
+# Eye Tracking VPA (Auto mode)
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: eye-tracking-vpa
+  namespace: blockd
+  labels:
+    app.kubernetes.io/name: eye-tracking
+    app.kubernetes.io/part-of: blockd
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: eye-tracking
+  updatePolicy:
+    updateMode: "Auto"
+    minReplicas: 1
+  resourcePolicy:
+    containerPolicies:
+      - containerName: eye-tracking
+        minAllowed:
+          cpu: 500m
+          memory: 1Gi
+        maxAllowed:
+          cpu: 4000m
+          memory: 16Gi
+
+---
+# Response Timing VPA (Auto mode)
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: response-timing-vpa
+  namespace: blockd
+  labels:
+    app.kubernetes.io/name: response-timing
+    app.kubernetes.io/part-of: blockd
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: response-timing
+  updatePolicy:
+    updateMode: "Auto"
+    minReplicas: 1
+  resourcePolicy:
+    containerPolicies:
+      - containerName: response-timing
+        minAllowed:
+          cpu: 200m
+          memory: 512Mi
+        maxAllowed:
+          cpu: 4000m
+          memory: 8Gi
+
+---
+# Frontend VPA (Auto mode - stateless)
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: frontend-vpa
+  namespace: blockd
+  labels:
+    app.kubernetes.io/name: frontend
+    app.kubernetes.io/part-of: blockd
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: frontend
+  updatePolicy:
+    updateMode: "Auto"
+    minReplicas: 1
+  resourcePolicy:
+    containerPolicies:
+      - containerName: frontend
+        minAllowed:
+          cpu: 50m
+          memory: 64Mi
+        maxAllowed:
+          cpu: 1000m
+          memory: 1Gi
+
+---
+# Redis VPA (Off mode - recommendations only for stateful service)
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: redis-vpa
+  namespace: blockd
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/part-of: blockd
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: redis-cluster
+  updatePolicy:
+    updateMode: "Off"  # Recommendations only
+  resourcePolicy:
+    containerPolicies:
+      - containerName: redis
+        minAllowed:
+          cpu: 100m
+          memory: 256Mi
+        maxAllowed:
+          cpu: 4000m
+          memory: 32Gi
+
+---
+# PostgreSQL VPA (Off mode - recommendations only)
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: postgresql-vpa
+  namespace: blockd
+  labels:
+    app.kubernetes.io/name: postgresql
+    app.kubernetes.io/part-of: blockd
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: postgresql
+  updatePolicy:
+    updateMode: "Off"
+  resourcePolicy:
+    containerPolicies:
+      - containerName: postgresql
+        minAllowed:
+          cpu: 500m
+          memory: 1Gi
+        maxAllowed:
+          cpu: 16000m
+          memory: 64Gi

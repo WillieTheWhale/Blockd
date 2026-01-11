@@ -1,0 +1,404 @@
+# Spot Instance Configuration for Blockd Platform
+# Cost optimization using EC2 Spot instances for non-critical workloads
+#
+# Strategy:
+# - Critical services: On-demand only
+# - Batch/ML workloads: Spot with fallback to on-demand
+# - Stateless services: Mixed (70% spot, 30% on-demand)
+---
+# Node labels and taints for spot instances
+# Apply these to your EKS node groups or use Karpenter provisioners
+
+# Example Karpenter Provisioner for Spot instances
+apiVersion: karpenter.sh/v1alpha5
+kind: Provisioner
+metadata:
+  name: spot-general
+  labels:
+    app.kubernetes.io/part-of: blockd
+spec:
+  # Requirements for spot nodes
+  requirements:
+    - key: karpenter.sh/capacity-type
+      operator: In
+      values: ["spot"]
+    - key: kubernetes.io/arch
+      operator: In
+      values: ["amd64"]
+    - key: node.kubernetes.io/instance-type
+      operator: In
+      values:
+        - m5.large
+        - m5.xlarge
+        - m5a.large
+        - m5a.xlarge
+        - m6i.large
+        - m6i.xlarge
+        - c5.large
+        - c5.xlarge
+        - c5a.large
+        - c5a.xlarge
+    - key: topology.kubernetes.io/zone
+      operator: In
+      values:
+        - us-east-1a
+        - us-east-1b
+        - us-east-1c
+
+  # Taints for spot nodes
+  taints:
+    - key: spot
+      value: "true"
+      effect: NoSchedule
+
+  # Limits
+  limits:
+    resources:
+      cpu: 100
+      memory: 200Gi
+
+  # TTL settings
+  ttlSecondsAfterEmpty: 30
+  ttlSecondsUntilExpired: 2592000  # 30 days
+
+  # Provider configuration
+  provider:
+    subnetSelector:
+      karpenter.sh/discovery: blockd-production
+    securityGroupSelector:
+      karpenter.sh/discovery: blockd-production
+    instanceProfile: KarpenterNodeInstanceProfile-blockd-production
+
+    # Spot configuration
+    capacityType: spot
+
+    # Block device mappings
+    blockDeviceMappings:
+      - deviceName: /dev/xvda
+        ebs:
+          volumeSize: 100Gi
+          volumeType: gp3
+          encrypted: true
+
+---
+# Provisioner for on-demand nodes (critical workloads)
+apiVersion: karpenter.sh/v1alpha5
+kind: Provisioner
+metadata:
+  name: on-demand-critical
+  labels:
+    app.kubernetes.io/part-of: blockd
+spec:
+  requirements:
+    - key: karpenter.sh/capacity-type
+      operator: In
+      values: ["on-demand"]
+    - key: kubernetes.io/arch
+      operator: In
+      values: ["amd64"]
+    - key: node.kubernetes.io/instance-type
+      operator: In
+      values:
+        - m5.xlarge
+        - m5.2xlarge
+        - m6i.xlarge
+        - m6i.2xlarge
+    - key: topology.kubernetes.io/zone
+      operator: In
+      values:
+        - us-east-1a
+        - us-east-1b
+        - us-east-1c
+
+  # No taints - available for all workloads
+  taints: []
+
+  limits:
+    resources:
+      cpu: 200
+      memory: 400Gi
+
+  ttlSecondsAfterEmpty: 300
+
+  provider:
+    subnetSelector:
+      karpenter.sh/discovery: blockd-production
+    securityGroupSelector:
+      karpenter.sh/discovery: blockd-production
+    instanceProfile: KarpenterNodeInstanceProfile-blockd-production
+    capacityType: on-demand
+
+---
+# Provisioner for GPU spot instances (ML workloads)
+apiVersion: karpenter.sh/v1alpha5
+kind: Provisioner
+metadata:
+  name: spot-gpu
+  labels:
+    app.kubernetes.io/part-of: blockd
+spec:
+  requirements:
+    - key: karpenter.sh/capacity-type
+      operator: In
+      values: ["spot", "on-demand"]  # Fallback to on-demand
+    - key: kubernetes.io/arch
+      operator: In
+      values: ["amd64"]
+    - key: node.kubernetes.io/instance-type
+      operator: In
+      values:
+        - g4dn.xlarge
+        - g4dn.2xlarge
+        - g5.xlarge
+        - g5.2xlarge
+    - key: topology.kubernetes.io/zone
+      operator: In
+      values:
+        - us-east-1a
+        - us-east-1b
+
+  taints:
+    - key: nvidia.com/gpu
+      value: "true"
+      effect: NoSchedule
+
+  limits:
+    resources:
+      cpu: 50
+      memory: 100Gi
+      nvidia.com/gpu: 10
+
+  ttlSecondsAfterEmpty: 60
+
+  provider:
+    subnetSelector:
+      karpenter.sh/discovery: blockd-production
+    securityGroupSelector:
+      karpenter.sh/discovery: blockd-production
+    instanceProfile: KarpenterNodeInstanceProfile-blockd-production
+
+---
+# Example deployment with spot tolerance
+# Use this pattern for stateless services that can handle interruptions
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-detection-spot
+  namespace: blockd
+  labels:
+    app.kubernetes.io/name: ai-detection
+    app.kubernetes.io/part-of: blockd
+    app.kubernetes.io/component: ml
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ai-detection
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ai-detection
+        app.kubernetes.io/part-of: blockd
+    spec:
+      # Tolerate spot instances
+      tolerations:
+        - key: spot
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+
+      # Prefer spot instances but allow on-demand
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: karpenter.sh/capacity-type
+                    operator: In
+                    values:
+                      - spot
+            - weight: 50
+              preference:
+                matchExpressions:
+                  - key: karpenter.sh/capacity-type
+                    operator: In
+                    values:
+                      - on-demand
+
+      # Handle spot interruptions gracefully
+      terminationGracePeriodSeconds: 120
+
+      containers:
+        - name: ai-detection
+          image: ghcr.io/blockd/ai-detection:latest
+
+          # Lifecycle hooks for graceful shutdown
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - |
+                    # Drain in-flight requests
+                    echo "Received termination signal, draining..."
+                    # Signal the app to stop accepting new work
+                    kill -SIGTERM 1
+                    # Wait for graceful shutdown
+                    sleep 30
+
+          resources:
+            requests:
+              cpu: 1000m
+              memory: 2Gi
+              nvidia.com/gpu: 1
+            limits:
+              cpu: 4000m
+              memory: 8Gi
+              nvidia.com/gpu: 1
+
+---
+# PodDisruptionBudget for spot workloads
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ai-detection-spot-pdb
+  namespace: blockd
+  labels:
+    app.kubernetes.io/name: ai-detection
+    app.kubernetes.io/part-of: blockd
+spec:
+  # Allow some disruption for spot instances
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ai-detection
+
+---
+# AWS Node Termination Handler DaemonSet
+# Handles spot interruption notices
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: aws-node-termination-handler
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: aws-node-termination-handler
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: aws-node-termination-handler
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: aws-node-termination-handler
+    spec:
+      serviceAccountName: aws-node-termination-handler
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      nodeSelector:
+        kubernetes.io/os: linux
+      tolerations:
+        - operator: Exists
+
+      containers:
+        - name: aws-node-termination-handler
+          image: public.ecr.aws/aws-ec2/aws-node-termination-handler:v1.19.0
+
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: ENABLE_SPOT_INTERRUPTION_DRAINING
+              value: "true"
+            - name: ENABLE_SCHEDULED_EVENT_DRAINING
+              value: "true"
+            - name: ENABLE_REBALANCE_MONITORING
+              value: "true"
+            - name: ENABLE_REBALANCE_DRAINING
+              value: "true"
+            - name: ENABLE_SQS_TERMINATION_DRAINING
+              value: "false"
+            - name: TAINT_NODE
+              value: "true"
+            - name: JSON_LOGGING
+              value: "true"
+            - name: METADATA_TRIES
+              value: "3"
+            - name: DRY_RUN
+              value: "false"
+            - name: CORDON_ONLY
+              value: "false"
+
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+
+          securityContext:
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+
+---
+# ServiceAccount for node termination handler
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: aws-node-termination-handler
+  namespace: kube-system
+
+---
+# ClusterRole for node termination handler
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: aws-node-termination-handler
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "patch", "update"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/eviction"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+
+---
+# ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: aws-node-termination-handler
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: aws-node-termination-handler
+subjects:
+  - kind: ServiceAccount
+    name: aws-node-termination-handler
+    namespace: kube-system
