@@ -23,6 +23,20 @@ jest.mock('@prisma/client', () => {
   };
 });
 
+// Mock the shared database module to avoid loading actual Prisma
+jest.mock('@blockd/shared/database', () => {
+  return {
+    createPrismaClient: jest.fn().mockReturnValue(prismaMock),
+    disconnectPrisma: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    disconnectAll: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    getPoolStats: jest.fn().mockReturnValue({ totalConnections: 0, idleConnections: 0, waitingRequests: 0 }),
+    healthCheck: jest.fn<() => Promise<{ healthy: boolean; latencyMs: number }>>().mockResolvedValue({ healthy: true, latencyMs: 1 }),
+    getServicePoolConfig: jest.fn().mockReturnValue({ maxConnections: 10, minConnections: 2 }),
+    DEFAULT_POOL_CONFIG: { maxConnections: 10, minConnections: 2 },
+    SERVICE_POOL_CONFIGS: {},
+  };
+});
+
 // Mock ioredis
 jest.mock('ioredis', () => {
   return RedisMockConstructor;
