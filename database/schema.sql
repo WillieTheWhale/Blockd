@@ -217,6 +217,18 @@ CREATE TABLE refresh_tokens (
     revoked_at TIMESTAMPTZ
 );
 
+-- Chat messages table (for interview session chat)
+CREATE TABLE chat_messages (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    session_id UUID NOT NULL REFERENCES interview_sessions(id) ON DELETE CASCADE,
+    sender_id VARCHAR(255) NOT NULL, -- Can be user UUID or 'system' for system messages
+    sender_role VARCHAR(50) NOT NULL, -- 'interviewer', 'interviewee', 'admin'
+    message TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at TIMESTAMPTZ, -- Soft delete timestamp
+    deleted_by UUID -- User who deleted the message
+);
+
 -- ============================================================================
 -- INDEXES
 -- ============================================================================
@@ -276,6 +288,11 @@ CREATE INDEX idx_audit_logs_action ON audit_logs(action);
 -- Refresh tokens indexes
 CREATE INDEX idx_refresh_tokens_user ON refresh_tokens(user_id);
 CREATE INDEX idx_refresh_tokens_expires ON refresh_tokens(expires_at);
+
+-- Chat messages indexes
+CREATE INDEX idx_chat_messages_session ON chat_messages(session_id);
+CREATE INDEX idx_chat_messages_session_time ON chat_messages(session_id, created_at DESC);
+CREATE INDEX idx_chat_messages_sender ON chat_messages(sender_id);
 
 -- ============================================================================
 -- TRIGGERS
@@ -489,6 +506,7 @@ COMMENT ON TABLE browser_telemetry IS 'Browser telemetry data from interviewee s
 COMMENT ON TABLE session_reports IS 'Stores final session analysis reports';
 COMMENT ON TABLE audit_logs IS 'Tracks all user actions for security and compliance';
 COMMENT ON TABLE refresh_tokens IS 'Stores JWT refresh tokens for authentication';
+COMMENT ON TABLE chat_messages IS 'Stores chat messages exchanged during interview sessions';
 
 -- Analyze tables for query optimization
 ANALYZE;
