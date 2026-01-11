@@ -1,0 +1,172 @@
+From: Blocked Browser Team <dev@blockd.com>
+Date: Fri, 10 Jan 2026 10:00:00 +0000
+Subject: [PATCH 5/5] Block DevTools and context menu during interview sessions
+
+Add checks to prevent DevTools opening and context menu display
+during active Blocked interview sessions.
+
+Changes:
+- Block DevToolsWindow::OpenDevToolsWindow
+- Block context menu in RenderViewContextMenu
+- Block keyboard shortcuts via PreHandleKeyboardEvent
+
+diff --git a/chrome/browser/devtools/devtools_window.cc b/chrome/browser/devtools/devtools_window.cc
+index 1234567..abcdefg 100644
+--- a/chrome/browser/devtools/devtools_window.cc
++++ b/chrome/browser/devtools/devtools_window.cc
+@@ -50,6 +50,10 @@
+ #include "content/public/browser/web_contents.h"
+ #include "ui/base/page_transition_types.h"
+
++#ifdef BLOCKED_BROWSER
++#include "chrome/browser/ui/blocked/blocked_browser_controller.h"
++#endif
++
+ namespace {
+
+ // DevTools window default bounds.
+@@ -200,6 +204,15 @@ DevToolsWindow* DevToolsWindow::OpenDevToolsWindow(
+     content::WebContents* inspected_web_contents,
+     const DevToolsToggleAction& action) {
+
++#ifdef BLOCKED_BROWSER
++  // Block DevTools during active Blocked interview sessions.
++  if (blocked::BlockedBrowserController::Get() &&
++      blocked::BlockedBrowserController::Get()->ShouldBlockDevTools()) {
++    LOG(WARNING) << "Blocked: DevTools blocked during interview session";
++    return nullptr;
++  }
++#endif
++
+   Profile* profile = Profile::FromBrowserContext(
+       inspected_web_contents->GetBrowserContext());
+
+@@ -250,6 +263,15 @@ DevToolsWindow* DevToolsWindow::OpenDevToolsWindowForWorker(
+     Profile* profile,
+     const scoped_refptr<DevToolsAgentHost>& agent_host) {
+
++#ifdef BLOCKED_BROWSER
++  // Block DevTools for workers during active sessions.
++  if (blocked::BlockedBrowserController::Get() &&
++      blocked::BlockedBrowserController::Get()->ShouldBlockDevTools()) {
++    LOG(WARNING) << "Blocked: DevTools (worker) blocked during session";
++    return nullptr;
++  }
++#endif
++
+   return OpenDevToolsWindowForWorkerImpl(profile, agent_host);
+ }
+
+diff --git a/chrome/browser/renderer_context_menu/render_view_context_menu.cc b/chrome/browser/renderer_context_menu/render_view_context_menu.cc
+index 2345678..bcdefgh 100644
+--- a/chrome/browser/renderer_context_menu/render_view_context_menu.cc
++++ b/chrome/browser/renderer_context_menu/render_view_context_menu.cc
+@@ -80,6 +80,10 @@
+ #include "ui/base/models/simple_menu_model.h"
+ #include "url/gurl.h"
+
++#ifdef BLOCKED_BROWSER
++#include "chrome/browser/ui/blocked/blocked_browser_controller.h"
++#endif
++
+ namespace {
+
+ // Returns true if the given command should be enabled.
+@@ -300,6 +304,14 @@ void RenderViewContextMenu::Show() {
+   if (!source_web_contents_)
+     return;
+
++#ifdef BLOCKED_BROWSER
++  // Block context menu during active Blocked interview sessions.
++  if (blocked::BlockedBrowserController::Get() &&
++      blocked::BlockedBrowserController::Get()->ShouldBlockContextMenu()) {
++    return;  // Silently block context menu.
++  }
++#endif
++
+   menu_->RunMenuAt(
+       source_web_contents_->GetTopLevelNativeWindow(),
+       params_.x, params_.y);
+@@ -400,6 +412,15 @@ bool RenderViewContextMenu::IsCommandIdEnabled(int command_id) const {
+   if (command_id == IDC_CONTENT_CONTEXT_INSPECTELEMENT ||
+       command_id == IDC_CONTENT_CONTEXT_INSPECTBACKGROUNDPAGE ||
+       command_id == IDC_CONTENT_CONTEXT_RELOAD_PACKAGED_APP) {
++
++#ifdef BLOCKED_BROWSER
++    // Disable inspect commands during active sessions.
++    if (blocked::BlockedBrowserController::Get() &&
++        blocked::BlockedBrowserController::Get()->ShouldBlockDevTools()) {
++      return false;
++    }
++#endif
++
+     return IsDevCommandEnabled(command_id);
+   }
+
+diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/views/frame/browser_view.cc
+index 3456789..cdefghi 100644
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -100,6 +100,10 @@
+ #include "ui/views/widget/widget.h"
+ #include "ui/views/window/dialog_delegate.h"
+
++#ifdef BLOCKED_BROWSER
++#include "chrome/browser/ui/blocked/blocked_browser_controller.h"
++#endif
++
+ namespace {
+
+ // Returns true if the given key event should be processed.
+@@ -500,6 +504,18 @@ bool BrowserView::PreHandleKeyboardEvent(
+     const content::NativeWebKeyboardEvent& event,
+     bool* is_keyboard_shortcut) {
+
++#ifdef BLOCKED_BROWSER
++  // Check if keyboard shortcut should be blocked during active session.
++  if (event.GetType() == blink::WebInputEvent::Type::kKeyDown ||
++      event.GetType() == blink::WebInputEvent::Type::kRawKeyDown) {
++    if (blocked::BlockedBrowserController::Get() &&
++        blocked::BlockedBrowserController::Get()->ShouldBlockKeyboardShortcut(
++            event.windows_key_code, event.GetModifiers())) {
++      return true;  // Event handled (blocked).
++    }
++  }
++#endif
++
+   // Handle keyboard shortcuts that need to be processed before the web
+   // contents sees them.
+   return HandleKeyboardEvent(event, is_keyboard_shortcut);
+
+diff --git a/content/browser/devtools/devtools_http_handler.cc b/content/browser/devtools/devtools_http_handler.cc
+index 4567890..defghij 100644
+--- a/content/browser/devtools/devtools_http_handler.cc
++++ b/content/browser/devtools/devtools_http_handler.cc
+@@ -40,6 +40,10 @@
+ #include "net/server/http_server_request_info.h"
+ #include "net/socket/tcp_server_socket.h"
+
++#ifdef BLOCKED_BROWSER
++#include "chrome/browser/ui/blocked/blocked_browser_controller.h"
++#endif
++
+ namespace content {
+
+ namespace {
+@@ -200,6 +204,16 @@ void DevToolsHttpHandler::OnHttpRequest(
+     int connection_id,
+     const net::HttpServerRequestInfo& info) {
+
++#ifdef BLOCKED_BROWSER
++  // Block remote DevTools connections during active sessions.
++  if (blocked::BlockedBrowserController::Get() &&
++      blocked::BlockedBrowserController::Get()->ShouldBlockDevTools()) {
++    server_->Send403(connection_id,
++                     "DevTools blocked during interview session");
++    return;
++  }
++#endif
++
+   // Handle the request.
+   if (info.path.empty() || info.path == "/") {
+     // Serve the discovery page.

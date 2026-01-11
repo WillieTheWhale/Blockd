@@ -14,6 +14,8 @@ source_set("blocked_video") {
     "frame_processor.h",
     "media_stream_video_sink_impl.cc",
     "media_stream_video_sink_impl.h",
+    "video_capture_client_impl.cc",
+    "video_capture_client_impl.h",
     "video_capturer.cc",
     "video_capturer.h",
   ]

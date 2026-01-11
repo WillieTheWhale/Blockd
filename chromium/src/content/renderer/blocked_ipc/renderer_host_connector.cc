@@ -10,6 +10,9 @@
 #include "base/logging.h"
 #include "base/no_destructor.h"
 #include "content/public/renderer/render_frame.h"
+#include "content/renderer/blocked_audio/audio_capture_client_impl.h"
+#include "content/renderer/blocked_eye_tracking/eye_tracking_client_impl.h"
+#include "content/renderer/blocked_video/video_capture_client_impl.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
 
 namespace content {
@@ -130,9 +133,28 @@ blocked::mojom::EyeTrackingHost* RendererHostConnector::GetEyeTrackingHost() {
 
 void RendererHostConnector::BindEyeTracking(
     mojo::PendingReceiver<blocked::mojom::EyeTrackingClient> client_receiver) {
-  // This allows external code to provide the client implementation.
-  // The receiver will be bound by the caller.
-  LOG(INFO) << "Eye tracking client receiver provided for binding";
+  if (!is_connected_ || !session_host_.is_bound()) {
+    LOG(WARNING) << "Cannot bind eye tracking - not connected to browser";
+    return;
+  }
+
+  // If there's an existing client, bind the new receiver to it.
+  if (eye_tracking_client_) {
+    // Request a new host remote from the session host.
+    mojo::PendingRemote<blocked::mojom::EyeTrackingHost> host_remote;
+    mojo::PendingRemote<blocked::mojom::EyeTrackingClient> client_remote;
+    auto new_receiver = client_remote.InitWithNewPipeAndPassReceiver();
+
+    session_host_->BindEyeTracking(
+        host_remote.InitWithNewPipeAndPassReceiver(),
+        std::move(client_remote));
+
+    eye_tracking_client_->Bind(std::move(client_receiver),
+                                std::move(host_remote));
+    LOG(INFO) << "Eye tracking client re-bound to new receiver";
+  } else {
+    LOG(WARNING) << "No eye tracking client available for binding";
+  }
 }
 
 blocked::mojom::VideoCaptureHost* RendererHostConnector::GetVideoCaptureHost() {
@@ -158,9 +180,75 @@ blocked::mojom::VideoCaptureHost* RendererHostConnector::GetVideoCaptureHost() {
 
 void RendererHostConnector::BindVideoCapture(
     mojo::PendingReceiver<blocked::mojom::VideoCaptureClient> client_receiver) {
-  // This allows external code to provide the client implementation.
-  // The receiver will be bound by the caller.
-  LOG(INFO) << "Video capture client receiver provided for binding";
+  if (!is_connected_ || !session_host_.is_bound()) {
+    LOG(WARNING) << "Cannot bind video capture - not connected to browser";
+    return;
+  }
+
+  // If there's an existing client, bind the new receiver to it.
+  if (video_capture_client_) {
+    // Request a new host remote from the session host.
+    mojo::PendingRemote<blocked::mojom::VideoCaptureHost> host_remote;
+    mojo::PendingRemote<blocked::mojom::VideoCaptureClient> client_remote;
+    auto new_receiver = client_remote.InitWithNewPipeAndPassReceiver();
+
+    session_host_->BindVideoCapture(
+        host_remote.InitWithNewPipeAndPassReceiver(),
+        std::move(client_remote));
+
+    video_capture_client_->Bind(std::move(client_receiver),
+                                 std::move(host_remote));
+    LOG(INFO) << "Video capture client re-bound to new receiver";
+  } else {
+    LOG(WARNING) << "No video capture client available for binding";
+  }
+}
+
+blocked::mojom::AudioCaptureHost* RendererHostConnector::GetAudioCaptureHost() {
+  if (!is_connected_ || !session_host_.is_bound()) {
+    LOG(WARNING) << "Cannot get audio capture host - not connected";
+    return nullptr;
+  }
+
+  // Bind audio capture interfaces if not already bound.
+  if (!audio_capture_host_.is_bound()) {
+    mojo::PendingRemote<blocked::mojom::AudioCaptureClient> client_remote;
+    auto client_receiver = client_remote.InitWithNewPipeAndPassReceiver();
+
+    session_host_->BindAudioCapture(
+        audio_capture_host_.BindNewPipeAndPassReceiver(),
+        std::move(client_remote));
+
+    LOG(INFO) << "Audio capture interface bound";
+  }
+
+  return audio_capture_host_.get();
+}
+
+void RendererHostConnector::BindAudioCapture(
+    mojo::PendingReceiver<blocked::mojom::AudioCaptureClient> client_receiver) {
+  if (!is_connected_ || !session_host_.is_bound()) {
+    LOG(WARNING) << "Cannot bind audio capture - not connected to browser";
+    return;
+  }
+
+  // If there's an existing client, bind the new receiver to it.
+  if (audio_capture_client_) {
+    // Request a new host remote from the session host.
+    mojo::PendingRemote<blocked::mojom::AudioCaptureHost> host_remote;
+    mojo::PendingRemote<blocked::mojom::AudioCaptureClient> client_remote;
+    auto new_receiver = client_remote.InitWithNewPipeAndPassReceiver();
+
+    session_host_->BindAudioCapture(
+        host_remote.InitWithNewPipeAndPassReceiver(),
+        std::move(client_remote));
+
+    audio_capture_client_->Bind(std::move(client_receiver),
+                                 std::move(host_remote));
+    LOG(INFO) << "Audio capture client re-bound to new receiver";
+  } else {
+    LOG(WARNING) << "No audio capture client available for binding";
+  }
 }
 
 void RendererHostConnector::AddObserver(Observer* observer) {
