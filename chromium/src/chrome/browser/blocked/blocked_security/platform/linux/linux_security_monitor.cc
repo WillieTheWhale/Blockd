@@ -20,6 +20,7 @@
 #include "base/strings/string_util.h"
 #include "build/build_config.h"
 #include "chrome/browser/blocked/blocked_security/platform/linux/linux_platform_detector.h"
+#include "chrome/browser/blocked/blocked_security/platform/linux/wayland_clipboard_monitor.h"
 #include "chrome/browser/blocked/blocked_security/platform/linux/x11_clipboard_monitor.h"
 
 #if BUILDFLAG(IS_LINUX)
@@ -401,11 +402,16 @@ void LinuxSecurityMonitor::StartClipboardMonitoring() {
       x11_clipboard_monitor_.reset();
     }
   } else if (LinuxPlatformDetector::IsWayland()) {
-    // Wayland clipboard monitoring is more complex and requires portal access.
-    // For now, log a warning and skip.
-    LOG(WARNING) << "Wayland clipboard monitoring not yet implemented";
-    // TODO: Implement Wayland clipboard monitoring via org.freedesktop.portal.Desktop
-    clipboard_monitoring_active_ = false;
+    wayland_clipboard_monitor_ = std::make_unique<WaylandClipboardMonitor>();
+    if (wayland_clipboard_monitor_->Start(
+            base::BindRepeating(&LinuxSecurityMonitor::OnClipboardChanged,
+                                weak_factory_.GetWeakPtr()))) {
+      clipboard_monitoring_active_ = true;
+      LOG(INFO) << "Wayland clipboard monitoring started";
+    } else {
+      LOG(ERROR) << "Failed to start Wayland clipboard monitoring";
+      wayland_clipboard_monitor_.reset();
+    }
   } else {
     LOG(WARNING) << "Unknown display server, clipboard monitoring disabled";
     clipboard_monitoring_active_ = false;
@@ -422,6 +428,11 @@ void LinuxSecurityMonitor::StopClipboardMonitoring() {
   if (x11_clipboard_monitor_) {
     x11_clipboard_monitor_->Stop();
     x11_clipboard_monitor_.reset();
+  }
+
+  if (wayland_clipboard_monitor_) {
+    wayland_clipboard_monitor_->Stop();
+    wayland_clipboard_monitor_.reset();
   }
 
   clipboard_monitoring_active_ = false;
