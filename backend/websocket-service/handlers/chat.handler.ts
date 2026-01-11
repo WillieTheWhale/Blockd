@@ -1,6 +1,6 @@
 /**
  * Chat Handler
- * Handles interview chat messages
+ * Handles interview chat messages with database persistence
  */
 
 import { Server } from 'socket.io';
@@ -8,6 +8,7 @@ import { AuthenticatedSocket, ChatMessageData } from '../types/socket.types';
 import { RoomManager, RoomType } from '../lib/room-manager';
 import { logger } from '../lib/logger';
 import { ValidationError } from '../lib/errors';
+import { prisma } from '../lib/prisma';
 
 /**
  * Chat message validation
@@ -119,23 +120,25 @@ function sanitizeMessage(message: string): string {
 
 /**
  * Store chat message in database
- * This should integrate with your database
  */
 async function storeChatMessage(message: ChatMessageData): Promise<{ id: string; timestamp: string }> {
-  // TODO: Implement actual database storage
-  // This should insert into chat_messages table
-
   logger.debug('Storing chat message', {
     sessionId: message.session_id,
     senderId: message.sender_id,
   });
 
-  // Placeholder implementation
-  const messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  const chatMessage = await prisma.chatMessage.create({
+    data: {
+      sessionId: message.session_id,
+      senderId: message.sender_id || 'unknown',
+      senderRole: message.sender_role || 'unknown',
+      message: message.message,
+    },
+  });
 
   return {
-    id: messageId,
-    timestamp: message.timestamp || new Date().toISOString(),
+    id: chatMessage.id,
+    timestamp: chatMessage.createdAt.toISOString(),
   };
 }
 
@@ -147,33 +150,63 @@ export async function getSessionChatHistory(
   limit: number = 50,
   offset: number = 0
 ): Promise<ChatMessageData[]> {
-  // TODO: Implement actual chat history retrieval from database
-
   logger.debug('Getting chat history for session', {
     sessionId,
     limit,
     offset,
   });
 
-  // Placeholder implementation
-  return [];
+  const messages = await prisma.chatMessage.findMany({
+    where: {
+      sessionId,
+      deletedAt: null, // Exclude soft-deleted messages
+    },
+    orderBy: {
+      createdAt: 'asc',
+    },
+    skip: offset,
+    take: limit,
+  });
+
+  return messages.map((msg: { id: string; sessionId: string; message: string; senderId: string; senderRole: string; createdAt: Date }) => ({
+    message_id: msg.id,
+    session_id: msg.sessionId,
+    message: msg.message,
+    sender_id: msg.senderId,
+    sender_role: msg.senderRole,
+    timestamp: msg.createdAt.toISOString(),
+  }));
 }
 
 /**
- * Delete chat message (admin only)
+ * Delete chat message (admin only, soft delete)
  */
 export async function deleteChatMessage(
   messageId: string,
   deletedBy: string
 ): Promise<boolean> {
-  // TODO: Implement message deletion (soft delete)
+  try {
+    await prisma.chatMessage.update({
+      where: { id: messageId },
+      data: {
+        deletedAt: new Date(),
+        deletedBy,
+      },
+    });
 
-  logger.info('Chat message deleted', {
-    messageId,
-    deletedBy,
-  });
+    logger.info('Chat message deleted', {
+      messageId,
+      deletedBy,
+    });
 
-  return true;
+    return true;
+  } catch (error) {
+    logger.error('Failed to delete chat message', error, {
+      messageId,
+      deletedBy,
+    });
+    return false;
+  }
 }
 
 /**
