@@ -23,11 +23,24 @@ RUN npm run build
 # Stage 2: Production with nginx
 FROM nginx:alpine
 
-# Create nginx configuration inline
+# Create nginx configuration with security headers
 RUN echo 'server { \
     listen 80; \
     root /usr/share/nginx/html; \
     index index.html; \
+    \
+    # Security headers \
+    add_header X-Frame-Options "SAMEORIGIN" always; \
+    add_header X-Content-Type-Options "nosniff" always; \
+    add_header X-XSS-Protection "1; mode=block" always; \
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always; \
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always; \
+    add_header Content-Security-Policy "default-src '\''self'\''; script-src '\''self'\'' '\''unsafe-inline'\'' '\''unsafe-eval'\''; style-src '\''self'\'' '\''unsafe-inline'\''; img-src '\''self'\'' data: blob:; font-src '\''self'\''; connect-src '\''self'\'' ws: wss:; frame-ancestors '\''self'\'';" always; \
+    \
+    # Gzip compression \
+    gzip on; \
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml; \
+    \
     location / { \
         try_files $uri $uri/ /index.html; \
     } \
@@ -38,6 +51,12 @@ RUN echo 'server { \
         proxy_set_header Connection "upgrade"; \
         proxy_set_header Host $host; \
         proxy_cache_bypass $http_upgrade; \
+    } \
+    \
+    # Cache static assets \
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2)$ { \
+        expires 1y; \
+        add_header Cache-Control "public, immutable"; \
     } \
 }' > /etc/nginx/conf.d/default.conf
 

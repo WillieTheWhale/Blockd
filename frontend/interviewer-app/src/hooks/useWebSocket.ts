@@ -376,6 +376,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
 
   /**
    * Auto-connect on mount
+   * Note: We intentionally use stable refs and only depend on autoConnect
+   * to prevent reconnection loops when callbacks change
    */
   useEffect(() => {
     mountedRef.current = true
@@ -388,7 +390,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       mountedRef.current = false
       disconnect()
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [autoConnect, connect, disconnect])
 
   /**
    * Send heartbeat ping every 30 seconds
