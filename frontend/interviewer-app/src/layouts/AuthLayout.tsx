@@ -1,5 +1,5 @@
 import { Outlet, Link } from 'react-router'
-import { Shield } from 'lucide-react'
+import { LogoWithBackground } from '@/components/brand'
 
 export function AuthLayout() {
   return (
@@ -12,11 +12,8 @@ export function AuthLayout() {
 
         <div className="relative z-10 flex flex-col justify-between p-12">
           {/* Logo */}
-          <Link to="/" className="flex items-center space-x-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary">
-              <Shield className="h-6 w-6 text-primary-foreground" />
-            </div>
-            <span className="font-bold text-2xl">Blockd</span>
+          <Link to="/" className="flex items-center">
+            <LogoWithBackground size="lg" showText variant="primary" />
           </Link>
 
           {/* Main Content */}
@@ -59,11 +56,8 @@ export function AuthLayout() {
         <div className="w-full max-w-md">
           {/* Mobile Logo */}
           <div className="lg:hidden text-center mb-8">
-            <Link to="/" className="inline-flex items-center space-x-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-                <Shield className="h-5 w-5 text-primary-foreground" />
-              </div>
-              <span className="font-bold text-xl">Blockd</span>
+            <Link to="/" className="inline-flex items-center">
+              <LogoWithBackground size="md" showText variant="primary" />
             </Link>
           </div>
 

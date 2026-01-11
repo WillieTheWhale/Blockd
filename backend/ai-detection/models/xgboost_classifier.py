@@ -4,7 +4,9 @@ Combines multiple features to predict AI-generated content
 """
 import logging
 import os
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, NamedTuple
+
+
 import numpy as np
 import xgboost as xgb
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
@@ -14,6 +16,14 @@ from src.config import get_settings
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+
+class PredictionResult(NamedTuple):
+    """Result of XGBoost prediction with metadata"""
+    probability: float
+    confidence: float
+    using_fallback: bool
+    model_type: str  # 'xgboost' or 'rule_based'
 
 
 class XGBoostClassifier:
@@ -83,7 +93,7 @@ class XGBoostClassifier:
         """Check if model is loaded"""
         return self.model is not None
 
-    def predict(self, features: List[float]) -> Tuple[float, float]:
+    def predict(self, features: List[float]) -> PredictionResult:
         """
         Predict AI probability for a single sample
 
@@ -91,13 +101,14 @@ class XGBoostClassifier:
             features: Feature vector (15 features)
 
         Returns:
-            Tuple of (probability, confidence)
+            PredictionResult with probability, confidence, and model metadata
         """
         if not self.is_loaded():
             self.load()
 
         if self.model is None:
             # If no model is available, use rule-based approach
+            logger.warning("XGBoost model not available, using rule-based fallback")
             return self._rule_based_prediction(features)
 
         try:
@@ -116,13 +127,18 @@ class XGBoostClassifier:
             # Calculate confidence (distance from 0.5)
             confidence = abs(prediction - 0.5) * 2
 
-            return float(prediction), float(confidence)
+            return PredictionResult(
+                probability=float(prediction),
+                confidence=float(confidence),
+                using_fallback=False,
+                model_type='xgboost'
+            )
 
         except Exception as e:
             logger.error(f"XGBoost prediction failed: {e}")
             raise XGBoostError(str(e))
 
-    def _rule_based_prediction(self, features: List[float]) -> Tuple[float, float]:
+    def _rule_based_prediction(self, features: List[float]) -> PredictionResult:
         """
         Fallback rule-based prediction when no trained model is available
 
@@ -130,7 +146,7 @@ class XGBoostClassifier:
             features: Feature vector
 
         Returns:
-            Tuple of (risk_score, confidence)
+            PredictionResult with fallback flag set to True
         """
         # Extract key features
         max_sim = features[0]  # max_similarity_score
@@ -170,9 +186,14 @@ class XGBoostClassifier:
         # Calculate confidence based on feature clarity
         confidence = 0.6  # Moderate confidence for rule-based approach
 
-        return score, confidence
+        return PredictionResult(
+            probability=score,
+            confidence=confidence,
+            using_fallback=True,
+            model_type='rule_based'
+        )
 
-    def predict_batch(self, features_list: List[List[float]]) -> List[Tuple[float, float]]:
+    def predict_batch(self, features_list: List[List[float]]) -> List[PredictionResult]:
         """
         Predict for multiple samples
 
@@ -180,13 +201,14 @@ class XGBoostClassifier:
             features_list: List of feature vectors
 
         Returns:
-            List of (probability, confidence) tuples
+            List of PredictionResult objects
         """
         if not self.is_loaded():
             self.load()
 
         if self.model is None:
             # Use rule-based for each
+            logger.warning("XGBoost model not available, using rule-based fallback for batch")
             return [self._rule_based_prediction(f) for f in features_list]
 
         try:
@@ -200,7 +222,12 @@ class XGBoostClassifier:
             results = []
             for pred in predictions:
                 confidence = abs(pred - 0.5) * 2
-                results.append((float(pred), float(confidence)))
+                results.append(PredictionResult(
+                    probability=float(pred),
+                    confidence=float(confidence),
+                    using_fallback=False,
+                    model_type='xgboost'
+                ))
 
             return results
 

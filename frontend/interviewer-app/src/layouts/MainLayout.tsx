@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
+import { LogoWithBackground } from '@/components/brand'
 import {
   Home,
   Settings,
@@ -93,11 +94,8 @@ export function MainLayout() {
           </Button>
 
           {/* Logo */}
-          <Link to="/dashboard" className="flex items-center space-x-3 mr-6">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-              <Shield className="h-5 w-5 text-primary-foreground" />
-            </div>
-            <span className="hidden font-bold text-xl md:inline-block">Blockd</span>
+          <Link to="/dashboard" className="flex items-center mr-6">
+            <LogoWithBackground size="md" showText variant="primary" textClassName="hidden md:inline-block" />
           </Link>
 
           {/* Search Bar */}

@@ -81,6 +81,9 @@ app.conf.update(
         # Gaze analysis tasks
         'tasks.gaze.process': {'queue': 'gaze_process'},
         'tasks.gaze.anomaly': {'queue': 'anomaly_detect'},
+
+        # Timing analysis tasks
+        'tasks.timing.analyze': {'queue': 'timing_analyze'},
     },
 
     # Queue configuration
@@ -110,6 +113,10 @@ app.conf.update(
               routing_key='gaze.process.*'),
         Queue('anomaly_detect', Exchange('gaze_analysis', type='topic'),
               routing_key='gaze.anomaly.*'),
+
+        # Timing analysis queues
+        Queue('timing_analyze', Exchange('timing_analysis', type='topic'),
+              routing_key='timing.analyze.*'),
     ),
 )
 
@@ -119,4 +126,5 @@ app.autodiscover_tasks([
     'tasks.ai',
     'tasks.security',
     'tasks.gaze',
+    'tasks.timing',
 ])
