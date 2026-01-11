@@ -3,7 +3,9 @@
  * WebSocket for real-time gaze tracking with authentication and validation
  */
 
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, FastifyRequest } from 'fastify';
+import { WebSocket } from 'ws';
+import { Prisma } from '@prisma/client';
 import { authenticate } from '../middleware/auth.middleware';
 import { authRateLimiter } from '../middleware/rate-limit.middleware';
 import { validateParams } from '../middleware/validation.middleware';
@@ -13,6 +15,11 @@ import { NotFoundError, UnauthorizedError, BadRequestError } from '../lib/errors
 import prisma from '../lib/prisma';
 import config from '../src/config';
 import { z } from 'zod';
+
+/** Param type for routes using session_id */
+interface SessionIdParam {
+  session_id: string;
+}
 
 /**
  * Sanitize validation error for WebSocket response
@@ -133,29 +140,29 @@ export default async function gazeRoutes(fastify: FastifyInstance) {
       summary: 'Gaze tracking WebSocket',
       description: 'WebSocket endpoint for real-time gaze tracking data. Requires session token authentication.',
     },
-    handler: (connection, request) => {
-      const state = getConnectionState(connection.socket as unknown as WebSocket);
+  }, (socket: WebSocket, request: FastifyRequest) => {
+      const state = getConnectionState(socket);
       request.log.info({ ip: request.ip }, 'Gaze tracking WebSocket connection established');
 
       // Set up connection timeout for authentication
       const authTimeout = setTimeout(() => {
         if (!state.authenticated) {
           request.log.warn({ ip: request.ip }, 'WebSocket authentication timeout');
-          connection.socket.send(JSON.stringify({
+          socket.send(JSON.stringify({
             type: 'error',
             code: 'AUTH_TIMEOUT',
             message: 'Authentication required within 10 seconds',
           }));
-          connection.socket.close(4001, 'Authentication timeout');
+          socket.close(4001, 'Authentication timeout');
         }
       }, 10000);
 
-      connection.socket.on('message', async (message) => {
+      socket.on('message', async (message: Buffer | ArrayBuffer | Buffer[]) => {
         try {
           // Check message size
           const messageStr = message.toString();
           if (messageStr.length > MAX_MESSAGE_SIZE) {
-            connection.socket.send(JSON.stringify({
+            socket.send(JSON.stringify({
               type: 'error',
               code: 'MESSAGE_TOO_LARGE',
               message: `Message exceeds maximum size of ${MAX_MESSAGE_SIZE} bytes`,
@@ -165,7 +172,7 @@ export default async function gazeRoutes(fastify: FastifyInstance) {
 
           // Check rate limit
           if (!checkRateLimit(state)) {
-            connection.socket.send(JSON.stringify({
+            socket.send(JSON.stringify({
               type: 'error',
               code: 'RATE_LIMIT_EXCEEDED',
               message: 'Too many messages, please slow down',
@@ -177,7 +184,7 @@ export default async function gazeRoutes(fastify: FastifyInstance) {
 
           // Handle ping messages (keep-alive)
           if (rawData.type === 'ping') {
-            connection.socket.send(JSON.stringify({
+            socket.send(JSON.stringify({
               type: 'pong',
               timestamp: Date.now(),
             }));
@@ -188,7 +195,7 @@ export default async function gazeRoutes(fastify: FastifyInstance) {
           if (rawData.type === 'auth') {
             const parseResult = authMessageSchema.safeParse(rawData);
             if (!parseResult.success) {
-              connection.socket.send(JSON.stringify({
+              socket.send(JSON.stringify({
                 type: 'error',
                 code: 'INVALID_AUTH_MESSAGE',
                 message: parseResult.error.errors[0]?.message || 'Invalid auth message',
@@ -205,22 +212,22 @@ export default async function gazeRoutes(fastify: FastifyInstance) {
             });
 
             if (!session) {
-              connection.socket.send(JSON.stringify({
+              socket.send(JSON.stringify({
                 type: 'error',
                 code: 'INVALID_SESSION',
                 message: 'Invalid session token',
               }));
-              connection.socket.close(4002, 'Invalid session token');
+              socket.close(4002, 'Invalid session token');
               return;
             }
 
             if (session.status !== 'active' && session.status !== 'scheduled') {
-              connection.socket.send(JSON.stringify({
+              socket.send(JSON.stringify({
                 type: 'error',
                 code: 'SESSION_NOT_ACTIVE',
                 message: 'Session is not active',
               }));
-              connection.socket.close(4003, 'Session not active');
+              socket.close(4003, 'Session not active');
               return;
             }
 
@@ -231,7 +238,7 @@ export default async function gazeRoutes(fastify: FastifyInstance) {
             clearTimeout(authTimeout);
 
             request.log.info({ sessionId: session.id, ip: request.ip }, 'WebSocket authenticated');
-            connection.socket.send(JSON.stringify({
+            socket.send(JSON.stringify({
               type: 'auth_success',
               sessionId: session.id,
               timestamp: Date.now(),
@@ -241,7 +248,7 @@ export default async function gazeRoutes(fastify: FastifyInstance) {
 
           // Require authentication for gaze data
           if (!state.authenticated) {
-            connection.socket.send(JSON.stringify({
+            socket.send(JSON.stringify({
               type: 'error',
               code: 'NOT_AUTHENTICATED',
               message: 'Please authenticate first with type: "auth"',
@@ -255,7 +262,7 @@ export default async function gazeRoutes(fastify: FastifyInstance) {
             if (!parseResult.success) {
               // Sanitize validation errors to avoid leaking schema details in production
               const sanitizedError = sanitizeValidationError(parseResult.error);
-              connection.socket.send(JSON.stringify({
+              socket.send(JSON.stringify({
                 type: 'error',
                 code: 'VALIDATION_ERROR',
                 ...sanitizedError,
@@ -267,7 +274,7 @@ export default async function gazeRoutes(fastify: FastifyInstance) {
 
             // Verify session ID matches authenticated session
             if (data.sessionId !== state.sessionId) {
-              connection.socket.send(JSON.stringify({
+              socket.send(JSON.stringify({
                 type: 'error',
                 code: 'SESSION_MISMATCH',
                 message: 'Session ID does not match authenticated session',
@@ -287,12 +294,12 @@ export default async function gazeRoutes(fastify: FastifyInstance) {
                 confidence: data.confidence,
                 pupilDiameterLeft: data.pupilDiameterLeft,
                 pupilDiameterRight: data.pupilDiameterRight,
-                metadata: data.metadata || {},
-              } as any,
+                metadata: (data.metadata || {}) as Prisma.InputJsonValue,
+              },
             });
 
             // Send acknowledgment
-            connection.socket.send(JSON.stringify({
+            socket.send(JSON.stringify({
               type: 'ack',
               timestamp: Date.now(),
             }));
@@ -301,13 +308,13 @@ export default async function gazeRoutes(fastify: FastifyInstance) {
           request.log.error({ error, sessionId: state.sessionId }, 'Error processing gaze data');
 
           if (error instanceof SyntaxError) {
-            connection.socket.send(JSON.stringify({
+            socket.send(JSON.stringify({
               type: 'error',
               code: 'INVALID_JSON',
               message: 'Invalid JSON format',
             }));
           } else {
-            connection.socket.send(JSON.stringify({
+            socket.send(JSON.stringify({
               type: 'error',
               code: 'PROCESSING_ERROR',
               message: 'Failed to process gaze data',
@@ -316,7 +323,7 @@ export default async function gazeRoutes(fastify: FastifyInstance) {
         }
       });
 
-      connection.socket.on('close', (code, reason) => {
+      socket.on('close', (code: number, reason: Buffer) => {
         clearTimeout(authTimeout);
         request.log.info(
           { sessionId: state.sessionId, code, reason: reason?.toString(), ip: request.ip },
@@ -324,14 +331,13 @@ export default async function gazeRoutes(fastify: FastifyInstance) {
         );
       });
 
-      connection.socket.on('error', (error) => {
+      socket.on('error', (error: Error) => {
         request.log.error({ error, sessionId: state.sessionId }, 'WebSocket error');
       });
-    },
   });
 
   // Get gaze summary for a session
-  fastify.get<{ Params: IdParam }>('/summary/:session_id', {
+  fastify.get<{ Params: SessionIdParam }>('/summary/:session_id', {
     preHandler: [
       authenticate,
       authRateLimiter,
@@ -350,7 +356,7 @@ export default async function gazeRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
-      const sessionId = (request.params as any).session_id;
+      const { session_id: sessionId } = request.params;
 
       // Verify session exists
       const session = await prisma.interviewSession.findUnique({

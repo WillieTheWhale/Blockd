@@ -4,6 +4,7 @@
  */
 
 import { FastifyInstance } from 'fastify';
+import { QuestionDifficulty } from '@prisma/client';
 import { authenticate, requireRole } from '../middleware/auth.middleware';
 import { authRateLimiter } from '../middleware/rate-limit.middleware';
 import { validateBody } from '../middleware/validation.middleware';
@@ -70,7 +71,7 @@ export default async function analysisRoutes(fastify: FastifyInstance) {
           data: {
             sessionId,
             questionText,
-            difficulty: difficulty as any,
+            difficulty: difficulty as QuestionDifficulty | undefined,
             expectedDuration,
             askedAt: new Date(),
           },
