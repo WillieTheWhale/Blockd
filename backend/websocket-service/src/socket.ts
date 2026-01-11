@@ -4,7 +4,7 @@
  */
 
 import { Server, ServerOptions } from 'socket.io';
-import { createServer, Server as HTTPServer } from 'http';
+import { createServer, Server as HTTPServer, IncomingMessage, ServerResponse } from 'http';
 import {
   ClientToServerEvents,
   ServerToClientEvents,
@@ -14,13 +14,168 @@ import {
 import { Config } from './config';
 import { logger } from '../lib/logger';
 import { RedisAdapterManager } from '../lib/redis-adapter';
+import {
+  performHealthCheck,
+  performLivenessCheck,
+  performReadinessCheck,
+  createHealthCheckContext,
+  HealthCheckContext,
+} from '../lib/health-check';
+
+// Global health check context (set after server initialization)
+let healthCheckContext: HealthCheckContext | null = null;
 
 /**
- * Create HTTP server
+ * Set the health check context (called after Redis adapter is initialized)
+ */
+export function setHealthCheckContext(io: Server, redisAdapter?: RedisAdapterManager): void {
+  healthCheckContext = createHealthCheckContext(io, redisAdapter);
+  logger.info('Health check context initialized');
+}
+
+/**
+ * Handle HTTP requests for health endpoints
+ */
+async function handleHealthRequest(
+  req: IncomingMessage,
+  res: ServerResponse
+): Promise<boolean> {
+  const url = req.url || '';
+
+  // Only handle GET requests to health endpoints
+  if (req.method !== 'GET') {
+    return false;
+  }
+
+  // Handle health endpoints
+  if (url === '/health' || url === '/health/') {
+    return handleFullHealthCheck(req, res);
+  }
+
+  if (url === '/health/live' || url === '/live') {
+    return handleLivenessCheck(req, res);
+  }
+
+  if (url === '/health/ready' || url === '/ready') {
+    return handleReadinessCheck(req, res);
+  }
+
+  return false;
+}
+
+/**
+ * Handle full health check request
+ */
+async function handleFullHealthCheck(
+  _req: IncomingMessage,
+  res: ServerResponse
+): Promise<boolean> {
+  try {
+    if (!healthCheckContext) {
+      sendJsonResponse(res, 503, {
+        status: 'unhealthy',
+        error: 'Health check context not initialized',
+        timestamp: new Date().toISOString(),
+      });
+      return true;
+    }
+
+    const result = await performHealthCheck(healthCheckContext, {
+      includeDependencies: true,
+      includeSystemMetrics: true,
+    });
+
+    const statusCode = result.status === 'unhealthy' ? 503 : 200;
+    sendJsonResponse(res, statusCode, result);
+    return true;
+  } catch (error) {
+    logger.error('Health check error', error);
+    sendJsonResponse(res, 500, {
+      status: 'unhealthy',
+      error: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: new Date().toISOString(),
+    });
+    return true;
+  }
+}
+
+/**
+ * Handle liveness check request
+ */
+async function handleLivenessCheck(
+  _req: IncomingMessage,
+  res: ServerResponse
+): Promise<boolean> {
+  const result = performLivenessCheck();
+  sendJsonResponse(res, 200, result);
+  return true;
+}
+
+/**
+ * Handle readiness check request
+ */
+async function handleReadinessCheck(
+  _req: IncomingMessage,
+  res: ServerResponse
+): Promise<boolean> {
+  try {
+    if (!healthCheckContext) {
+      sendJsonResponse(res, 503, {
+        ready: false,
+        error: 'Health check context not initialized',
+        timestamp: new Date().toISOString(),
+      });
+      return true;
+    }
+
+    const result = await performReadinessCheck(healthCheckContext);
+    const statusCode = result.ready ? 200 : 503;
+    sendJsonResponse(res, statusCode, result);
+    return true;
+  } catch (error) {
+    logger.error('Readiness check error', error);
+    sendJsonResponse(res, 503, {
+      ready: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: new Date().toISOString(),
+    });
+    return true;
+  }
+}
+
+/**
+ * Send JSON response
+ */
+function sendJsonResponse(res: ServerResponse, statusCode: number, data: unknown): void {
+  res.writeHead(statusCode, {
+    'Content-Type': 'application/json',
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+  });
+  res.end(JSON.stringify(data));
+}
+
+/**
+ * Create HTTP server with health endpoint handling
  */
 export function createHttpServer(): HTTPServer {
-  const httpServer = createServer();
-  logger.info('HTTP server created');
+  const httpServer = createServer(async (req, res) => {
+    // Try to handle health endpoints first
+    const handled = await handleHealthRequest(req, res);
+
+    // If not a health endpoint, let Socket.io handle it
+    // Socket.io attaches to the 'upgrade' event, so regular HTTP requests
+    // that aren't health checks will fall through here
+    if (!handled) {
+      // Return 404 for unknown HTTP endpoints
+      // (Socket.io handles WebSocket upgrades separately)
+      if (!req.url?.startsWith('/socket.io')) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Not found' }));
+      }
+    }
+  });
+
+  logger.info('HTTP server created with health endpoints');
   return httpServer;
 }
 
