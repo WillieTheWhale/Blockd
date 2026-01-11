@@ -371,3 +371,42 @@ export interface ApiErrorResponse {
   message: string
   statusCode: number
 }
+
+/**
+ * AI Detection types for enhanced analysis features
+ */
+export type RiskLevel = 'minimal' | 'low' | 'medium' | 'high' | 'critical'
+
+export interface AIDetectionFilterState {
+  riskLevels: Set<RiskLevel>
+  minRiskScore: number
+  maxRiskScore: number
+  hasFlags: boolean | null
+}
+
+export interface AIDetectionSortConfig {
+  field: 'riskScore' | 'createdAt' | 'confidence'
+  direction: 'asc' | 'desc'
+}
+
+export interface AIDetectionAggregateStats {
+  totalResults: number
+  averageRiskScore: number
+  averageConfidence: number
+  riskDistribution: Record<RiskLevel, number>
+  flaggedCount: number
+  highestRiskScore: number
+  lowestRiskScore: number
+  processingStats: {
+    avgTimeMs: number
+    totalTimeMs: number
+  }
+}
+
+export interface AIDetectionProgressEvent {
+  sessionId: string
+  questionId: string
+  status: 'started' | 'processing' | 'completed' | 'failed'
+  progress?: number
+  estimatedTimeMs?: number
+}

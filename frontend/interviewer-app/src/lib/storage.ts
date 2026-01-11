@@ -42,7 +42,7 @@ export function getStorageItem<T>(key: string, defaultValue: T): T {
       // Return raw string value if not valid JSON
       return item as unknown as T
     }
-  } catch (error) {
+  } catch {
     logger.warn('Failed to get item from localStorage', {
       component: 'storage',
       action: 'getStorageItem',
@@ -58,7 +58,7 @@ export function getStorageItem<T>(key: string, defaultValue: T): T {
 export function getStorageString(key: string): string | null {
   try {
     return localStorage.getItem(key)
-  } catch (error) {
+  } catch {
     logger.warn('Failed to get string from localStorage', {
       component: 'storage',
       action: 'getStorageString',
@@ -102,7 +102,7 @@ export function removeStorageItem(key: string): boolean {
   try {
     localStorage.removeItem(key)
     return true
-  } catch (error) {
+  } catch {
     logger.warn('Failed to remove item from localStorage', {
       component: 'storage',
       action: 'removeStorageItem',
@@ -119,7 +119,7 @@ export function clearStorage(): boolean {
   try {
     localStorage.clear()
     return true
-  } catch (error) {
+  } catch {
     logger.warn('Failed to clear localStorage', {
       component: 'storage',
       action: 'clearStorage',

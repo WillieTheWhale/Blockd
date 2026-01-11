@@ -309,33 +309,132 @@ gdb ./out/Debug/chrome
 
 ## Packaging & Distribution
 
-### Windows Installer
-```bash
-# Build installer
-ninja -C out/Blocked mini_installer
+### Quick Start - Build All Installers
 
-# Output: out/Blocked/mini_installer.exe
+```bash
+# Build installers for all platforms (uses existing browser build)
+./build_installers.sh --skip-build
+
+# Build with specific version
+./build_installers.sh --skip-build --version 1.2.0
+
+# Build for specific platform only
+./build_installers.sh --skip-build --platform macos
+./build_installers.sh --skip-build --platform windows
+./build_installers.sh --skip-build --platform linux
+
+# Full build with Chromium compilation
+./build_installers.sh --release
 ```
 
-### macOS DMG
-```bash
-# Build app bundle
-ninja -C out/Blocked chrome
+**Output Location:** All installers are placed in `dist/` directory.
 
-# Create DMG
-./tools/build/mac/create_dmg.sh out/Blocked/Blocked.app
+### Platform-Specific Details
+
+#### macOS DMG
+```bash
+# Creates: dist/BlockedBrowser-v1.0.0-macOS.dmg
+./build_installers.sh --skip-build --platform macos
 ```
 
-### Linux Packages
+The macOS installer:
+- Creates a DMG with app bundle and Applications symlink
+- Includes the app.icns icon
+- Requires macOS with `hdiutil` (built-in)
+
+For signed and notarized builds:
 ```bash
-# AppImage
-./tools/build/linux/create_appimage.sh out/Blocked/chrome
+# After building, sign and notarize
+./installer/mac/sign_and_notarize.sh
+```
 
-# DEB package
-./tools/build/linux/create_deb.sh out/Blocked/chrome
+#### Windows NSIS Installer
+```bash
+# Creates: dist/BlockedBrowser_Setup_v1.0.0.exe (with NSIS)
+# Creates: dist/BlockedBrowser-v1.0.0-Windows.zip (without NSIS)
+./build_installers.sh --skip-build --platform windows
+```
 
-# RPM package
-./tools/build/linux/create_rpm.sh out/Blocked/chrome
+The Windows installer:
+- Uses NSIS (Nullsoft Scriptable Install System)
+- Creates Start Menu and Desktop shortcuts
+- Includes uninstaller
+- Supports silent installation: `BlockedBrowser_Setup.exe /S`
+
+**Requirements:**
+- NSIS: `brew install nsis` (macOS) or `choco install nsis` (Windows)
+- ImageMagick: `brew install imagemagick` (for icon generation)
+
+#### Linux Packages
+```bash
+# Creates: DEB, RPM, and AppImage packages
+./build_installers.sh --skip-build --platform linux
+```
+
+**DEB Package** (Debian/Ubuntu):
+```bash
+# Creates: dist/blockd-browser_1.0.0_amd64.deb
+# Install: sudo dpkg -i dist/blockd-browser_1.0.0_amd64.deb
+```
+Requires: `dpkg-deb`
+
+**RPM Package** (Fedora/RHEL/CentOS):
+```bash
+# Creates: dist/blockd-browser-1.0.0-1.x86_64.rpm
+# Install: sudo rpm -i dist/blockd-browser-1.0.0-1.x86_64.rpm
+```
+Requires: `rpmbuild`
+
+**AppImage** (Universal):
+```bash
+# Creates: dist/BlockedBrowser-v1.0.0.AppImage
+# Run: chmod +x BlockedBrowser-v1.0.0.AppImage && ./BlockedBrowser-v1.0.0.AppImage
+```
+Requires: `appimagetool` from [AppImageKit](https://github.com/AppImage/AppImageKit/releases)
+
+### Installer Resources
+
+Resources are automatically generated. To regenerate icons:
+
+```bash
+# Windows icons (.ico)
+magick src/chrome/app/theme/blocked/product_logo_*.png installer/windows/resources/app_icon.ico
+
+# macOS icon (.icns)
+./src/chrome/app/theme/blocked/generate_platform_icons.sh
+
+# Linux icon
+cp src/chrome/app/theme/blocked/product_logo_256.png resources/app_icon_256.png
+```
+
+### Build Outputs
+
+| Platform | File | Size (Mock) | Size (Real) |
+|----------|------|-------------|-------------|
+| macOS | BlockedBrowser-v1.0.0-macOS.dmg | ~2.4 MB | ~150 MB |
+| Windows | BlockedBrowser_Setup_v1.0.0.exe | ~19 KB | ~80 MB |
+| Linux DEB | blockd-browser_1.0.0_amd64.deb | ~18 KB | ~120 MB |
+| Linux RPM | blockd-browser-1.0.0-1.x86_64.rpm | ~18 KB | ~120 MB |
+| Linux AppImage | BlockedBrowser-v1.0.0.AppImage | ~18 KB | ~150 MB |
+
+### Manual Packaging (Legacy)
+
+#### Windows NSIS Manual Build
+```bash
+cd installer/windows
+makensis blocked_installer.nsi
+```
+
+#### macOS DMG Manual Build
+```bash
+cd installer/mac
+./create_dmg.sh
+```
+
+#### Linux DEB Manual Build
+```bash
+cd installer/linux
+dpkg-buildpackage -us -uc
 ```
 
 ## Updating Chromium

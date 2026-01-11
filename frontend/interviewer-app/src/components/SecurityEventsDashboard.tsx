@@ -30,6 +30,46 @@ import { useWebSocket } from '@/hooks/useWebSocket'
 import type { SecurityEvent, SecurityEventSeverity, SecurityEventType } from '@/types'
 import { format } from 'date-fns'
 
+/**
+ * Event type categories for grouped filtering
+ */
+const EVENT_TYPE_CATEGORIES = {
+  focus: {
+    label: 'Focus',
+    types: ['tab_switch', 'window_blur'] as SecurityEventType[],
+  },
+  clipboard: {
+    label: 'Clipboard',
+    types: ['copy_paste'] as SecurityEventType[],
+  },
+  faceDetection: {
+    label: 'Face Detection',
+    types: ['multiple_faces', 'no_face'] as SecurityEventType[],
+  },
+  deviceNetwork: {
+    label: 'Device / Network',
+    types: ['unauthorized_device', 'network_disconnect'] as SecurityEventType[],
+  },
+  other: {
+    label: 'Other',
+    types: ['suspicious_activity'] as SecurityEventType[],
+  },
+} as const
+
+/**
+ * All event types for default filter state
+ */
+const ALL_EVENT_TYPES: SecurityEventType[] = Object.values(EVENT_TYPE_CATEGORIES).flatMap(
+  (category) => category.types
+)
+
+/**
+ * Get human-readable label for event type
+ */
+const getEventTypeLabel = (type: SecurityEventType): string => {
+  return type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
 interface SecurityEventsDashboardProps {
   sessionId: string
   className?: string
@@ -115,7 +155,9 @@ export function SecurityEventsDashboard({
   const [filterSeverities, setFilterSeverities] = useState<Set<SecurityEventSeverity>>(
     new Set(['low', 'medium', 'high', 'critical'])
   )
-  const [filterTypes, _setFilterTypes] = useState<Set<SecurityEventType>>(new Set())
+  const [filterTypes, setFilterTypes] = useState<Set<SecurityEventType>>(
+    new Set(ALL_EVENT_TYPES)
+  )
   const [autoScroll, setAutoScroll] = useState(true)
 
   const scrollAreaRef = useRef<HTMLDivElement>(null)
@@ -126,9 +168,7 @@ export function SecurityEventsDashboard({
    * Subscribe to security alerts
    */
   useEffect(() => {
-    const unsubscribe = subscribe<SecurityEvent>('security:alert', (event) => {
-      console.log('Security event received:', event)
-
+    const unsubscribe = subscribe<SecurityEvent>('security:alert', () => {
       // Auto-scroll to new event if enabled
       if (autoScroll) {
         setTimeout(() => {
@@ -171,29 +211,53 @@ export function SecurityEventsDashboard({
   }, [])
 
   /**
+   * Toggle event type filter
+   */
+  const toggleTypeFilter = useCallback((type: SecurityEventType) => {
+    setFilterTypes((prev) => {
+      const next = new Set(prev)
+      if (next.has(type)) {
+        next.delete(type)
+      } else {
+        next.add(type)
+      }
+      return next
+    })
+  }, [])
+
+  /**
+   * Get session events (before filtering)
+   */
+  const sessionEvents = securityEvents.filter((event) => event.sessionId === sessionId)
+
+  /**
    * Filter events
    */
-  const filteredEvents = securityEvents.filter((event) => {
-    // Filter by session
-    if (event.sessionId !== sessionId) return false
-
+  const filteredEvents = sessionEvents.filter((event) => {
     // Filter by severity
     if (!filterSeverities.has(event.severity)) return false
 
-    // Filter by type (if any types are selected)
-    if (filterTypes.size > 0 && !filterTypes.has(event.type)) return false
+    // Filter by type
+    if (!filterTypes.has(event.type)) return false
 
     return true
   })
 
   /**
-   * Get event counts by severity
+   * Get event counts by severity (from session events, not filtered)
    */
-  const eventCounts = {
-    critical: filteredEvents.filter((e) => e.severity === 'critical').length,
-    high: filteredEvents.filter((e) => e.severity === 'high').length,
-    medium: filteredEvents.filter((e) => e.severity === 'medium').length,
-    low: filteredEvents.filter((e) => e.severity === 'low').length,
+  const severityCounts = {
+    critical: sessionEvents.filter((e) => e.severity === 'critical').length,
+    high: sessionEvents.filter((e) => e.severity === 'high').length,
+    medium: sessionEvents.filter((e) => e.severity === 'medium').length,
+    low: sessionEvents.filter((e) => e.severity === 'low').length,
+  }
+
+  /**
+   * Get event counts by type (from session events, not filtered)
+   */
+  const getTypeCount = (type: SecurityEventType): number => {
+    return sessionEvents.filter((e) => e.type === type).length
   }
 
   return (
@@ -229,27 +293,49 @@ export function SecurityEventsDashboard({
                   checked={filterSeverities.has('critical')}
                   onCheckedChange={() => toggleSeverityFilter('critical')}
                 >
-                  Critical ({eventCounts.critical})
+                  Critical ({severityCounts.critical})
                 </DropdownMenuCheckboxItem>
                 <DropdownMenuCheckboxItem
                   checked={filterSeverities.has('high')}
                   onCheckedChange={() => toggleSeverityFilter('high')}
                 >
-                  High ({eventCounts.high})
+                  High ({severityCounts.high})
                 </DropdownMenuCheckboxItem>
                 <DropdownMenuCheckboxItem
                   checked={filterSeverities.has('medium')}
                   onCheckedChange={() => toggleSeverityFilter('medium')}
                 >
-                  Medium ({eventCounts.medium})
+                  Medium ({severityCounts.medium})
                 </DropdownMenuCheckboxItem>
                 <DropdownMenuCheckboxItem
                   checked={filterSeverities.has('low')}
                   onCheckedChange={() => toggleSeverityFilter('low')}
                 >
-                  Low ({eventCounts.low})
+                  Low ({severityCounts.low})
                 </DropdownMenuCheckboxItem>
+
                 <DropdownMenuSeparator />
+
+                {/* Event Type Filters - Grouped by Category */}
+                {Object.entries(EVENT_TYPE_CATEGORIES).map(([key, category]) => (
+                  <div key={key}>
+                    <DropdownMenuLabel className="text-xs text-muted-foreground">
+                      {category.label}
+                    </DropdownMenuLabel>
+                    {category.types.map((type) => (
+                      <DropdownMenuCheckboxItem
+                        key={type}
+                        checked={filterTypes.has(type)}
+                        onCheckedChange={() => toggleTypeFilter(type)}
+                      >
+                        {getEventTypeLabel(type)} ({getTypeCount(type)})
+                      </DropdownMenuCheckboxItem>
+                    ))}
+                  </div>
+                ))}
+
+                <DropdownMenuSeparator />
+
                 <DropdownMenuCheckboxItem checked={autoScroll} onCheckedChange={setAutoScroll}>
                   Auto-scroll to new events
                 </DropdownMenuCheckboxItem>
@@ -264,12 +350,12 @@ export function SecurityEventsDashboard({
             <div className="h-2 w-2 rounded-full bg-green-500" />
             {isConnected ? 'Connected' : 'Disconnected'}
           </Badge>
-          {eventCounts.critical > 0 && (
-            <Badge variant="destructive">{eventCounts.critical} Critical</Badge>
+          {severityCounts.critical > 0 && (
+            <Badge variant="destructive">{severityCounts.critical} Critical</Badge>
           )}
-          {eventCounts.high > 0 && <Badge variant="destructive">{eventCounts.high} High</Badge>}
-          {eventCounts.medium > 0 && <Badge variant="default">{eventCounts.medium} Medium</Badge>}
-          {eventCounts.low > 0 && <Badge variant="secondary">{eventCounts.low} Low</Badge>}
+          {severityCounts.high > 0 && <Badge variant="destructive">{severityCounts.high} High</Badge>}
+          {severityCounts.medium > 0 && <Badge variant="default">{severityCounts.medium} Medium</Badge>}
+          {severityCounts.low > 0 && <Badge variant="secondary">{severityCounts.low} Low</Badge>}
         </div>
       </CardHeader>
 

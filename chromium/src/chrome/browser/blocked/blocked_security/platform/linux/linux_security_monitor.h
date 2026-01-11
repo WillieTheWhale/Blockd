@@ -14,6 +14,7 @@
 
 namespace blocked {
 
+class WaylandClipboardMonitor;
 class X11ClipboardMonitor;
 
 // Linux-specific security monitoring implementation
@@ -51,8 +52,9 @@ class LinuxSecurityMonitor : public BlockedSecurityService::PlatformMonitor {
 
   bool clipboard_monitoring_active_ = false;
 
-  // Clipboard monitor (X11 or Wayland).
+  // Clipboard monitors (X11 or Wayland).
   std::unique_ptr<X11ClipboardMonitor> x11_clipboard_monitor_;
+  std::unique_ptr<WaylandClipboardMonitor> wayland_clipboard_monitor_;
 
   // Callback for clipboard changes.
   void OnClipboardChanged(const std::string& content);

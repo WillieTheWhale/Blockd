@@ -18,7 +18,7 @@ declare_args() {
 group("blocked") {
   deps = [
     "//chrome/browser/blocked:blocked_browser_modules",
-    "//content/renderer/blocked_eye_tracking:eye_tracking",
+    "//content/renderer/blocked_eye_tracking:blocked_eye_tracking",
   ]
 
   if (blocked_enable_security_monitoring) {

@@ -4,6 +4,7 @@
  */
 
 import { FastifyInstance } from 'fastify';
+import { UserRole } from '@prisma/client';
 import { authenticate } from '../middleware/auth.middleware';
 import {
   publicRateLimiter,
@@ -97,7 +98,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
           passwordHash,
           firstName,
           lastName,
-          role: role as any,
+          role: role as UserRole,
           organizationId,
         },
       });
