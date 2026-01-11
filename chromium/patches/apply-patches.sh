@@ -41,6 +41,7 @@ PATCHES=(
     "0001-add-blocked-security-module.patch"
     "0002-modify-browser-ui.patch"
     "0003-add-blocked-branding.patch"
+    "0004-add-blocked-webui-and-startup.patch"
 )
 
 for patch in "${PATCHES[@]}"; do

@@ -1,0 +1,338 @@
+# Automatic Rollback Workflow for Blockd Platform
+# Monitors production and triggers automatic rollback on critical failures
+#
+# Triggers:
+# 1. Manual trigger for emergency rollback
+# 2. Webhook trigger from AlertManager
+# 3. Scheduled health checks
+name: Auto Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to rollback'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      reason:
+        description: 'Reason for rollback'
+        required: true
+        type: string
+      target_revision:
+        description: 'Helm revision to rollback to (leave empty for previous)'
+        required: false
+        type: string
+
+  # Webhook trigger from AlertManager
+  repository_dispatch:
+    types: [rollback-trigger]
+
+  # Scheduled health check (every 5 minutes)
+  schedule:
+    - cron: '*/5 * * * *'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository_owner }}/blockd
+  HELM_VERSION: '3.13.0'
+  KUBECTL_VERSION: '1.28.0'
+
+jobs:
+  health-check:
+    name: Health Check
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    outputs:
+      should_rollback: ${{ steps.check.outputs.should_rollback }}
+      environment: ${{ steps.check.outputs.environment }}
+      reason: ${{ steps.check.outputs.reason }}
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v${{ env.KUBECTL_VERSION }}
+
+      - name: Check production health
+        id: check
+        run: |
+          # Configure kubectl for production
+          aws eks update-kubeconfig --name blockd-production-cluster --region us-east-1
+
+          SHOULD_ROLLBACK="false"
+          REASON=""
+
+          # Check 1: Pod failures
+          FAILED_PODS=$(kubectl get pods -n production --field-selector=status.phase=Failed --no-headers 2>/dev/null | wc -l)
+          if [ "$FAILED_PODS" -gt 2 ]; then
+            SHOULD_ROLLBACK="true"
+            REASON="$FAILED_PODS pods in Failed state"
+          fi
+
+          # Check 2: CrashLoopBackOff
+          CRASH_LOOPS=$(kubectl get pods -n production -o jsonpath='{.items[*].status.containerStatuses[*].state.waiting.reason}' 2>/dev/null | grep -c "CrashLoopBackOff" || true)
+          if [ "$CRASH_LOOPS" -gt 2 ]; then
+            SHOULD_ROLLBACK="true"
+            REASON="$CRASH_LOOPS pods in CrashLoopBackOff"
+          fi
+
+          # Check 3: Deployment availability
+          UNAVAILABLE=$(kubectl get deployments -n production -o jsonpath='{.items[?(@.status.unavailableReplicas>0)].metadata.name}' 2>/dev/null)
+          if [ -n "$UNAVAILABLE" ]; then
+            UNAVAILABLE_COUNT=$(echo "$UNAVAILABLE" | wc -w)
+            if [ "$UNAVAILABLE_COUNT" -gt 1 ]; then
+              SHOULD_ROLLBACK="true"
+              REASON="$UNAVAILABLE_COUNT deployments unavailable: $UNAVAILABLE"
+            fi
+          fi
+
+          # Check 4: API Gateway health endpoint
+          API_HEALTH=$(kubectl exec deploy/api-gateway -n production -- curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/api/v1/health 2>/dev/null || echo "000")
+          if [ "$API_HEALTH" != "200" ]; then
+            # Recheck to avoid flapping
+            sleep 30
+            API_HEALTH=$(kubectl exec deploy/api-gateway -n production -- curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/api/v1/health 2>/dev/null || echo "000")
+            if [ "$API_HEALTH" != "200" ]; then
+              SHOULD_ROLLBACK="true"
+              REASON="API Gateway health check failed (HTTP $API_HEALTH)"
+            fi
+          fi
+
+          echo "should_rollback=$SHOULD_ROLLBACK" >> $GITHUB_OUTPUT
+          echo "environment=production" >> $GITHUB_OUTPUT
+          echo "reason=$REASON" >> $GITHUB_OUTPUT
+
+          if [ "$SHOULD_ROLLBACK" == "true" ]; then
+            echo "::warning::Rollback recommended: $REASON"
+          else
+            echo "Health check passed"
+          fi
+
+  determine-rollback:
+    name: Determine Rollback Parameters
+    runs-on: ubuntu-latest
+    needs: [health-check]
+    if: |
+      always() && (
+        github.event_name == 'workflow_dispatch' ||
+        github.event_name == 'repository_dispatch' ||
+        (github.event_name == 'schedule' && needs.health-check.outputs.should_rollback == 'true')
+      )
+    outputs:
+      environment: ${{ steps.params.outputs.environment }}
+      reason: ${{ steps.params.outputs.reason }}
+      target_revision: ${{ steps.params.outputs.target_revision }}
+
+    steps:
+      - name: Set rollback parameters
+        id: params
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "environment=${{ inputs.environment }}" >> $GITHUB_OUTPUT
+            echo "reason=${{ inputs.reason }}" >> $GITHUB_OUTPUT
+            echo "target_revision=${{ inputs.target_revision }}" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" == "repository_dispatch" ]; then
+            echo "environment=${{ github.event.client_payload.environment }}" >> $GITHUB_OUTPUT
+            echo "reason=${{ github.event.client_payload.reason }}" >> $GITHUB_OUTPUT
+            echo "target_revision=${{ github.event.client_payload.target_revision }}" >> $GITHUB_OUTPUT
+          else
+            echo "environment=${{ needs.health-check.outputs.environment }}" >> $GITHUB_OUTPUT
+            echo "reason=${{ needs.health-check.outputs.reason }}" >> $GITHUB_OUTPUT
+            echo "target_revision=" >> $GITHUB_OUTPUT
+          fi
+
+  rollback:
+    name: Execute Rollback
+    runs-on: ubuntu-latest
+    needs: [determine-rollback]
+    environment:
+      name: ${{ needs.determine-rollback.outputs.environment }}-rollback
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v${{ env.KUBECTL_VERSION }}
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v${{ env.HELM_VERSION }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Configure kubectl
+        run: |
+          ENV="${{ needs.determine-rollback.outputs.environment }}"
+          aws eks update-kubeconfig --name blockd-${ENV}-cluster --region us-east-1
+
+      - name: Get current and target revisions
+        id: revisions
+        run: |
+          ENV="${{ needs.determine-rollback.outputs.environment }}"
+
+          # Get current revision
+          CURRENT=$(helm history blockd -n $ENV --max 1 -o json | jq -r '.[0].revision')
+          echo "Current revision: $CURRENT"
+          echo "current_revision=$CURRENT" >> $GITHUB_OUTPUT
+
+          # Determine target revision
+          if [ -n "${{ needs.determine-rollback.outputs.target_revision }}" ]; then
+            TARGET="${{ needs.determine-rollback.outputs.target_revision }}"
+          else
+            # Get previous successful revision
+            TARGET=$(helm history blockd -n $ENV -o json | jq -r '[.[] | select(.status=="deployed")] | sort_by(.revision) | reverse | .[1].revision // empty')
+            if [ -z "$TARGET" ]; then
+              echo "ERROR: No previous successful revision found!"
+              exit 1
+            fi
+          fi
+
+          echo "Target revision: $TARGET"
+          echo "target_revision=$TARGET" >> $GITHUB_OUTPUT
+
+      - name: Create rollback record
+        run: |
+          ENV="${{ needs.determine-rollback.outputs.environment }}"
+
+          # Create ConfigMap to record rollback
+          kubectl create configmap rollback-${{ github.run_id }} \
+            --namespace $ENV \
+            --from-literal=from_revision=${{ steps.revisions.outputs.current_revision }} \
+            --from-literal=to_revision=${{ steps.revisions.outputs.target_revision }} \
+            --from-literal=reason="${{ needs.determine-rollback.outputs.reason }}" \
+            --from-literal=triggered_by=${{ github.actor }} \
+            --from-literal=triggered_at=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+            --from-literal=trigger_type=${{ github.event_name }} \
+            --from-literal=run_id=${{ github.run_id }} || true
+
+      - name: Execute Helm rollback
+        run: |
+          ENV="${{ needs.determine-rollback.outputs.environment }}"
+          TARGET="${{ steps.revisions.outputs.target_revision }}"
+
+          echo "Rolling back to revision $TARGET..."
+
+          helm rollback blockd $TARGET \
+            --namespace $ENV \
+            --wait \
+            --timeout 10m
+
+          echo "Helm rollback completed!"
+
+      - name: Verify rollback
+        run: |
+          ENV="${{ needs.determine-rollback.outputs.environment }}"
+
+          echo "Waiting for deployments to stabilize..."
+
+          # Wait for all deployments to be available
+          kubectl wait --for=condition=available --timeout=5m deployment --all -n $ENV
+
+          # Verify API health
+          kubectl exec deploy/api-gateway -n $ENV -- curl -f http://localhost:3000/api/v1/health || {
+            echo "ERROR: API Gateway health check failed after rollback!"
+            exit 1
+          }
+
+          echo "Rollback verified successfully!"
+
+      - name: Get rollback status
+        id: status
+        if: always()
+        run: |
+          ENV="${{ needs.determine-rollback.outputs.environment }}"
+
+          # Get current revision after rollback
+          CURRENT=$(helm history blockd -n $ENV --max 1 -o json | jq -r '.[0].revision')
+          STATUS=$(helm history blockd -n $ENV --max 1 -o json | jq -r '.[0].status')
+
+          echo "current_revision=$CURRENT" >> $GITHUB_OUTPUT
+          echo "status=$STATUS" >> $GITHUB_OUTPUT
+
+  notify:
+    name: Send Notification
+    runs-on: ubuntu-latest
+    needs: [determine-rollback, rollback]
+    if: always()
+
+    steps:
+      - name: Send success notification
+        if: needs.rollback.result == 'success'
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "Rollback executed successfully",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": ":rewind: *Rollback Completed Successfully*\n*Environment:* ${{ needs.determine-rollback.outputs.environment }}\n*Reason:* ${{ needs.determine-rollback.outputs.reason }}\n*Trigger:* ${{ github.event_name }}\n*Triggered By:* ${{ github.actor }}\n*Run:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Send failure notification
+        if: needs.rollback.result == 'failure'
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "CRITICAL: Rollback failed!",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": ":rotating_light: *CRITICAL: Rollback Failed!*\n*Environment:* ${{ needs.determine-rollback.outputs.environment }}\n*Reason:* ${{ needs.determine-rollback.outputs.reason }}\n*Trigger:* ${{ github.event_name }}\n*Run:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\n\n*IMMEDIATE ATTENTION REQUIRED*"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Page on-call for failed rollback
+        if: needs.rollback.result == 'failure'
+        run: |
+          # Trigger PagerDuty incident for failed rollback
+          curl -X POST "https://events.pagerduty.com/v2/enqueue" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "routing_key": "${{ secrets.PAGERDUTY_ROUTING_KEY }}",
+              "event_action": "trigger",
+              "dedup_key": "rollback-failed-${{ github.run_id }}",
+              "payload": {
+                "summary": "CRITICAL: Automatic rollback failed for ${{ needs.determine-rollback.outputs.environment }}",
+                "source": "GitHub Actions",
+                "severity": "critical",
+                "custom_details": {
+                  "environment": "${{ needs.determine-rollback.outputs.environment }}",
+                  "reason": "${{ needs.determine-rollback.outputs.reason }}",
+                  "run_url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                }
+              }
+            }' || true

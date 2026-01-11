@@ -1,0 +1,451 @@
+# Pod Security Configurations for Blockd Platform
+# Defense-in-depth security controls beyond PSS baseline
+#
+# This file includes:
+# 1. Security contexts for all workloads
+# 2. Network egress restrictions
+# 3. Runtime security policies (Falco rules)
+# 4. Image pull policies and restrictions
+---
+# Restricted SecurityContext template for most workloads
+# Apply this pattern to all deployments
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: security-context-templates
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+data:
+  restricted-container.yaml: |
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+          - ALL
+      readOnlyRootFilesystem: true
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      seccompProfile:
+        type: RuntimeDefault
+
+  restricted-pod.yaml: |
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+      fsGroupChangePolicy: OnRootMismatch
+      seccompProfile:
+        type: RuntimeDefault
+      supplementalGroups: []
+
+---
+# Kyverno ClusterPolicy for enforcing security standards
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: blockd-security-policy
+  labels:
+    app.kubernetes.io/part-of: blockd
+  annotations:
+    policies.kyverno.io/title: Blockd Security Policy
+    policies.kyverno.io/category: Security
+    policies.kyverno.io/severity: high
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    # Require non-root containers
+    - name: require-non-root
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - blockd
+                - blockd-staging
+      validate:
+        message: "Containers must run as non-root"
+        pattern:
+          spec:
+            containers:
+              - securityContext:
+                  runAsNonRoot: true
+
+    # Require dropping all capabilities
+    - name: drop-all-capabilities
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - blockd
+                - blockd-staging
+      validate:
+        message: "Containers must drop all capabilities"
+        pattern:
+          spec:
+            containers:
+              - securityContext:
+                  capabilities:
+                    drop:
+                      - ALL
+
+    # Disallow privilege escalation
+    - name: disallow-privilege-escalation
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - blockd
+                - blockd-staging
+      validate:
+        message: "Privilege escalation is not allowed"
+        pattern:
+          spec:
+            containers:
+              - securityContext:
+                  allowPrivilegeEscalation: false
+
+    # Require read-only root filesystem
+    - name: require-readonly-rootfs
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - blockd
+                - blockd-staging
+      validate:
+        message: "Root filesystem must be read-only"
+        pattern:
+          spec:
+            containers:
+              - securityContext:
+                  readOnlyRootFilesystem: true
+
+    # Require resource limits
+    - name: require-resource-limits
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - blockd
+                - blockd-staging
+      validate:
+        message: "Resource limits are required"
+        pattern:
+          spec:
+            containers:
+              - resources:
+                  limits:
+                    cpu: "?*"
+                    memory: "?*"
+                  requests:
+                    cpu: "?*"
+                    memory: "?*"
+
+    # Restrict image registries
+    - name: restrict-image-registries
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - blockd
+                - blockd-staging
+      validate:
+        message: "Images must be from approved registries"
+        pattern:
+          spec:
+            containers:
+              - image: "ghcr.io/blockd/* | docker.io/library/* | gcr.io/distroless/*"
+
+    # Require image digest (not just tags)
+    - name: require-image-digest
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - blockd
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - blockd-staging
+      validate:
+        message: "Production images must use digest, not tag"
+        pattern:
+          spec:
+            containers:
+              - image: "*@sha256:*"
+
+---
+# Network egress policy - restrict outbound traffic
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress: []
+
+---
+# Allow DNS resolution
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+---
+# Allow egress to internal services
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-internal-egress
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    # Allow within namespace
+    - to:
+        - podSelector: {}
+    # Allow to database
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8  # VPC CIDR
+      ports:
+        - protocol: TCP
+          port: 5432  # PostgreSQL
+        - protocol: TCP
+          port: 6379  # Redis
+        - protocol: TCP
+          port: 5672  # RabbitMQ
+        - protocol: TCP
+          port: 15672 # RabbitMQ Management
+
+---
+# Allow egress to external APIs (AI services only)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ai-service-egress
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: ai-detection
+  policyTypes:
+    - Egress
+  egress:
+    # Allow HTTPS to external APIs
+    - ports:
+        - protocol: TCP
+          port: 443
+      to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+
+---
+# Falco rules for runtime security monitoring
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: falco-custom-rules
+  namespace: falco
+  labels:
+    app.kubernetes.io/part-of: blockd
+data:
+  blockd-rules.yaml: |
+    # Custom Falco rules for Blockd platform
+
+    - rule: Unexpected Process in Blockd Container
+      desc: Detect unexpected processes in Blockd containers
+      condition: >
+        spawned_process and
+        container and
+        container.image.repository startswith "ghcr.io/blockd" and
+        not proc.name in (node, python, python3, sh, bash, npm, npx, prisma)
+      output: >
+        Unexpected process in Blockd container
+        (user=%user.name command=%proc.cmdline container=%container.name image=%container.image.repository)
+      priority: WARNING
+      tags: [blockd, process]
+
+    - rule: Shell Spawned in Blockd Container
+      desc: Detect shell spawn in Blockd containers (except during init)
+      condition: >
+        spawned_process and
+        container and
+        container.image.repository startswith "ghcr.io/blockd" and
+        proc.name in (sh, bash, dash) and
+        proc.pname != "node" and
+        container.duration > 60000000000
+      output: >
+        Shell spawned in Blockd container after startup
+        (user=%user.name command=%proc.cmdline parent=%proc.pname container=%container.name)
+      priority: ALERT
+      tags: [blockd, shell]
+
+    - rule: Sensitive File Access in Blockd
+      desc: Detect access to sensitive files
+      condition: >
+        open_read and
+        container and
+        container.image.repository startswith "ghcr.io/blockd" and
+        (fd.name contains "/etc/shadow" or
+         fd.name contains "/etc/passwd" or
+         fd.name contains "id_rsa" or
+         fd.name contains ".env")
+      output: >
+        Sensitive file access in Blockd container
+        (user=%user.name file=%fd.name command=%proc.cmdline container=%container.name)
+      priority: CRITICAL
+      tags: [blockd, file_access]
+
+    - rule: Network Tool Execution
+      desc: Detect network reconnaissance tools
+      condition: >
+        spawned_process and
+        container and
+        container.image.repository startswith "ghcr.io/blockd" and
+        proc.name in (nc, ncat, netcat, nmap, wget, curl) and
+        not proc.pname in (node, npm)
+      output: >
+        Network tool executed in Blockd container
+        (user=%user.name command=%proc.cmdline container=%container.name)
+      priority: WARNING
+      tags: [blockd, network]
+
+    - rule: Package Manager Execution
+      desc: Detect package manager execution in production
+      condition: >
+        spawned_process and
+        container and
+        container.image.repository startswith "ghcr.io/blockd" and
+        proc.name in (apt, apt-get, yum, apk, pip, npm) and
+        k8s.ns.name = "blockd"
+      output: >
+        Package manager executed in production container
+        (user=%user.name command=%proc.cmdline container=%container.name)
+      priority: ALERT
+      tags: [blockd, package_manager]
+
+    - rule: Cryptominer Indicators
+      desc: Detect potential cryptomining activity
+      condition: >
+        spawned_process and
+        container and
+        (proc.name contains "miner" or
+         proc.name contains "xmrig" or
+         proc.cmdline contains "stratum" or
+         proc.cmdline contains "cryptonight")
+      output: >
+        Potential cryptominer detected
+        (user=%user.name command=%proc.cmdline container=%container.name)
+      priority: CRITICAL
+      tags: [blockd, cryptominer]
+
+---
+# OPA Gatekeeper constraint for additional validation
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sBlockPrivilegedContainer
+metadata:
+  name: block-privileged-containers
+  labels:
+    app.kubernetes.io/part-of: blockd
+spec:
+  match:
+    kinds:
+      - apiGroups: [""]
+        kinds: ["Pod"]
+    namespaces:
+      - blockd
+      - blockd-staging
+  parameters:
+    exemptImages: []
+
+---
+# Service account restrictions
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: blockd-restricted-sa
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+automountServiceAccountToken: false
+
+---
+# Role with minimal permissions
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: blockd-minimal-role
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+rules:
+  # Only allow reading own pod info (for health checks)
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get"]
+    resourceNames: []  # Will be bound to specific pods
+
+---
+# ImagePullSecret policy - require specific registry credentials
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ghcr-pull-secret
+  namespace: blockd
+  labels:
+    app.kubernetes.io/part-of: blockd
+type: kubernetes.io/dockerconfigjson
+data:
+  # Base64 encoded docker config - replace with actual values
+  .dockerconfigjson: eyJhdXRocyI6eyJnaGNyLmlvIjp7fX19

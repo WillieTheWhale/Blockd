@@ -23,6 +23,10 @@
 
 namespace content {
 
+class EyeTrackingClientImpl;
+class VideoCaptureClientImpl;
+class AudioCaptureClientImpl;
+
 // Manages Mojo IPC connection from renderer to browser process.
 // Singleton class that provides access to browser-side Blocked services.
 // Implements BlockedSessionClient to receive commands from browser.
@@ -121,12 +125,15 @@ class RendererHostConnector : public blocked::mojom::BlockedSessionClient {
 
   // Eye tracking interfaces.
   mojo::Remote<blocked::mojom::EyeTrackingHost> eye_tracking_host_;
+  std::unique_ptr<EyeTrackingClientImpl> eye_tracking_client_;
 
   // Video capture interfaces.
   mojo::Remote<blocked::mojom::VideoCaptureHost> video_capture_host_;
+  std::unique_ptr<VideoCaptureClientImpl> video_capture_client_;
 
   // Audio capture interfaces.
   mojo::Remote<blocked::mojom::AudioCaptureHost> audio_capture_host_;
+  std::unique_ptr<AudioCaptureClientImpl> audio_capture_client_;
 
   // Observers.
   std::vector<raw_ptr<Observer>> observers_;

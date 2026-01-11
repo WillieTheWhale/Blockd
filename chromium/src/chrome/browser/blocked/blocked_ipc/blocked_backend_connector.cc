@@ -17,17 +17,53 @@
 #include "base/time/time.h"
 #include "base/values.h"
 #include "mojo/public/cpp/system/simple_watcher.h"
+#include "net/base/isolation_info.h"
 #include "net/base/net_errors.h"
+#include "net/cookies/site_for_cookies.h"
 #include "services/network/public/mojom/network_context.mojom.h"
+#include "url/origin.h"
 
 namespace blocked {
 
+namespace {
+
+// Traffic annotation for WebSocket connection to Blocked backend.
+constexpr net::NetworkTrafficAnnotationTag kTrafficAnnotation =
+    net::DefineNetworkTrafficAnnotation("blocked_backend_websocket", R"(
+      semantics {
+        sender: "Blocked Browser"
+        description:
+          "WebSocket connection to Blocked backend for real-time "
+          "session monitoring including security events, gaze tracking, "
+          "telemetry, and audio data."
+        trigger:
+          "When an interview session is started in the Blocked browser."
+        data:
+          "Session authentication token, security events (process detection, "
+          "window focus changes), gaze tracking coordinates, system telemetry "
+          "(CPU, memory usage), and encoded audio data."
+        destination: OTHER
+        destination_other: "Blocked interview platform backend"
+      }
+      policy {
+        cookies_allowed: NO
+        setting:
+          "This feature is required for Blocked interview sessions and "
+          "cannot be disabled while using the Blocked browser."
+        policy_exception_justification:
+          "Essential for the core functionality of the Blocked interview "
+          "security platform."
+      }
+    )");
+
+}  // namespace
+
 BlockedBackendConnector::BlockedBackendConnector(
     const std::string& backend_url,
-    network::mojom::URLLoaderFactory* url_loader_factory)
+    network::mojom::NetworkContext* network_context)
     : backend_url_(backend_url),
-      url_loader_factory_(url_loader_factory) {
-  DCHECK(url_loader_factory_);
+      network_context_(network_context) {
+  DCHECK(network_context_);
   LOG(INFO) << "BlockedBackendConnector initialized with URL: " << backend_url_;
 }
 
@@ -100,6 +136,14 @@ void BlockedBackendConnector::InitiateConnection() {
     return;
   }
 
+  // Ensure we have a network context
+  if (!network_context_) {
+    LOG(ERROR) << "No network context available for WebSocket connection";
+    state_ = ConnectionState::ERROR;
+    NotifyObservers(state_);
+    return;
+  }
+
   // Prepare headers with authentication
   std::vector<network::mojom::HttpHeaderPtr> headers;
   auto auth_header = network::mojom::HttpHeader::New();
@@ -116,64 +160,34 @@ void BlockedBackendConnector::InitiateConnection() {
   handshake_receiver_.reset();
   client_receiver_.reset();
   websocket_.reset();
+  readable_pipe_.reset();
+  writable_pipe_.reset();
+  read_watcher_.reset();
+  write_watcher_.reset();
 
-  // Create WebSocket connection through network service
-  // Note: In actual Chromium, you'd get this from the browser context's
-  // network context. For now, we'll use a simpler approach that works
-  // with the URL loader factory.
+  // Create the WebSocket connection through the network context.
+  // This is the proper Chromium way to establish WebSocket connections
+  // from the browser process.
+  url::Origin origin = url::Origin::Create(ws_url);
 
-  // The actual WebSocket creation would go through network::mojom::NetworkContext
-  // For this implementation, we'll simulate the connection establishment
-  // and implement the proper interfaces.
+  network_context_->CreateWebSocket(
+      ws_url,
+      std::move(headers),
+      net::SiteForCookies::FromUrl(ws_url),
+      /*has_storage_access=*/false,
+      net::IsolationInfo::CreateTransient(),
+      /*additional_headers=*/{},
+      network::mojom::kBrowserProcessId,
+      origin,
+      network::mojom::kWebSocketOptionNone,
+      net::MutableNetworkTrafficAnnotationTag(kTrafficAnnotation),
+      handshake_receiver_.BindNewPipeAndPassRemote(),
+      /*url_loader_network_observer=*/mojo::NullRemote(),
+      /*auth_handler=*/mojo::NullRemote(),
+      /*header_client=*/mojo::NullRemote(),
+      /*throttling_profile_id=*/std::nullopt);
 
-  // In production, you would call:
-  // network_context->CreateWebSocket(
-  //     ws_url,
-  //     std::move(headers),
-  //     net::SiteForCookies::FromUrl(ws_url),
-  //     /*has_storage_access=*/false,
-  //     /*isolation_info=*/net::IsolationInfo(),
-  //     /*additional_headers=*/{},
-  //     network::mojom::kBrowserProcessId,
-  //     url::Origin::Create(ws_url),
-  //     network::mojom::kWebSocketOptionNone,
-  //     net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS),
-  //     handshake_receiver_.BindNewPipeAndPassRemote(),
-  //     /*auth_cert_observer=*/mojo::NullRemote(),
-  //     /*auth_handler=*/mojo::NullRemote(),
-  //     /*header_client=*/mojo::NullRemote(),
-  //     /*throttling_profile_id=*/std::nullopt);
-
-  // For now, simulate successful connection for testing
-  // In production, replace this with actual network context call
-  base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
-      FROM_HERE,
-      base::BindOnce(
-          [](base::WeakPtr<BlockedBackendConnector> self) {
-            if (!self) return;
-
-            // Simulate successful handshake
-            self->state_ = ConnectionState::CONNECTED;
-            self->session_id_ = "session_" +
-                base::NumberToString(base::Time::Now().InMillisecondsSinceUnixEpoch());
-
-            LOG(INFO) << "WebSocket connection established, session_id: "
-                      << self->session_id_;
-
-            // Start heartbeat
-            self->heartbeat_timer_.Start(
-                FROM_HERE,
-                kHeartbeatInterval,
-                base::BindRepeating(&BlockedBackendConnector::SendHeartbeat,
-                                    self));
-
-            self->NotifyObservers(self->state_);
-
-            // Process any pending messages
-            self->ProcessPendingMessages();
-          },
-          weak_factory_.GetWeakPtr()),
-      base::Milliseconds(100));
+  LOG(INFO) << "WebSocket connection request sent to network context";
 }
 
 void BlockedBackendConnector::Disconnect() {
@@ -249,6 +263,8 @@ bool BlockedBackendConnector::SendMessage(const std::string& message) {
         state_ == ConnectionState::RECONNECTING) {
       if (pending_messages_.size() < kMaxPendingMessages) {
         pending_messages_.push(message);
+        VLOG(2) << "Message queued (pending connection): " << message.size()
+                << " bytes";
         return true;
       } else {
         LOG(WARNING) << "Pending message queue full, dropping message";
@@ -259,15 +275,10 @@ bool BlockedBackendConnector::SendMessage(const std::string& message) {
     return false;
   }
 
-  // Send through WebSocket
-  // In actual implementation, write to writable_pipe_
-  // For now, log the message and track statistics
+  // Send through WebSocket data pipe
+  WriteToDataPipe(message);
 
   VLOG(2) << "Sending message (" << message.size() << " bytes)";
-  bytes_sent_ += message.size();
-
-  // Actual send would be:
-  // WriteToDataPipe(message);
 
   return true;
 }

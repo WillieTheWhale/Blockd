@@ -46,11 +46,26 @@ source_set("security_monitoring") {
 
   if (is_linux) {
     sources += [
+      "platform/linux/linux_platform_detector.cc",
+      "platform/linux/linux_platform_detector.h",
       "platform/linux/linux_security_monitor.cc",
       "platform/linux/linux_security_monitor.h",
+      "platform/linux/wayland_clipboard_monitor.cc",
+      "platform/linux/wayland_clipboard_monitor.h",
+      "platform/linux/x11_clipboard_monitor.cc",
+      "platform/linux/x11_clipboard_monitor.h",
     ]
 
-    deps += [ "//ui/gfx/x" ]
+    deps += [
+      "//dbus",
+      "//ui/gfx/x",
+    ]
+
+    # X11 libraries for window title detection and clipboard monitoring
+    libs = [
+      "X11",
+      "Xfixes",
+    ]
   }
 
   configs += [ "//chrome/browser/blocked:blocked_config" ]

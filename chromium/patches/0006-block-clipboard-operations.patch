@@ -1,0 +1,263 @@
+From: Blocked Browser Team <dev@blockd.com>
+Date: Fri, 10 Jan 2026 11:00:00 +0000
+Subject: [PATCH 6/6] Block clipboard operations during interview sessions
+
+Block copy, cut, paste, and select-all operations during active
+Blocked interview sessions to prevent content exfiltration.
+
+Changes:
+- Block clipboard commands in RenderViewContextMenu
+- Block clipboard access in ClipboardHost
+- Block edit commands in RenderWidgetHostImpl
+- Disable drag and drop during sessions
+
+diff --git a/chrome/browser/renderer_context_menu/render_view_context_menu.cc b/chrome/browser/renderer_context_menu/render_view_context_menu.cc
+index 2345678..clipboard1 100644
+--- a/chrome/browser/renderer_context_menu/render_view_context_menu.cc
++++ b/chrome/browser/renderer_context_menu/render_view_context_menu.cc
+@@ -450,6 +450,20 @@ bool RenderViewContextMenu::IsCommandIdEnabled(int command_id) const {
+   switch (command_id) {
+     case IDC_CONTENT_CONTEXT_CUT:
+     case IDC_CONTENT_CONTEXT_COPY:
++    case IDC_CONTENT_CONTEXT_PASTE:
++    case IDC_CONTENT_CONTEXT_PASTE_AND_MATCH_STYLE:
++    case IDC_CONTENT_CONTEXT_SELECTALL:
++#ifdef BLOCKED_BROWSER
++      // Block clipboard commands during active sessions.
++      if (blocked::BlockedBrowserController::Get() &&
++          blocked::BlockedBrowserController::Get()->ShouldBlockClipboard()) {
++        return false;
++      }
++#endif
++      return IsClipboardCommandEnabled(command_id);
++
++    case IDC_CONTENT_CONTEXT_COPY_LINK_TO_CLIPBOARD:
++    case IDC_CONTENT_CONTEXT_COPY_IMAGE:
+ #ifdef BLOCKED_BROWSER
+       // Block clipboard commands during active sessions.
+       if (blocked::BlockedBrowserController::Get() &&
+@@ -457,8 +471,7 @@ bool RenderViewContextMenu::IsCommandIdEnabled(int command_id) const {
+         return false;
+       }
+ #endif
+-    case IDC_CONTENT_CONTEXT_PASTE:
+-      return IsClipboardCommandEnabled(command_id);
++      return IsLinkOrImageCopyEnabled(command_id);
+
+     default:
+       return true;
+@@ -500,6 +513,14 @@ void RenderViewContextMenu::ExecuteCommand(int command_id, int event_flags) {
+   switch (command_id) {
+     case IDC_CONTENT_CONTEXT_CUT:
+     case IDC_CONTENT_CONTEXT_COPY:
++    case IDC_CONTENT_CONTEXT_PASTE:
++    case IDC_CONTENT_CONTEXT_PASTE_AND_MATCH_STYLE:
++    case IDC_CONTENT_CONTEXT_SELECTALL:
++    case IDC_CONTENT_CONTEXT_COPY_LINK_TO_CLIPBOARD:
++    case IDC_CONTENT_CONTEXT_COPY_IMAGE:
++#ifdef BLOCKED_BROWSER
++      // Commands already blocked by IsCommandIdEnabled, but double-check.
++      if (blocked::BlockedBrowserController::Get() &&
++          blocked::BlockedBrowserController::Get()->ShouldBlockClipboard()) {
++        LOG(WARNING) << "Blocked: Clipboard command blocked during session";
++        return;
++      }
++#endif
+       ExecuteClipboardCommand(command_id);
+       break;
+
+diff --git a/content/browser/renderer_host/clipboard_host_impl.cc b/content/browser/renderer_host/clipboard_host_impl.cc
+index 3456789..clipboard2 100644
+--- a/content/browser/renderer_host/clipboard_host_impl.cc
++++ b/content/browser/renderer_host/clipboard_host_impl.cc
+@@ -30,6 +30,10 @@
+ #include "ui/base/clipboard/clipboard.h"
+ #include "ui/base/clipboard/scoped_clipboard_writer.h"
+
++#ifdef BLOCKED_BROWSER
++#include "chrome/browser/ui/blocked/blocked_browser_controller.h"
++#endif
++
+ namespace content {
+
+ namespace {
+@@ -100,6 +104,15 @@ void ClipboardHostImpl::ReadText(ui::ClipboardBuffer buffer,
+                                  ReadTextCallback callback) {
+   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+
++#ifdef BLOCKED_BROWSER
++  // Block reading from clipboard during active sessions.
++  if (blocked::BlockedBrowserController::Get() &&
++      blocked::BlockedBrowserController::Get()->ShouldBlockPaste()) {
++    std::move(callback).Run(std::u16string());
++    return;
++  }
++#endif
++
+   std::u16string result;
+   ui::Clipboard::GetForCurrentThread()->ReadText(
+       buffer, /* data_dst= */ nullptr, &result);
+@@ -120,6 +133,15 @@ void ClipboardHostImpl::ReadHtml(ui::ClipboardBuffer buffer,
+                                  ReadHtmlCallback callback) {
+   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+
++#ifdef BLOCKED_BROWSER
++  // Block reading HTML from clipboard during active sessions.
++  if (blocked::BlockedBrowserController::Get() &&
++      blocked::BlockedBrowserController::Get()->ShouldBlockPaste()) {
++    std::move(callback).Run(std::u16string(), GURL(), 0, 0);
++    return;
++  }
++#endif
++
+   std::u16string markup;
+   GURL src_url;
+   uint32_t fragment_start, fragment_end;
+@@ -150,6 +172,15 @@ void ClipboardHostImpl::WriteText(const std::u16string& text) {
+   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+   DCHECK(googlechrome_check_->HasPendingCopy());
+
++#ifdef BLOCKED_BROWSER
++  // Block writing to clipboard during active sessions.
++  if (blocked::BlockedBrowserController::Get() &&
++      blocked::BlockedBrowserController::Get()->ShouldBlockCopy()) {
++    LOG(WARNING) << "Blocked: WriteText to clipboard blocked during session";
++    return;
++  }
++#endif
++
+   clipboard_writer_->WriteText(text);
+ }
+
+@@ -157,6 +188,15 @@ void ClipboardHostImpl::WriteHtml(const std::u16string& markup,
+                                   const GURL& url) {
+   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+
++#ifdef BLOCKED_BROWSER
++  // Block writing HTML to clipboard during active sessions.
++  if (blocked::BlockedBrowserController::Get() &&
++      blocked::BlockedBrowserController::Get()->ShouldBlockCopy()) {
++    LOG(WARNING) << "Blocked: WriteHtml to clipboard blocked during session";
++    return;
++  }
++#endif
++
+   clipboard_writer_->WriteHTML(markup, url.spec());
+ }
+
+@@ -180,6 +220,15 @@ void ClipboardHostImpl::ReadImage(ui::ClipboardBuffer buffer,
+                                   ReadImageCallback callback) {
+   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+
++#ifdef BLOCKED_BROWSER
++  // Block reading images from clipboard during active sessions.
++  if (blocked::BlockedBrowserController::Get() &&
++      blocked::BlockedBrowserController::Get()->ShouldBlockPaste()) {
++    std::move(callback).Run(SkBitmap());
++    return;
++  }
++#endif
++
+   SkBitmap result = ui::Clipboard::GetForCurrentThread()->ReadImage(
+       buffer, /* data_dst= */ nullptr);
+   std::move(callback).Run(std::move(result));
+@@ -190,6 +239,15 @@ void ClipboardHostImpl::WriteImage(const SkBitmap& bitmap) {
+   if (bitmap.empty())
+     return;
+
++#ifdef BLOCKED_BROWSER
++  // Block writing images to clipboard during active sessions.
++  if (blocked::BlockedBrowserController::Get() &&
++      blocked::BlockedBrowserController::Get()->ShouldBlockCopy()) {
++    LOG(WARNING) << "Blocked: WriteImage to clipboard blocked during session";
++    return;
++  }
++#endif
++
+   clipboard_writer_->WriteImage(bitmap);
+ }
+
+diff --git a/content/browser/renderer_host/render_widget_host_impl.cc b/content/browser/renderer_host/render_widget_host_impl.cc
+index 4567890..clipboard3 100644
+--- a/content/browser/renderer_host/render_widget_host_impl.cc
++++ b/content/browser/renderer_host/render_widget_host_impl.cc
+@@ -100,6 +100,10 @@
+ #include "ui/events/keycodes/keyboard_codes.h"
+ #include "ui/gfx/geometry/size_conversions.h"
+
++#ifdef BLOCKED_BROWSER
++#include "chrome/browser/ui/blocked/blocked_browser_controller.h"
++#endif
++
+ namespace content {
+
+ namespace {
+@@ -800,6 +804,22 @@ void RenderWidgetHostImpl::ExecuteEditCommand(
+     const std::string& command,
+     const std::optional<std::u16string>& value) {
+
++#ifdef BLOCKED_BROWSER
++  // Block edit commands during active sessions.
++  if (blocked::BlockedBrowserController::Get() &&
++      blocked::BlockedBrowserController::Get()->IsSessionActive()) {
++    // Block Copy, Cut, Paste, SelectAll commands.
++    if (command == "Copy" || command == "Cut" || command == "Paste" ||
++        command == "SelectAll" || command == "Delete" ||
++        command == "PasteAndMatchStyle") {
++      LOG(WARNING) << "Blocked: Edit command '" << command
++                   << "' blocked during session";
++      return;
++    }
++  }
++#endif
++
+   GetWidgetInputHandler()->ExecuteEditCommand(command, value);
+ }
+
+diff --git a/content/browser/web_contents/web_contents_impl.cc b/content/browser/web_contents/web_contents_impl.cc
+index 5678901..clipboard4 100644
+--- a/content/browser/web_contents/web_contents_impl.cc
++++ b/content/browser/web_contents/web_contents_impl.cc
+@@ -150,6 +150,10 @@
+ #include "ui/base/dragdrop/drop_target_event.h"
+ #include "url/url_constants.h"
+
++#ifdef BLOCKED_BROWSER
++#include "chrome/browser/ui/blocked/blocked_browser_controller.h"
++#endif
++
+ namespace content {
+
+ namespace {
+@@ -2500,6 +2504,15 @@ void WebContentsImpl::DragSourceEndedAt(float client_x,
+                                         ui::mojom::DragOperation operation,
+                                         RenderWidgetHost* source_rwh) {
+
++#ifdef BLOCKED_BROWSER
++  // Block drag operations during active sessions.
++  if (blocked::BlockedBrowserController::Get() &&
++      blocked::BlockedBrowserController::Get()->ShouldBlockClipboard()) {
++    LOG(WARNING) << "Blocked: Drag operation blocked during session";
++    return;
++  }
++#endif
++
+   if (browser_plugin_embedder_)
+     browser_plugin_embedder_->DragSourceEndedAt(client_x, client_y, operation);
+
+@@ -2520,6 +2533,15 @@ void WebContentsImpl::StartDragging(
+     blink::mojom::DragEventSourceInfo event_info,
+     RenderWidgetHostImpl* source_rwh) {
+
++#ifdef BLOCKED_BROWSER
++  // Block starting drag during active sessions.
++  if (blocked::BlockedBrowserController::Get() &&
++      blocked::BlockedBrowserController::Get()->ShouldBlockClipboard()) {
++    LOG(WARNING) << "Blocked: StartDragging blocked during session";
++    return;
++  }
++#endif
++
+   // The drag might not start because an IPC could come in during the process
+   // of starting, so check for null.
+   if (!source_rwh)

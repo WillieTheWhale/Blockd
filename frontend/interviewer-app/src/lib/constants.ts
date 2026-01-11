@@ -2,10 +2,40 @@
  * Application-wide constants
  */
 
+/**
+ * Runtime environment validation
+ * Validates required environment variables at startup
+ */
+function validateEnv(): void {
+  const env = import.meta.env.VITE_APP_ENV || 'development'
+
+  // In production, warn if critical env vars are missing
+  if (env === 'production') {
+    const requiredVars = ['VITE_API_URL', 'VITE_WS_URL'] as const
+    const missing = requiredVars.filter(key => !import.meta.env[key])
+
+    if (missing.length > 0) {
+      console.warn(
+        `[Blockd] Missing required environment variables: ${missing.join(', ')}. ` +
+        'Using default values. This may cause issues in production.'
+      )
+    }
+  }
+}
+
+// Run validation on module load
+validateEnv()
+
 export const APP_NAME = import.meta.env.VITE_APP_NAME || 'Blockd'
 export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 export const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000'
 export const APP_ENV = import.meta.env.VITE_APP_ENV || 'development'
+
+/**
+ * Environment helper for conditional logic
+ */
+export const IS_PRODUCTION = APP_ENV === 'production'
+export const IS_DEVELOPMENT = APP_ENV === 'development'
 
 /**
  * OAuth 2.0 configuration
@@ -13,12 +43,12 @@ export const APP_ENV = import.meta.env.VITE_APP_ENV || 'development'
  */
 export const OAUTH_CONFIG = {
   GOOGLE: {
-    CLIENT_ID: import.meta.env.VITE_GOOGLE_CLIENT_ID || '',
+    CLIENT_ID: (import.meta.env['VITE_GOOGLE_CLIENT_ID'] as string) || '',
     AUTHORIZATION_URL: 'https://accounts.google.com/o/oauth2/v2/auth',
     SCOPES: ['openid', 'email', 'profile'],
   },
   MICROSOFT: {
-    CLIENT_ID: import.meta.env.VITE_MICROSOFT_CLIENT_ID || '',
+    CLIENT_ID: (import.meta.env['VITE_MICROSOFT_CLIENT_ID'] as string) || '',
     AUTHORIZATION_URL: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
     SCOPES: ['openid', 'email', 'profile'],
   },
@@ -65,8 +95,22 @@ export const API_ENDPOINTS = {
       `/api/v1/sessions/${sessionId}/questions/${questionId}/answer`,
   },
   REPORTS: {
+    LIST: '/api/v1/reports',
     GET: (sessionId: string) => `/api/v1/reports/${sessionId}`,
     DOWNLOAD: (sessionId: string) => `/api/v1/reports/${sessionId}/download`,
+    DELETE: (sessionId: string) => `/api/v1/reports/${sessionId}`,
+  },
+  ANALYTICS: {
+    OVERVIEW: '/api/v1/analytics/overview',
+    SESSIONS: '/api/v1/analytics/sessions',
+    DETECTION_METHODS: '/api/v1/analytics/detection-methods',
+    WEEKLY_TRENDS: '/api/v1/analytics/weekly-trends',
+    CANDIDATE_SOURCES: '/api/v1/analytics/candidate-sources',
+    RISK_SCORES: '/api/v1/analytics/risk-scores',
+  },
+  AI_DETECTION: {
+    GET: (sessionId: string) => `/api/v1/sessions/${sessionId}/ai-detection`,
+    LIST: (sessionId: string) => `/api/v1/sessions/${sessionId}/ai-detection/results`,
   },
   USERS: {
     PROFILE: '/api/v1/users/me',
@@ -90,7 +134,22 @@ export const QUERY_KEYS = {
     LIST: (sessionId: string) => ['questions', sessionId] as const,
   },
   REPORTS: {
+    ALL: ['reports'] as const,
+    LIST: (filters?: Record<string, unknown>) => ['reports', 'list', filters] as const,
     GET: (sessionId: string) => ['reports', sessionId] as const,
+  },
+  ANALYTICS: {
+    ALL: ['analytics'] as const,
+    OVERVIEW: ['analytics', 'overview'] as const,
+    SESSIONS: ['analytics', 'sessions'] as const,
+    DETECTION_METHODS: ['analytics', 'detection-methods'] as const,
+    WEEKLY_TRENDS: ['analytics', 'weekly-trends'] as const,
+    CANDIDATE_SOURCES: ['analytics', 'candidate-sources'] as const,
+    RISK_SCORES: ['analytics', 'risk-scores'] as const,
+  },
+  AI_DETECTION: {
+    GET: (sessionId: string) => ['ai-detection', sessionId] as const,
+    LIST: (sessionId: string) => ['ai-detection', sessionId, 'list'] as const,
   },
 } as const
 

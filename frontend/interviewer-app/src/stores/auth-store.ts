@@ -4,7 +4,7 @@ import type { User, LoginCredentials, RegisterData, ProfileUpdateFormData } from
 import { clearTokens, setTokens as setAuthTokens } from '@/lib/auth'
 import { STORAGE_KEYS } from '@/lib/constants'
 import { apiRequest } from '@/lib/api-client'
-import { validateOAuthCallback, getOAuthState, clearOAuthState } from '@/lib/oauth'
+import { validateOAuthCallback, clearOAuthState } from '@/lib/oauth'
 
 interface AuthState {
   user: User | null
@@ -251,10 +251,10 @@ export const useAuthStore = create<AuthStore>()(
 
             set({ isLoading: false })
 
-            return {
-              success: true,
-              redirectPath: storedState.redirectPath,
-            }
+            // Only include redirectPath if it's defined (exactOptionalPropertyTypes compliance)
+            return storedState.redirectPath
+              ? { success: true, redirectPath: storedState.redirectPath }
+              : { success: true }
           } catch (error) {
             const message = error instanceof Error ? error.message : 'OAuth callback failed'
             set({ isLoading: false, error: message })

@@ -3,6 +3,7 @@
  */
 
 import { FastifyInstance } from 'fastify';
+import { SecurityEventType, SeverityLevel, Prisma } from '@prisma/client';
 import { optionalAuthenticate } from '../middleware/auth.middleware';
 import { publicRateLimiter, authRateLimiter } from '../middleware/rate-limit.middleware';
 import { validateBody } from '../middleware/validation.middleware';
@@ -77,10 +78,10 @@ export default async function browserRoutes(fastify: FastifyInstance) {
       const event = await prisma.securityEvent.create({
         data: {
           sessionId,
-          eventType: eventType as any,
-          severity: severity as any,
+          eventType: eventType as SecurityEventType,
+          severity: severity as SeverityLevel,
           description,
-          metadata: (metadata || {}) as any,
+          metadata: (metadata || {}) as Prisma.InputJsonValue,
         },
       });
 
@@ -179,8 +180,8 @@ export default async function browserRoutes(fastify: FastifyInstance) {
             activeProcesses: event.activeProcesses ?? [],
             windowTitle: event.windowTitle ?? null,
             browserTabsCount: event.browserTabsCount ?? null,
-            networkRequests: (event.networkRequests ?? []) as any,
-            metadata: (event.metadata ?? {}) as any,
+            networkRequests: (event.networkRequests ?? []) as Prisma.InputJsonValue,
+            metadata: (event.metadata ?? {}) as Prisma.InputJsonValue,
           })),
           skipDuplicates: true,
         });

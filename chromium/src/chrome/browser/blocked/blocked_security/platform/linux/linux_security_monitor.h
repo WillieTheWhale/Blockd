@@ -9,9 +9,13 @@
 #include <string>
 #include <vector>
 
+#include "base/memory/weak_ptr.h"
 #include "chrome/browser/blocked/blocked_security/blocked_security_service.h"
 
 namespace blocked {
+
+class WaylandClipboardMonitor;
+class X11ClipboardMonitor;
 
 // Linux-specific security monitoring implementation
 class LinuxSecurityMonitor : public BlockedSecurityService::PlatformMonitor {
@@ -48,6 +52,13 @@ class LinuxSecurityMonitor : public BlockedSecurityService::PlatformMonitor {
 
   bool clipboard_monitoring_active_ = false;
 
+  // Clipboard monitors (X11 or Wayland).
+  std::unique_ptr<X11ClipboardMonitor> x11_clipboard_monitor_;
+  std::unique_ptr<WaylandClipboardMonitor> wayland_clipboard_monitor_;
+
+  // Callback for clipboard changes.
+  void OnClipboardChanged(const std::string& content);
+
   // Known suspicious processes
   std::vector<std::string> suspicious_processes_ = {
     "obs",
@@ -60,6 +71,9 @@ class LinuxSecurityMonitor : public BlockedSecurityService::PlatformMonitor {
     "chatgpt",
     "claude"
   };
+
+  // Must be last member for weak pointer safety.
+  base::WeakPtrFactory<LinuxSecurityMonitor> weak_factory_{this};
 };
 
 }  // namespace blocked

@@ -18,6 +18,11 @@ import {
   SessionReportData,
 } from '../lib/pdf-generator';
 
+/** Param type for routes using session_id */
+interface SessionIdParam {
+  session_id: string;
+}
+
 // ============================================================================
 // Helper Types
 // ============================================================================
@@ -198,7 +203,7 @@ async function verifySessionAccess(userId: string, sessionId: string): Promise<b
 
 export default async function reportsRoutes(fastify: FastifyInstance) {
   // Get session report
-  fastify.get<{ Params: IdParam }>('/:session_id', {
+  fastify.get<{ Params: SessionIdParam }>('/:session_id', {
     preHandler: [
       authenticate,
       authRateLimiter,
@@ -217,7 +222,7 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
-      const sessionId = (request.params as any).session_id;
+      const { session_id: sessionId } = request.params;
 
       // Fetch session with participants using helper
       const session = await fetchSessionWithParticipants(sessionId);
@@ -248,7 +253,7 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
   });
 
   // Get session report as PDF
-  fastify.get<{ Params: IdParam }>('/:session_id/pdf', {
+  fastify.get<{ Params: SessionIdParam }>('/:session_id/pdf', {
     preHandler: [
       authenticate,
       pdfRateLimiter, // Stricter rate limit for expensive PDF generation
@@ -267,7 +272,7 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
-      const sessionId = (request.params as any).session_id;
+      const { session_id: sessionId } = request.params;
       const userId = request.user!.userId;
 
       // Verify user has access to this session
@@ -340,7 +345,12 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
           timingAnomalyScore: Number(report.timingAnomalyScore),
           securityEventsCount: report.securityEventsCount,
           recommendations: report.recommendations as string[],
-          detailedAnalysis: report.detailedAnalysis as any,
+          detailedAnalysis: report.detailedAnalysis as {
+            questionsAsked: number;
+            answersAnalyzed: number;
+            aiGeneratedAnswers: number;
+            securityEvents: number;
+          },
           createdAt: report.createdAt,
         },
         securityEvents: securityEvents.map(e => ({
@@ -352,9 +362,9 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
         answerAnalyses: answerAnalyses.map(a => ({
           questionText: a.question.questionText,
           riskScore: Number(a.riskScore),
-          isAiGenerated: a.isAiGenerated,
+          isAiGenerated: a.isAiGenerated ?? false,
           similarityScores: a.similarityScores as Record<string, number> | undefined,
-          recommendations: (a as any).recommendations as string[] | undefined,
+          // recommendations is optional and not stored in AnswerAnalysis model
         })),
       };
 
@@ -373,7 +383,7 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
   });
 
   // Generate and email report
-  fastify.post<{ Params: IdParam; Body: EmailReportRecipientsRequest }>('/:session_id/email', {
+  fastify.post<{ Params: SessionIdParam; Body: EmailReportRecipientsRequest }>('/:session_id/email', {
     preHandler: [
       authenticate,
       emailRateLimiter, // Stricter rate limit for email operations
@@ -394,7 +404,7 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
-      const sessionId = (request.params as any).session_id;
+      const { session_id: sessionId } = request.params;
       const userId = request.user!.userId;
       const { recipients } = request.body;
 

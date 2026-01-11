@@ -1,0 +1,180 @@
+# WebSocket Service Deployment
+# Real-time communication service for interview sessions
+# Uses Socket.io with Redis adapter for horizontal scaling
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: websocket-service
+  namespace: blockd
+  labels:
+    app: websocket-service
+    app.kubernetes.io/name: websocket-service
+    app.kubernetes.io/part-of: blockd
+spec:
+  type: ClusterIP
+  ports:
+    - port: 3004
+      targetPort: 3004
+      name: http
+  selector:
+    app: websocket-service
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: websocket-service
+  namespace: blockd
+  labels:
+    app: websocket-service
+    app.kubernetes.io/name: websocket-service
+    app.kubernetes.io/part-of: blockd
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: websocket-service
+  # Slower rollout strategy for stateful WebSocket connections
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: websocket-service
+        app.kubernetes.io/name: websocket-service
+        app.kubernetes.io/part-of: blockd
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3004"
+        prometheus.io/path: "/health"
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      # Graceful termination for WebSocket connections
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: websocket-service
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          image: blockd/websocket-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3004
+              name: http
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: PORT
+              value: "3004"
+            - name: HOST
+              value: "0.0.0.0"
+            # Redis configuration for Socket.io adapter
+            - name: REDIS_HOST
+              value: redis
+            - name: REDIS_PORT
+              value: "6379"
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: blockd-secrets
+                  key: redis_password
+            - name: REDIS_DB
+              value: "1"
+            - name: REDIS_KEY_PREFIX
+              value: "blockd:ws"
+            # JWT configuration
+            - name: JWT_PUBLIC_KEY_PATH
+              value: "/etc/secrets/jwt/public.pem"
+            - name: JWT_ALGORITHM
+              value: "RS256"
+            - name: JWT_ISSUER
+              value: "blockd-auth"
+            - name: JWT_AUDIENCE
+              value: "blockd-api"
+            # CORS configuration
+            - name: ALLOWED_ORIGINS
+              valueFrom:
+                configMapKeyRef:
+                  name: blockd-config
+                  key: allowed_origins
+            - name: CORS_CREDENTIALS
+              value: "true"
+            # Socket.io configuration
+            - name: PING_INTERVAL
+              value: "25000"
+            - name: PING_TIMEOUT
+              value: "20000"
+            - name: TRANSPORTS
+              value: "websocket,polling"
+            # Rate limiting
+            - name: RATE_LIMIT_MAX_EVENTS
+              value: "1000"
+            # Logging
+            - name: LOG_LEVEL
+              value: "info"
+            - name: LOG_FORMAT
+              value: "json"
+          volumeMounts:
+            - name: jwt-public-key
+              mountPath: /etc/secrets/jwt
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          # Health probes using the endpoints we created
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 3004
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 3004
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # Startup probe for slow container starts
+          startupProbe:
+            httpGet:
+              path: /health/live
+              port: 3004
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30
+      volumes:
+        - name: jwt-public-key
+          secret:
+            secretName: jwt-keys
+            items:
+              - key: JWT_PUBLIC_KEY
+                path: public.pem
+        # Temp directory for read-only filesystem
+        - name: tmp
+          emptyDir: {}
+      # Pod disruption budget is handled separately
+      # Topology spread is handled in topology-spread.yaml

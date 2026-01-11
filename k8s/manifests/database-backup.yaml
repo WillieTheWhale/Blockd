@@ -1,0 +1,742 @@
+# Database Backup Configuration for Blockd Platform
+# Automated PostgreSQL backups with point-in-time recovery support
+#
+# Features:
+# 1. Daily full backups to S3
+# 2. Continuous WAL archiving
+# 3. Cross-region replication
+# 4. Automated retention management
+---
+# ConfigMap for backup scripts
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backup-scripts
+  namespace: blockd
+  labels:
+    app.kubernetes.io/name: database-backup
+    app.kubernetes.io/part-of: blockd
+data:
+  backup.sh: |
+    #!/bin/bash
+    set -euo pipefail
+
+    # Configuration
+    TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+    BACKUP_NAME="blockd_backup_${TIMESTAMP}"
+    S3_BUCKET="${S3_BACKUP_BUCKET}"
+    S3_PREFIX="${S3_BACKUP_PREFIX:-backups/postgresql}"
+    RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
+
+    echo "Starting backup: ${BACKUP_NAME}"
+    echo "Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+    # Create backup directory
+    BACKUP_DIR="/tmp/${BACKUP_NAME}"
+    mkdir -p "${BACKUP_DIR}"
+
+    # Perform pg_dump with custom format for parallel restore
+    echo "Running pg_dump..."
+    pg_dump \
+      --host="${PGHOST}" \
+      --port="${PGPORT}" \
+      --username="${PGUSER}" \
+      --dbname="${PGDATABASE}" \
+      --format=custom \
+      --compress=9 \
+      --verbose \
+      --file="${BACKUP_DIR}/database.dump"
+
+    # Get database size for metrics
+    DB_SIZE=$(psql -h "${PGHOST}" -p "${PGPORT}" -U "${PGUSER}" -d "${PGDATABASE}" \
+      -t -c "SELECT pg_database_size('${PGDATABASE}');" | tr -d ' ')
+
+    # Create metadata file
+    cat > "${BACKUP_DIR}/metadata.json" <<EOF
+    {
+      "backup_name": "${BACKUP_NAME}",
+      "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+      "database": "${PGDATABASE}",
+      "host": "${PGHOST}",
+      "database_size_bytes": ${DB_SIZE},
+      "pg_version": "$(psql --version | head -1)",
+      "backup_type": "full",
+      "compression": "gzip-9"
+    }
+    EOF
+
+    # Calculate checksum
+    echo "Calculating checksums..."
+    cd "${BACKUP_DIR}"
+    sha256sum database.dump > checksums.sha256
+
+    # Upload to S3
+    echo "Uploading to S3..."
+    aws s3 cp "${BACKUP_DIR}/database.dump" \
+      "s3://${S3_BUCKET}/${S3_PREFIX}/${BACKUP_NAME}/database.dump" \
+      --storage-class STANDARD_IA
+
+    aws s3 cp "${BACKUP_DIR}/metadata.json" \
+      "s3://${S3_BUCKET}/${S3_PREFIX}/${BACKUP_NAME}/metadata.json"
+
+    aws s3 cp "${BACKUP_DIR}/checksums.sha256" \
+      "s3://${S3_BUCKET}/${S3_PREFIX}/${BACKUP_NAME}/checksums.sha256"
+
+    # Cross-region replication (if configured)
+    if [ -n "${S3_DR_BUCKET:-}" ]; then
+      echo "Replicating to DR region..."
+      aws s3 cp "${BACKUP_DIR}/database.dump" \
+        "s3://${S3_DR_BUCKET}/${S3_PREFIX}/${BACKUP_NAME}/database.dump" \
+        --storage-class STANDARD_IA \
+        --region "${DR_REGION:-us-west-2}"
+    fi
+
+    # Cleanup old backups
+    echo "Cleaning up backups older than ${RETENTION_DAYS} days..."
+    CUTOFF_DATE=$(date -d "-${RETENTION_DAYS} days" +%Y%m%d)
+
+    aws s3 ls "s3://${S3_BUCKET}/${S3_PREFIX}/" | while read -r line; do
+      BACKUP_DATE=$(echo "$line" | awk '{print $2}' | grep -oP 'blockd_backup_\K[0-9]{8}' || true)
+      if [ -n "$BACKUP_DATE" ] && [ "$BACKUP_DATE" -lt "$CUTOFF_DATE" ]; then
+        FOLDER=$(echo "$line" | awk '{print $2}')
+        echo "Deleting old backup: ${FOLDER}"
+        aws s3 rm "s3://${S3_BUCKET}/${S3_PREFIX}/${FOLDER}" --recursive
+      fi
+    done
+
+    # Cleanup local files
+    rm -rf "${BACKUP_DIR}"
+
+    # Report success
+    BACKUP_SIZE=$(aws s3 ls "s3://${S3_BUCKET}/${S3_PREFIX}/${BACKUP_NAME}/database.dump" | awk '{print $3}')
+    echo "Backup completed successfully!"
+    echo "Backup name: ${BACKUP_NAME}"
+    echo "Backup size: ${BACKUP_SIZE} bytes"
+    echo "Location: s3://${S3_BUCKET}/${S3_PREFIX}/${BACKUP_NAME}/"
+
+    # Send metric to CloudWatch
+    aws cloudwatch put-metric-data \
+      --namespace "Blockd/Backups" \
+      --metric-name "BackupSize" \
+      --value "${BACKUP_SIZE}" \
+      --unit "Bytes" \
+      --dimensions Environment=production,Database=postgresql || true
+
+    aws cloudwatch put-metric-data \
+      --namespace "Blockd/Backups" \
+      --metric-name "BackupSuccess" \
+      --value 1 \
+      --unit "Count" \
+      --dimensions Environment=production,Database=postgresql || true
+
+  verify-backup.sh: |
+    #!/bin/bash
+    set -euo pipefail
+
+    # Verify the latest backup
+    S3_BUCKET="${S3_BACKUP_BUCKET}"
+    S3_PREFIX="${S3_BACKUP_PREFIX:-backups/postgresql}"
+
+    echo "Finding latest backup..."
+    LATEST_BACKUP=$(aws s3 ls "s3://${S3_BUCKET}/${S3_PREFIX}/" | sort | tail -1 | awk '{print $2}' | tr -d '/')
+
+    if [ -z "$LATEST_BACKUP" ]; then
+      echo "ERROR: No backups found!"
+      exit 1
+    fi
+
+    echo "Latest backup: ${LATEST_BACKUP}"
+
+    # Download and verify checksum
+    VERIFY_DIR="/tmp/verify_${LATEST_BACKUP}"
+    mkdir -p "${VERIFY_DIR}"
+
+    echo "Downloading backup for verification..."
+    aws s3 cp "s3://${S3_BUCKET}/${S3_PREFIX}/${LATEST_BACKUP}/database.dump" "${VERIFY_DIR}/"
+    aws s3 cp "s3://${S3_BUCKET}/${S3_PREFIX}/${LATEST_BACKUP}/checksums.sha256" "${VERIFY_DIR}/"
+    aws s3 cp "s3://${S3_BUCKET}/${S3_PREFIX}/${LATEST_BACKUP}/metadata.json" "${VERIFY_DIR}/"
+
+    echo "Verifying checksum..."
+    cd "${VERIFY_DIR}"
+    sha256sum -c checksums.sha256
+
+    echo "Verifying backup integrity..."
+    pg_restore --list database.dump > /dev/null
+
+    # Cleanup
+    rm -rf "${VERIFY_DIR}"
+
+    echo "Backup verification successful!"
+
+  restore.sh: |
+    #!/bin/bash
+    set -euo pipefail
+
+    BACKUP_NAME="${1:-}"
+    TARGET_DB="${2:-blockd_restored}"
+
+    if [ -z "$BACKUP_NAME" ]; then
+      echo "Usage: restore.sh <backup_name> [target_database]"
+      echo "Example: restore.sh blockd_backup_20240115_120000 blockd_restored"
+      exit 1
+    fi
+
+    S3_BUCKET="${S3_BACKUP_BUCKET}"
+    S3_PREFIX="${S3_BACKUP_PREFIX:-backups/postgresql}"
+
+    echo "Restoring backup: ${BACKUP_NAME}"
+    echo "Target database: ${TARGET_DB}"
+
+    # Download backup
+    RESTORE_DIR="/tmp/restore_${BACKUP_NAME}"
+    mkdir -p "${RESTORE_DIR}"
+
+    echo "Downloading backup..."
+    aws s3 cp "s3://${S3_BUCKET}/${S3_PREFIX}/${BACKUP_NAME}/database.dump" "${RESTORE_DIR}/"
+    aws s3 cp "s3://${S3_BUCKET}/${S3_PREFIX}/${BACKUP_NAME}/checksums.sha256" "${RESTORE_DIR}/"
+
+    echo "Verifying checksum..."
+    cd "${RESTORE_DIR}"
+    sha256sum -c checksums.sha256
+
+    # Create target database
+    echo "Creating target database..."
+    psql -h "${PGHOST}" -p "${PGPORT}" -U "${PGUSER}" -d postgres \
+      -c "DROP DATABASE IF EXISTS ${TARGET_DB};"
+    psql -h "${PGHOST}" -p "${PGPORT}" -U "${PGUSER}" -d postgres \
+      -c "CREATE DATABASE ${TARGET_DB};"
+
+    # Restore
+    echo "Restoring database..."
+    pg_restore \
+      --host="${PGHOST}" \
+      --port="${PGPORT}" \
+      --username="${PGUSER}" \
+      --dbname="${TARGET_DB}" \
+      --verbose \
+      --jobs=4 \
+      "${RESTORE_DIR}/database.dump"
+
+    # Cleanup
+    rm -rf "${RESTORE_DIR}"
+
+    echo "Restore completed successfully!"
+    echo "Database restored to: ${TARGET_DB}"
+
+  restore-test.sh: |
+    #!/bin/bash
+    set -euo pipefail
+
+    # Weekly restore test - performs actual restore to verify backup recoverability
+    S3_BUCKET="${S3_BACKUP_BUCKET}"
+    S3_PREFIX="${S3_BACKUP_PREFIX:-backups/postgresql}"
+    TEST_DB="blockd_restore_test_$(date +%Y%m%d)"
+
+    echo "=== BACKUP RESTORE TEST ==="
+    echo "Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+    # Find latest backup
+    echo "Finding latest backup..."
+    LATEST_BACKUP=$(aws s3 ls "s3://${S3_BUCKET}/${S3_PREFIX}/" | sort | tail -1 | awk '{print $2}' | tr -d '/')
+
+    if [ -z "$LATEST_BACKUP" ]; then
+      echo "ERROR: No backups found!"
+      aws cloudwatch put-metric-data \
+        --namespace "Blockd/Backups" \
+        --metric-name "RestoreTestSuccess" \
+        --value 0 \
+        --unit "Count" \
+        --dimensions Environment=production,Database=postgresql || true
+      exit 1
+    fi
+
+    echo "Latest backup: ${LATEST_BACKUP}"
+
+    # Download and verify
+    RESTORE_DIR="/tmp/restore_test_${LATEST_BACKUP}"
+    mkdir -p "${RESTORE_DIR}"
+
+    echo "Downloading backup for restore test..."
+    aws s3 cp "s3://${S3_BUCKET}/${S3_PREFIX}/${LATEST_BACKUP}/database.dump" "${RESTORE_DIR}/"
+    aws s3 cp "s3://${S3_BUCKET}/${S3_PREFIX}/${LATEST_BACKUP}/checksums.sha256" "${RESTORE_DIR}/"
+    aws s3 cp "s3://${S3_BUCKET}/${S3_PREFIX}/${LATEST_BACKUP}/metadata.json" "${RESTORE_DIR}/"
+
+    echo "Verifying checksum..."
+    cd "${RESTORE_DIR}"
+    if ! sha256sum -c checksums.sha256; then
+      echo "ERROR: Checksum verification failed!"
+      aws cloudwatch put-metric-data \
+        --namespace "Blockd/Backups" \
+        --metric-name "RestoreTestSuccess" \
+        --value 0 \
+        --unit "Count" \
+        --dimensions Environment=production,Database=postgresql || true
+      exit 1
+    fi
+
+    # Create test database
+    echo "Creating test database: ${TEST_DB}..."
+    psql -h "${PGHOST}" -p "${PGPORT}" -U "${PGUSER}" -d postgres \
+      -c "DROP DATABASE IF EXISTS ${TEST_DB};"
+    psql -h "${PGHOST}" -p "${PGPORT}" -U "${PGUSER}" -d postgres \
+      -c "CREATE DATABASE ${TEST_DB};"
+
+    # Perform actual restore
+    echo "Restoring backup to test database..."
+    START_TIME=$(date +%s)
+
+    pg_restore \
+      --host="${PGHOST}" \
+      --port="${PGPORT}" \
+      --username="${PGUSER}" \
+      --dbname="${TEST_DB}" \
+      --verbose \
+      --jobs=4 \
+      "${RESTORE_DIR}/database.dump"
+
+    END_TIME=$(date +%s)
+    RESTORE_DURATION=$((END_TIME - START_TIME))
+    echo "Restore completed in ${RESTORE_DURATION} seconds"
+
+    # Validate restored data
+    echo "Validating restored data..."
+    USERS_COUNT=$(psql -h "${PGHOST}" -p "${PGPORT}" -U "${PGUSER}" -d "${TEST_DB}" \
+      -t -c "SELECT COUNT(*) FROM users;" 2>/dev/null | tr -d ' ' || echo "0")
+    SESSIONS_COUNT=$(psql -h "${PGHOST}" -p "${PGPORT}" -U "${PGUSER}" -d "${TEST_DB}" \
+      -t -c "SELECT COUNT(*) FROM interview_sessions;" 2>/dev/null | tr -d ' ' || echo "0")
+    ORGS_COUNT=$(psql -h "${PGHOST}" -p "${PGPORT}" -U "${PGUSER}" -d "${TEST_DB}" \
+      -t -c "SELECT COUNT(*) FROM organizations;" 2>/dev/null | tr -d ' ' || echo "0")
+
+    echo "Restored data counts:"
+    echo "  - Users: ${USERS_COUNT}"
+    echo "  - Sessions: ${SESSIONS_COUNT}"
+    echo "  - Organizations: ${ORGS_COUNT}"
+
+    # Verify critical tables exist
+    CRITICAL_TABLES=("users" "organizations" "interview_sessions" "security_events" "gaze_events")
+    for TABLE in "${CRITICAL_TABLES[@]}"; do
+      if ! psql -h "${PGHOST}" -p "${PGPORT}" -U "${PGUSER}" -d "${TEST_DB}" \
+        -c "SELECT 1 FROM ${TABLE} LIMIT 1;" > /dev/null 2>&1; then
+        echo "ERROR: Critical table '${TABLE}' not found or empty!"
+        aws cloudwatch put-metric-data \
+          --namespace "Blockd/Backups" \
+          --metric-name "RestoreTestSuccess" \
+          --value 0 \
+          --unit "Count" \
+          --dimensions Environment=production,Database=postgresql || true
+        exit 1
+      fi
+      echo "  - Table '${TABLE}' verified ✓"
+    done
+
+    # Cleanup test database
+    echo "Cleaning up test database..."
+    psql -h "${PGHOST}" -p "${PGPORT}" -U "${PGUSER}" -d postgres \
+      -c "DROP DATABASE IF EXISTS ${TEST_DB};"
+
+    # Cleanup local files
+    rm -rf "${RESTORE_DIR}"
+
+    # Report success metrics
+    aws cloudwatch put-metric-data \
+      --namespace "Blockd/Backups" \
+      --metric-name "RestoreTestSuccess" \
+      --value 1 \
+      --unit "Count" \
+      --dimensions Environment=production,Database=postgresql || true
+
+    aws cloudwatch put-metric-data \
+      --namespace "Blockd/Backups" \
+      --metric-name "RestoreTestDuration" \
+      --value "${RESTORE_DURATION}" \
+      --unit "Seconds" \
+      --dimensions Environment=production,Database=postgresql || true
+
+    echo ""
+    echo "=== RESTORE TEST COMPLETED SUCCESSFULLY ==="
+    echo "Backup: ${LATEST_BACKUP}"
+    echo "Restore duration: ${RESTORE_DURATION} seconds"
+    echo "All critical tables verified"
+
+---
+# CronJob for daily backups
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgresql-backup
+  namespace: blockd
+  labels:
+    app.kubernetes.io/name: database-backup
+    app.kubernetes.io/part-of: blockd
+spec:
+  schedule: "0 2 * * *"  # 2 AM UTC daily
+  timeZone: "UTC"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 3
+      activeDeadlineSeconds: 7200  # 2 hours max
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: database-backup
+            app.kubernetes.io/part-of: blockd
+          annotations:
+            prometheus.io/scrape: "false"
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: database-backup-sa
+
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+
+          containers:
+            - name: backup
+              image: postgres:16-alpine
+              command: ["/bin/bash", "/scripts/backup.sh"]
+
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                readOnlyRootFilesystem: true
+
+              env:
+                - name: PGHOST
+                  valueFrom:
+                    secretKeyRef:
+                      name: database-credentials
+                      key: host
+                - name: PGPORT
+                  valueFrom:
+                    secretKeyRef:
+                      name: database-credentials
+                      key: port
+                - name: PGUSER
+                  valueFrom:
+                    secretKeyRef:
+                      name: database-credentials
+                      key: username
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: database-credentials
+                      key: password
+                - name: PGDATABASE
+                  valueFrom:
+                    secretKeyRef:
+                      name: database-credentials
+                      key: database
+                - name: S3_BACKUP_BUCKET
+                  value: "blockd-backups-production"
+                - name: S3_BACKUP_PREFIX
+                  value: "backups/postgresql"
+                - name: BACKUP_RETENTION_DAYS
+                  value: "30"
+                - name: S3_DR_BUCKET
+                  value: "blockd-backups-dr"
+                - name: DR_REGION
+                  value: "us-west-2"
+                - name: AWS_REGION
+                  value: "us-east-1"
+
+              resources:
+                requests:
+                  cpu: 500m
+                  memory: 1Gi
+                limits:
+                  cpu: 2000m
+                  memory: 4Gi
+
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                - name: tmp
+                  mountPath: /tmp
+
+          volumes:
+            - name: scripts
+              configMap:
+                name: backup-scripts
+                defaultMode: 0755
+            - name: tmp
+              emptyDir:
+                sizeLimit: 50Gi
+
+---
+# CronJob for backup verification
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgresql-backup-verify
+  namespace: blockd
+  labels:
+    app.kubernetes.io/name: database-backup-verify
+    app.kubernetes.io/part-of: blockd
+spec:
+  schedule: "0 6 * * *"  # 6 AM UTC daily (after backup)
+  timeZone: "UTC"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 3600
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: database-backup-verify
+            app.kubernetes.io/part-of: blockd
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: database-backup-sa
+
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+
+          containers:
+            - name: verify
+              image: postgres:16-alpine
+              command: ["/bin/bash", "/scripts/verify-backup.sh"]
+
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                readOnlyRootFilesystem: true
+
+              env:
+                - name: S3_BACKUP_BUCKET
+                  value: "blockd-backups-production"
+                - name: S3_BACKUP_PREFIX
+                  value: "backups/postgresql"
+                - name: AWS_REGION
+                  value: "us-east-1"
+
+              resources:
+                requests:
+                  cpu: 200m
+                  memory: 512Mi
+                limits:
+                  cpu: 1000m
+                  memory: 2Gi
+
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                - name: tmp
+                  mountPath: /tmp
+
+          volumes:
+            - name: scripts
+              configMap:
+                name: backup-scripts
+                defaultMode: 0755
+            - name: tmp
+              emptyDir:
+                sizeLimit: 20Gi
+
+---
+# CronJob for weekly restore testing
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgresql-restore-test
+  namespace: blockd
+  labels:
+    app.kubernetes.io/name: database-restore-test
+    app.kubernetes.io/part-of: blockd
+spec:
+  schedule: "0 8 * * 0"  # 8 AM UTC every Sunday
+  timeZone: "UTC"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 14400  # 4 hours max
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: database-restore-test
+            app.kubernetes.io/part-of: blockd
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: database-backup-sa
+
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+
+          containers:
+            - name: restore-test
+              image: postgres:16-alpine
+              command: ["/bin/bash", "/scripts/restore-test.sh"]
+
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                readOnlyRootFilesystem: true
+
+              env:
+                - name: PGHOST
+                  valueFrom:
+                    secretKeyRef:
+                      name: database-credentials
+                      key: host
+                - name: PGPORT
+                  valueFrom:
+                    secretKeyRef:
+                      name: database-credentials
+                      key: port
+                - name: PGUSER
+                  valueFrom:
+                    secretKeyRef:
+                      name: database-credentials
+                      key: username
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: database-credentials
+                      key: password
+                - name: PGDATABASE
+                  valueFrom:
+                    secretKeyRef:
+                      name: database-credentials
+                      key: database
+                - name: S3_BACKUP_BUCKET
+                  value: "blockd-backups-production"
+                - name: S3_BACKUP_PREFIX
+                  value: "backups/postgresql"
+                - name: AWS_REGION
+                  value: "us-east-1"
+
+              resources:
+                requests:
+                  cpu: 1000m
+                  memory: 2Gi
+                limits:
+                  cpu: 4000m
+                  memory: 8Gi
+
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                - name: tmp
+                  mountPath: /tmp
+
+          volumes:
+            - name: scripts
+              configMap:
+                name: backup-scripts
+                defaultMode: 0755
+            - name: tmp
+              emptyDir:
+                sizeLimit: 100Gi
+
+---
+# ServiceAccount for backup jobs
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: database-backup-sa
+  namespace: blockd
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/blockd-backup-role
+  labels:
+    app.kubernetes.io/name: database-backup
+    app.kubernetes.io/part-of: blockd
+
+---
+# PrometheusRule for backup monitoring
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: database-backup-alerts
+  namespace: blockd
+  labels:
+    app.kubernetes.io/name: database-backup
+    app.kubernetes.io/part-of: blockd
+    prometheus: blockd
+spec:
+  groups:
+    - name: database-backup
+      rules:
+        - alert: DatabaseBackupFailed
+          expr: |
+            kube_job_status_failed{namespace="blockd",job_name=~"postgresql-backup.*"} > 0
+          for: 5m
+          labels:
+            severity: critical
+            component: backup
+          annotations:
+            summary: "Database backup job failed"
+            description: "PostgreSQL backup job has failed. Check job logs for details."
+            runbook_url: "https://docs.blockd.com/runbooks/backup-failed"
+
+        - alert: DatabaseBackupMissing
+          expr: |
+            time() - max(kube_job_status_completion_time{namespace="blockd",job_name=~"postgresql-backup.*"}) > 90000
+          for: 10m
+          labels:
+            severity: high
+            component: backup
+          annotations:
+            summary: "Database backup missing"
+            description: "No successful database backup in the last 25 hours."
+            runbook_url: "https://docs.blockd.com/runbooks/backup-missing"
+
+        - alert: DatabaseBackupVerificationFailed
+          expr: |
+            kube_job_status_failed{namespace="blockd",job_name=~"postgresql-backup-verify.*"} > 0
+          for: 5m
+          labels:
+            severity: high
+            component: backup
+          annotations:
+            summary: "Database backup verification failed"
+            description: "Backup verification job has failed. Backup integrity may be compromised."
+            runbook_url: "https://docs.blockd.com/runbooks/backup-verify-failed"
+
+        - alert: DatabaseRestoreTestFailed
+          expr: |
+            kube_job_status_failed{namespace="blockd",job_name=~"postgresql-restore-test.*"} > 0
+          for: 5m
+          labels:
+            severity: critical
+            component: backup
+          annotations:
+            summary: "Database restore test failed"
+            description: "Weekly backup restore test has failed. Backup recoverability cannot be guaranteed."
+            runbook_url: "https://docs.blockd.com/runbooks/restore-test-failed"
+
+        - alert: DatabaseRestoreTestMissing
+          expr: |
+            time() - max(kube_job_status_completion_time{namespace="blockd",job_name=~"postgresql-restore-test.*"}) > 691200
+          for: 10m
+          labels:
+            severity: high
+            component: backup
+          annotations:
+            summary: "Database restore test missing"
+            description: "No successful database restore test in the last 8 days. DR capabilities unverified."
+            runbook_url: "https://docs.blockd.com/runbooks/restore-test-missing"

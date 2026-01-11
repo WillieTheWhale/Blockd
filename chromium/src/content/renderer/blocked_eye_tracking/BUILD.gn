@@ -12,6 +12,8 @@ source_set("blocked_eye_tracking") {
     "calibration_overlay.h",
     "eye_tracker.cc",
     "eye_tracker.h",
+    "eye_tracking_client_impl.cc",
+    "eye_tracking_client_impl.h",
     "eye_tracking_worker.cc",
     "eye_tracking_worker.h",
     "face_detector.cc",
