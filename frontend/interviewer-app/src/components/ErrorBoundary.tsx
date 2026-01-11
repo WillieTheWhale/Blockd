@@ -25,8 +25,8 @@ function reportError(error: Error, errorInfo: ErrorInfo): void {
   }
 
   // Fallback: Send to custom error endpoint if configured
-  const errorEndpoint = import.meta.env.VITE_ERROR_REPORTING_URL
-  if (errorEndpoint && process.env.NODE_ENV === 'production') {
+  const errorEndpoint = import.meta.env['VITE_ERROR_REPORTING_URL']
+  if (errorEndpoint && import.meta.env['MODE'] === 'production') {
     fetch(errorEndpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -89,7 +89,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     this.setState({ errorInfo })
 
     // Log error to console in development
-    if (process.env.NODE_ENV === 'development') {
+    if (import.meta.env.DEV) {
       console.error('ErrorBoundary caught an error:', error, errorInfo)
     }
 
@@ -128,7 +128,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             </CardHeader>
             <CardContent className="space-y-4">
               {/* Error details (development only) */}
-              {process.env.NODE_ENV === 'development' && this.state.error && (
+              {import.meta.env.DEV && this.state.error && (
                 <div className="rounded-md bg-red-50 dark:bg-red-900/10 p-4">
                   <h4 className="text-sm font-medium text-red-800 dark:text-red-200 mb-2">
                     Error Details

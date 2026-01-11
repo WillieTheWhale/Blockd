@@ -18,6 +18,9 @@ import {
   Clock,
   User,
   Calendar,
+  Video,
+  Loader2,
+  AlertCircle,
 } from 'lucide-react'
 import { VideoPlayer } from '@/components/VideoPlayer'
 import { SecurityEventsDashboard } from '@/components/SecurityEventsDashboard'
@@ -38,7 +41,7 @@ export function SessionDetailPage() {
   const [activeTab, setActiveTab] = useState('overview')
 
   const { connectionStatus: _connectionStatus } = useRealtimeStore()
-  const { subscribe, isConnected } = useWebSocket({ sessionId: id })
+  const { subscribe, isConnected } = useWebSocket({ sessionId: id ?? '' })
 
   // Fetch session data
   const { data: session, isLoading } = useQuery({
@@ -60,8 +63,21 @@ export function SessionDetailPage() {
     enabled: !!id,
   })
 
-  // Mock AI detection results (in real app, fetch from API)
-  const mockAIResults: AIDetectionResult[] = []
+  // Fetch AI detection results
+  const {
+    data: aiDetectionResults = [],
+    isLoading: isLoadingAIResults,
+    error: aiResultsError,
+  } = useQuery({
+    queryKey: QUERY_KEYS.AI_DETECTION.LIST(id!),
+    queryFn: async () => {
+      const response = await apiClient.get<AIDetectionResult[]>(
+        API_ENDPOINTS.AI_DETECTION.LIST(id!)
+      )
+      return response.data
+    },
+    enabled: !!id,
+  })
 
   // Start session mutation
   const startSessionMutation = useMutation({
@@ -115,11 +131,16 @@ export function SessionDetailPage() {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.QUESTIONS.LIST(id) })
     })
 
+    const unsubscribeAIDetection = subscribe('ai:detection:complete', () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.AI_DETECTION.LIST(id) })
+    })
+
     return () => {
       unsubscribeStarted()
       unsubscribeEnded()
       unsubscribeQuestion()
       unsubscribeAnswer()
+      unsubscribeAIDetection()
     }
   }, [id, subscribe, queryClient])
 
@@ -209,20 +230,36 @@ export function SessionDetailPage() {
         {/* Action Buttons */}
         <div className="flex items-center gap-2">
           {session.status === 'pending' && (
-            <Button onClick={() => startSessionMutation.mutate()} disabled={startSessionMutation.isPending}>
-              <Play className="mr-2 h-4 w-4" />
-              Start Session
-            </Button>
+            <>
+              <Link to={`/sessions/${session.id}/live`}>
+                <Button variant="outline">
+                  <Video className="mr-2 h-4 w-4" />
+                  Go Live
+                </Button>
+              </Link>
+              <Button onClick={() => startSessionMutation.mutate()} disabled={startSessionMutation.isPending}>
+                <Play className="mr-2 h-4 w-4" />
+                Start Session
+              </Button>
+            </>
           )}
           {session.status === 'in_progress' && (
-            <Button
-              variant="destructive"
-              onClick={() => endSessionMutation.mutate()}
-              disabled={endSessionMutation.isPending}
-            >
-              <Square className="mr-2 h-4 w-4" />
-              End Session
-            </Button>
+            <>
+              <Link to={`/sessions/${session.id}/live`}>
+                <Button>
+                  <Video className="mr-2 h-4 w-4" />
+                  Go Live
+                </Button>
+              </Link>
+              <Button
+                variant="destructive"
+                onClick={() => endSessionMutation.mutate()}
+                disabled={endSessionMutation.isPending}
+              >
+                <Square className="mr-2 h-4 w-4" />
+                End Session
+              </Button>
+            </>
           )}
           {session.status === 'completed' && (
             <>
@@ -390,7 +427,28 @@ export function SessionDetailPage() {
 
         {/* Analysis Tab */}
         <TabsContent value="analysis" className="space-y-4">
-          {mockAIResults.length === 0 ? (
+          {isLoadingAIResults ? (
+            <Card>
+              <CardContent className="py-12">
+                <div className="flex flex-col items-center gap-3">
+                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                  <p className="text-muted-foreground">Loading AI analysis results...</p>
+                </div>
+              </CardContent>
+            </Card>
+          ) : aiResultsError ? (
+            <Card>
+              <CardContent className="py-12">
+                <div className="flex flex-col items-center gap-3 text-destructive">
+                  <AlertCircle className="h-8 w-8" />
+                  <p>Failed to load AI analysis results</p>
+                  <p className="text-sm text-muted-foreground">
+                    {aiResultsError instanceof Error ? aiResultsError.message : 'Unknown error'}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          ) : aiDetectionResults.length === 0 ? (
             <Card>
               <CardContent className="py-12">
                 <p className="text-center text-muted-foreground">
@@ -399,7 +457,7 @@ export function SessionDetailPage() {
               </CardContent>
             </Card>
           ) : (
-            mockAIResults.map((result) => (
+            aiDetectionResults.map((result) => (
               <AIDetectionResults key={result.id} result={result} />
             ))
           )}

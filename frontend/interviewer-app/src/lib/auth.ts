@@ -89,9 +89,10 @@ export function decodeToken(token: string): Record<string, unknown> | null {
  */
 export function isTokenExpired(token: string): boolean {
   const decoded = decodeToken(token)
-  if (!decoded || typeof decoded.exp !== 'number') return true
+  const exp = decoded?.['exp']
+  if (!decoded || typeof exp !== 'number') return true
 
-  const expirationTime = decoded.exp * 1000 // Convert to milliseconds
+  const expirationTime = exp * 1000 // Convert to milliseconds
   return Date.now() >= expirationTime
 }
 
@@ -100,6 +101,7 @@ export function isTokenExpired(token: string): boolean {
  */
 export function getTokenExpiration(token: string): number | null {
   const decoded = decodeToken(token)
-  if (!decoded || typeof decoded.exp !== 'number') return null
-  return decoded.exp * 1000 // Convert to milliseconds
+  const exp = decoded?.['exp']
+  if (!decoded || typeof exp !== 'number') return null
+  return exp * 1000 // Convert to milliseconds
 }
