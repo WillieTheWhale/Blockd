@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 import uvicorn
 
 from src.config import get_settings
+from src.middleware import SessionRateLimitMiddleware
 from models.model_manager import initialize_models, get_model_manager
 from api import health, question, answer, cache
 from lib.errors import AIDetectionError
@@ -109,6 +110,15 @@ app.add_middleware(
     allow_credentials=settings.CORS_ALLOW_CREDENTIALS,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+# Per-session rate limiting middleware (100 requests/minute per session)
+# Uses Redis token bucket algorithm to prevent abuse
+app.add_middleware(
+    SessionRateLimitMiddleware,
+    redis_url=f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}",
+    max_requests_per_minute=100,
+    key_prefix=f"{settings.CACHE_PREFIX}:rate_limit"
 )
 
 

@@ -6,14 +6,17 @@
 #define CHROME_BROWSER_BLOCKED_BLOCKED_IPC_BLOCKED_BACKEND_CONNECTOR_H_
 
 #include <memory>
-#include <queue>
 #include <string>
+#include <vector>
 
+#include "base/containers/circular_deque.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/observer_list.h"
 #include "base/sequence_checker.h"
 #include "base/timer/timer.h"
+#include "chrome/browser/blocked/blocked_ipc/blocked_protocol.pb.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
@@ -39,9 +42,8 @@ class BlockedBackendConnector : public KeyedService,
     ERROR
   };
 
-  class Observer {
+  class Observer : public base::CheckedObserver {
    public:
-    virtual ~Observer() = default;
     virtual void OnConnectionStateChanged(ConnectionState state) = 0;
     virtual void OnMessageReceived(const std::string& message) = 0;
   };
@@ -109,6 +111,7 @@ class BlockedBackendConnector : public KeyedService,
   // Internal methods
   void InitiateConnection();
   bool SendMessage(const std::string& message);
+  bool SendBinaryMessage(const std::vector<uint8_t>& data);
   void ProcessPendingMessages();
   void SendHeartbeat();
   void OnReconnectTimer();
@@ -116,6 +119,11 @@ class BlockedBackendConnector : public KeyedService,
   void ReadFromDataPipe(MojoResult result,
                         const mojo::HandleSignalsState& state);
   void WriteToDataPipe(const std::string& message);
+  void WriteBinaryToDataPipe(const std::vector<uint8_t>& data);
+
+  // Protobuf serialization helpers
+  bool SendProtobufMessage(const proto::BlockedMessage& message);
+  std::vector<uint8_t> SerializeProtobuf(const proto::BlockedMessage& message);
 
   std::string backend_url_;
   std::string session_token_;
@@ -135,9 +143,18 @@ class BlockedBackendConnector : public KeyedService,
   std::unique_ptr<mojo::SimpleWatcher> read_watcher_;
   std::unique_ptr<mojo::SimpleWatcher> write_watcher_;
 
-  // Message queue for when connection is pending
-  std::queue<std::string> pending_messages_;
-  static constexpr size_t kMaxPendingMessages = 100;
+  // Message queue for when connection is pending (binary protobuf data).
+  // Uses circular_deque for better cache locality and O(1) pop_front.
+  // Buffer size handles high-frequency gaze data streaming at 30 FPS.
+  // At 30 FPS for 5+ minutes of network interruption: 30 * 60 * 5 = 9,000 messages.
+  // Note: std::string is used as a byte container (not text) for binary protobuf.
+  base::circular_deque<std::string> pending_messages_;
+  static constexpr size_t kMaxPendingMessages = 10000;
+
+  // Persistent read buffer to avoid allocations on every read.
+  // 8KB covers most WebSocket frames with room for growth.
+  scoped_refptr<net::IOBufferWithSize> read_buffer_;
+  static constexpr size_t kReadBufferSize = 8192;
 
   // Reconnection logic
   base::OneShotTimer reconnect_timer_;
@@ -158,7 +175,7 @@ class BlockedBackendConnector : public KeyedService,
   std::string incoming_message_;
   uint64_t expected_data_length_ = 0;
 
-  std::vector<Observer*> observers_;
+  base::ObserverList<Observer> observers_;
 
   SEQUENCE_CHECKER(sequence_checker_);
   base::WeakPtrFactory<BlockedBackendConnector> weak_factory_{this};

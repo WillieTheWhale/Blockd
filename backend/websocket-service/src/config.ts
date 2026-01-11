@@ -144,8 +144,10 @@ export function getConfig(): Config {
     },
 
     // Message Buffer
+    // Increased from 100 to 10,000 to handle high-frequency gaze data (30 FPS)
+    // during network interruptions. Supports ~5 min of buffering at full rate.
     messageBuffer: {
-      maxSize: parseInt(process.env.MESSAGE_BUFFER_MAX_SIZE, 100),
+      maxSize: parseInt(process.env.MESSAGE_BUFFER_MAX_SIZE, 10000),
       maxAgeMs: parseInt(process.env.MESSAGE_BUFFER_MAX_AGE_MS, 300000), // 5 minutes
     },
 
