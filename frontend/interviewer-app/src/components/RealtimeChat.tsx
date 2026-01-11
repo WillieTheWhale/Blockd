@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Send, Bot, Check, CheckCheck } from 'lucide-react'
+import DOMPurify from 'dompurify'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -11,6 +12,17 @@ import { useWebSocket } from '@/hooks/useWebSocket'
 import { useAuthStore } from '@/stores/auth-store'
 import type { ChatMessage } from '@/types'
 import { format } from 'date-fns'
+
+/**
+ * Sanitize chat message content to prevent XSS attacks
+ * Only allows basic text formatting tags
+ */
+const sanitizeMessage = (content: string): string => {
+  return DOMPurify.sanitize(content, {
+    ALLOWED_TAGS: ['b', 'i', 'em', 'strong'],
+    ALLOWED_ATTR: [],
+  })
+}
 
 interface RealtimeChatProps {
   sessionId: string
@@ -278,7 +290,7 @@ export function RealtimeChat({
                   return (
                     <div key={msg.id} className="flex justify-center">
                       <div className="rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
-                        {msg.content}
+                        {sanitizeMessage(msg.content)}
                       </div>
                     </div>
                   )
@@ -312,7 +324,7 @@ export function RealtimeChat({
                             : 'bg-muted text-foreground'
                         )}
                       >
-                        {msg.content}
+                        {sanitizeMessage(msg.content)}
                       </div>
                       <div className="flex items-center gap-1 text-xs text-muted-foreground">
                         <span>{getMessageTime(msg.timestamp)}</span>

@@ -21,6 +21,8 @@ export type WebSocketEventType =
   | 'chat:message'
   | 'chat:typing'
   | 'ai:detection:complete'
+  | 'ai:detection:started'
+  | 'ai:detection:progress'
 
 /**
  * WebSocket event handler type
@@ -44,6 +46,15 @@ interface QueuedMessage {
   event: string
   data: unknown
   timestamp: number
+}
+
+/**
+ * Active subscription for reconnection
+ */
+interface ActiveSubscription {
+  event: WebSocketEventType
+  handler: WebSocketEventHandler<unknown>
+  wrappedHandler: (data: unknown) => void
 }
 
 /**
@@ -95,7 +106,9 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   const messageQueueRef = useRef<QueuedMessage[]>([])
   const isConnectingRef = useRef(false)
   const isDisconnectingRef = useRef(false)
+  const isFlushingRef = useRef(false)
   const mountedRef = useRef(true)
+  const activeSubscriptionsRef = useRef<ActiveSubscription[]>([])
 
   // Get stable references to store functions
   const setConnectionStatus = useRealtimeStore((state) => state.setConnectionStatus)
@@ -126,20 +139,51 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
 
   /**
    * Flush queued messages after reconnection
+   * Uses mutex flag to prevent race conditions during flush
    */
   const flushMessageQueue = useCallback((socket: Socket) => {
+    // Prevent concurrent flushes
+    if (isFlushingRef.current) {
+      wsLogger.debug('Flush already in progress, skipping')
+      return
+    }
+
+    isFlushingRef.current = true
+
     const now = Date.now()
     const validMessages = messageQueueRef.current.filter(
       (msg) => now - msg.timestamp < MESSAGE_QUEUE_TTL
     )
+    const expiredCount = messageQueueRef.current.length - validMessages.length
+
+    if (expiredCount > 0) {
+      wsLogger.warn(`${expiredCount} queued messages expired and were dropped`)
+    }
 
     wsLogger.info(`Flushing ${validMessages.length} queued messages`)
+
+    // Clear queue before sending to prevent duplicates if emit is called during flush
+    messageQueueRef.current = []
 
     for (const msg of validMessages) {
       socket.emit(msg.event, msg.data)
     }
 
-    messageQueueRef.current = []
+    isFlushingRef.current = false
+  }, [])
+
+  /**
+   * Reattach all active subscriptions after reconnection
+   */
+  const reattachSubscriptions = useCallback((socket: Socket) => {
+    const subscriptions = activeSubscriptionsRef.current
+    if (subscriptions.length === 0) return
+
+    wsLogger.info(`Reattaching ${subscriptions.length} active subscriptions`)
+
+    for (const sub of subscriptions) {
+      socket.on(sub.event, sub.wrappedHandler)
+    }
   }, [])
 
   /**
@@ -231,6 +275,9 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           socket.emit('join', { sessionId })
         }
 
+        // Reattach subscriptions first (so events aren't missed during flush)
+        reattachSubscriptions(socket)
+
         // Flush queued messages
         flushMessageQueue(socket)
       })
@@ -270,7 +317,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       isConnectingRef.current = false
       handleReconnection()
     }
-  }, [sessionId, setConnectionStatus, setConnectionError, setLastConnectedAt, flushMessageQueue, handleReconnection])
+  }, [sessionId, setConnectionStatus, setConnectionError, setLastConnectedAt, reattachSubscriptions, flushMessageQueue, handleReconnection])
 
   /**
    * Public connect function
@@ -285,6 +332,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
 
   /**
    * Disconnect WebSocket
+   * Cleans up all subscriptions and connection state
    */
   const disconnect = useCallback(() => {
     isDisconnectingRef.current = true
@@ -303,9 +351,13 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       socketRef.current = null
     }
 
+    // Clear subscription registry on disconnect
+    activeSubscriptionsRef.current = []
+
     setConnectionStatus('disconnected')
     reconnectAttemptsRef.current = 0
     isConnectingRef.current = false
+    isFlushingRef.current = false
     isDisconnectingRef.current = false
   }, [sessionId, setConnectionStatus])
 
@@ -334,16 +386,16 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
 
   /**
    * Subscribe to WebSocket event
+   * Tracks subscriptions for automatic reattachment on reconnection
    */
   const subscribe = useCallback(
     <T = unknown>(event: WebSocketEventType, handler: WebSocketEventHandler<T>) => {
-      if (!socketRef.current) {
-        wsLogger.warn('Cannot subscribe: WebSocket not initialized', { event })
-        return () => {}
-      }
-
       // Create wrapped handler to integrate with store
+      // Guard against unmounted component by checking mountedRef
       const wrappedHandler = (data: T) => {
+        // Skip if component is unmounted to prevent memory leaks
+        if (!mountedRef.current) return
+
         // Call user handler
         handler(data)
 
@@ -364,11 +416,28 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
         }
       }
 
-      socketRef.current.on(event, wrappedHandler)
+      // Track subscription for reconnection
+      const subscription: ActiveSubscription = {
+        event,
+        handler: handler as WebSocketEventHandler<unknown>,
+        wrappedHandler: wrappedHandler as (data: unknown) => void,
+      }
+      activeSubscriptionsRef.current.push(subscription)
 
-      // Return unsubscribe function
+      // Attach to socket if connected
+      if (socketRef.current) {
+        socketRef.current.on(event, wrappedHandler)
+      }
+
+      // Return unsubscribe function that removes from both socket and registry
       return () => {
+        // Remove from socket
         socketRef.current?.off(event, wrappedHandler)
+
+        // Remove from registry
+        activeSubscriptionsRef.current = activeSubscriptionsRef.current.filter(
+          (sub) => sub.wrappedHandler !== wrappedHandler
+        )
       }
     },
     [addSecurityEvent, addGazeData, addChatMessage, playNotificationSound]

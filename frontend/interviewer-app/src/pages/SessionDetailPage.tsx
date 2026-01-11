@@ -19,18 +19,16 @@ import {
   User,
   Calendar,
   Video,
-  Loader2,
-  AlertCircle,
 } from 'lucide-react'
 import { VideoPlayer } from '@/components/VideoPlayer'
 import { SecurityEventsDashboard } from '@/components/SecurityEventsDashboard'
 import { GazeHeatmap } from '@/components/GazeHeatmap'
-import { AIDetectionResults } from '@/components/AIDetectionResults'
+import { AIDetectionContainer } from '@/components/interview/ai-detection'
 import { RealtimeChat } from '@/components/RealtimeChat'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { useRealtimeStore } from '@/stores/realtime-store'
 import { toast } from 'sonner'
-import type { Session, Question, AIDetectionResult } from '@/types'
+import type { Session, Question, AIDetectionResult, SecurityEvent, AIDetectionProgressEvent } from '@/types'
 import { format } from 'date-fns'
 
 export function SessionDetailPage() {
@@ -39,8 +37,9 @@ export function SessionDetailPage() {
 
   const [showGazeHeatmap, setShowGazeHeatmap] = useState(false)
   const [activeTab, setActiveTab] = useState('overview')
+  const [aiProgressEvent, setAIProgressEvent] = useState<AIDetectionProgressEvent | null>(null)
 
-  const { connectionStatus: _connectionStatus } = useRealtimeStore()
+  const { addSecurityEvent } = useRealtimeStore()
   const { subscribe, isConnected } = useWebSocket({ sessionId: id ?? '' })
 
   // Fetch session data
@@ -133,6 +132,35 @@ export function SessionDetailPage() {
 
     const unsubscribeAIDetection = subscribe('ai:detection:complete', () => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.AI_DETECTION.LIST(id) })
+      // Clear progress indicator on completion
+      setAIProgressEvent(null)
+    })
+
+    // Subscribe to security alerts for real-time updates
+    const unsubscribeSecurity = subscribe<SecurityEvent>('security:alert', (event) => {
+      if (event.sessionId === id) {
+        addSecurityEvent(event)
+        if (event.severity === 'critical' || event.severity === 'high') {
+          toast.warning(`Security Alert: ${event.description}`, {
+            duration: 5000,
+          })
+        }
+      }
+    })
+
+    // Subscribe to AI detection progress for live status
+    const unsubscribeAIProgress = subscribe<AIDetectionProgressEvent>('ai:detection:progress', (event) => {
+      if (event.sessionId === id) {
+        setAIProgressEvent(event)
+      }
+    })
+
+    // Subscribe to AI detection started
+    const unsubscribeAIStarted = subscribe<AIDetectionProgressEvent>('ai:detection:started', (event) => {
+      if (event.sessionId === id) {
+        setAIProgressEvent(event)
+        toast.info('AI analysis started for new answer')
+      }
     })
 
     return () => {
@@ -141,8 +169,11 @@ export function SessionDetailPage() {
       unsubscribeQuestion()
       unsubscribeAnswer()
       unsubscribeAIDetection()
+      unsubscribeSecurity()
+      unsubscribeAIProgress()
+      unsubscribeAIStarted()
     }
-  }, [id, subscribe, queryClient])
+  }, [id, subscribe, queryClient, addSecurityEvent])
 
   // Handle export report
   const handleExportReport = async () => {
@@ -427,40 +458,15 @@ export function SessionDetailPage() {
 
         {/* Analysis Tab */}
         <TabsContent value="analysis" className="space-y-4">
-          {isLoadingAIResults ? (
-            <Card>
-              <CardContent className="py-12">
-                <div className="flex flex-col items-center gap-3">
-                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                  <p className="text-muted-foreground">Loading AI analysis results...</p>
-                </div>
-              </CardContent>
-            </Card>
-          ) : aiResultsError ? (
-            <Card>
-              <CardContent className="py-12">
-                <div className="flex flex-col items-center gap-3 text-destructive">
-                  <AlertCircle className="h-8 w-8" />
-                  <p>Failed to load AI analysis results</p>
-                  <p className="text-sm text-muted-foreground">
-                    {aiResultsError instanceof Error ? aiResultsError.message : 'Unknown error'}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          ) : aiDetectionResults.length === 0 ? (
-            <Card>
-              <CardContent className="py-12">
-                <p className="text-center text-muted-foreground">
-                  AI analysis results will appear here after answers are submitted
-                </p>
-              </CardContent>
-            </Card>
-          ) : (
-            aiDetectionResults.map((result) => (
-              <AIDetectionResults key={result.id} result={result} />
-            ))
-          )}
+          <AIDetectionContainer
+            results={aiDetectionResults}
+            questions={questions}
+            isLoading={isLoadingAIResults}
+            error={aiResultsError instanceof Error ? aiResultsError : null}
+            progressEvent={aiProgressEvent}
+            showSummary={true}
+            maxHeight="600px"
+          />
         </TabsContent>
 
         {/* Recording Tab */}
