@@ -9,12 +9,7 @@ generator client {
 datasource db {
   provider   = "postgresql"
   url        = env("DATABASE_URL")
-  extensions = [
-    uuidOssp(map: "uuid-ossp"),
-    vector(schema: "public"),
-    timescaledb(schema: "public"),
-    pgcrypto
-  ]
+  extensions = [uuidOssp(map: "uuid-ossp"), vector, pgcrypto]
 }
 
 // ============================================================================
@@ -352,4 +347,21 @@ model AuditLog {
   @@index([timestamp(sort: Desc)])
   @@index([action])
   @@map("audit_logs")
+}
+
+model ChatMessage {
+  id                     String                @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  sessionId              String                @map("session_id") @db.Uuid
+  senderId               String                @map("sender_id") @db.VarChar(255) // Can be user UUID or 'system'
+  senderRole             UserRole              @map("sender_role")
+  message                String
+  isDeleted              Boolean               @default(false) @map("is_deleted")
+  deletedAt              DateTime?             @map("deleted_at") @db.Timestamptz(6)
+  deletedBy              String?               @map("deleted_by") @db.Uuid
+  createdAt              DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([sessionId])
+  @@index([sessionId, createdAt(sort: Desc)])
+  @@index([senderId])
+  @@map("chat_messages")
 }

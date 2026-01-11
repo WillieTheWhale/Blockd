@@ -1,13 +1,14 @@
 /**
  * Chat Handler
- * Handles interview chat messages
+ * Handles interview chat messages with database persistence
  */
 
 import { Server } from 'socket.io';
 import { AuthenticatedSocket, ChatMessageData } from '../types/socket.types';
 import { RoomManager, RoomType } from '../lib/room-manager';
 import { logger } from '../lib/logger';
-import { ValidationError } from '../lib/errors';
+import { prisma } from '../lib/prisma';
+import { UserRole } from '@prisma/client';
 
 /**
  * Chat message validation
@@ -16,13 +17,24 @@ const MAX_MESSAGE_LENGTH = 2000;
 const MIN_MESSAGE_LENGTH = 1;
 
 /**
+ * Stored chat message response
+ */
+interface StoredChatMessage {
+  id: string;
+  sessionId: string;
+  senderId: string;
+  senderRole: UserRole;
+  message: string;
+  createdAt: Date;
+}
+
+/**
  * Setup chat handler
  */
 export function setupChatHandler(io: Server): void {
   io.on('connection', (socket: AuthenticatedSocket) => {
     const userId = socket.data.user.user_id;
     const userRole = socket.data.user.role;
-    const userEmail = socket.data.user.email;
 
     // Handle chat messages
     socket.on('chat:message', async (data: ChatMessageData) => {
@@ -48,17 +60,22 @@ export function setupChatHandler(io: Server): void {
           return;
         }
 
-        // Prepare message with sender info
+        // Store message in database
+        const storedMessage = await storeChatMessage({
+          sessionId: session_id,
+          senderId: userId,
+          senderRole: userRole as UserRole,
+          message: sanitizeMessage(message),
+        });
+
+        // Prepare message for broadcast
         const chatMessage: ChatMessageData = {
           session_id,
-          message: sanitizeMessage(message),
-          sender_id: userId,
-          sender_role: userRole,
-          timestamp: new Date().toISOString(),
+          message: storedMessage.message,
+          sender_id: storedMessage.senderId,
+          sender_role: storedMessage.senderRole,
+          timestamp: storedMessage.createdAt.toISOString(),
         };
-
-        // Store message in database
-        const storedMessage = await storeChatMessage(chatMessage);
 
         // Broadcast to session room (including sender for confirmation)
         io.to(sessionRoomId).emit('chat:message', {
@@ -81,6 +98,47 @@ export function setupChatHandler(io: Server): void {
         socket.emit('error', {
           message: 'Failed to send message',
           code: 'CHAT_MESSAGE_ERROR',
+        });
+      }
+    });
+
+    // Handle chat history request
+    socket.on('chat:history', async (data: { session_id: string; limit?: number; offset?: number }) => {
+      try {
+        const { session_id, limit = 50, offset = 0 } = data;
+
+        // Check user is in session
+        const sessionRoomId = RoomManager.createRoomId(RoomType.SESSION, session_id);
+        if (!socket.rooms.has(sessionRoomId)) {
+          socket.emit('error', {
+            message: 'You must join the session to view chat history',
+            code: 'NOT_IN_SESSION',
+          });
+          return;
+        }
+
+        const history = await getSessionChatHistory(session_id, limit, offset);
+
+        socket.emit('chat:history', {
+          session_id,
+          messages: history,
+          hasMore: history.length === limit,
+        });
+
+        logger.debug('Chat history retrieved', {
+          userId,
+          sessionId: session_id,
+          messageCount: history.length,
+        });
+      } catch (error) {
+        logger.error('Error retrieving chat history', error, {
+          userId,
+          sessionId: data.session_id,
+        });
+
+        socket.emit('error', {
+          message: 'Failed to retrieve chat history',
+          code: 'CHAT_HISTORY_ERROR',
         });
       }
     });
@@ -119,24 +177,29 @@ function sanitizeMessage(message: string): string {
 
 /**
  * Store chat message in database
- * This should integrate with your database
  */
-async function storeChatMessage(message: ChatMessageData): Promise<{ id: string; timestamp: string }> {
-  // TODO: Implement actual database storage
-  // This should insert into chat_messages table
-
-  logger.debug('Storing chat message', {
-    sessionId: message.session_id,
-    senderId: message.sender_id,
+async function storeChatMessage(data: {
+  sessionId: string;
+  senderId: string;
+  senderRole: UserRole;
+  message: string;
+}): Promise<StoredChatMessage> {
+  const message = await prisma.chatMessage.create({
+    data: {
+      sessionId: data.sessionId,
+      senderId: data.senderId,
+      senderRole: data.senderRole,
+      message: data.message,
+    },
   });
 
-  // Placeholder implementation
-  const messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  logger.debug('Chat message stored', {
+    messageId: message.id,
+    sessionId: data.sessionId,
+    senderId: data.senderId,
+  });
 
-  return {
-    id: messageId,
-    timestamp: message.timestamp || new Date().toISOString(),
-  };
+  return message;
 }
 
 /**
@@ -147,63 +210,100 @@ export async function getSessionChatHistory(
   limit: number = 50,
   offset: number = 0
 ): Promise<ChatMessageData[]> {
-  // TODO: Implement actual chat history retrieval from database
-
-  logger.debug('Getting chat history for session', {
-    sessionId,
-    limit,
-    offset,
+  const messages = await prisma.chatMessage.findMany({
+    where: {
+      sessionId,
+      isDeleted: false,
+    },
+    orderBy: {
+      createdAt: 'desc',
+    },
+    take: limit,
+    skip: offset,
   });
 
-  // Placeholder implementation
-  return [];
+  // Return in chronological order (oldest first)
+  return messages.reverse().map((msg) => ({
+    session_id: msg.sessionId,
+    message: msg.message,
+    sender_id: msg.senderId,
+    sender_role: msg.senderRole,
+    timestamp: msg.createdAt.toISOString(),
+    message_id: msg.id,
+  }));
 }
 
 /**
- * Delete chat message (admin only)
+ * Delete chat message (soft delete, admin only)
  */
 export async function deleteChatMessage(
   messageId: string,
   deletedBy: string
 ): Promise<boolean> {
-  // TODO: Implement message deletion (soft delete)
+  try {
+    await prisma.chatMessage.update({
+      where: { id: messageId },
+      data: {
+        isDeleted: true,
+        deletedAt: new Date(),
+        deletedBy,
+      },
+    });
 
-  logger.info('Chat message deleted', {
-    messageId,
-    deletedBy,
-  });
+    logger.info('Chat message deleted', {
+      messageId,
+      deletedBy,
+    });
 
-  return true;
+    return true;
+  } catch (error) {
+    logger.error('Failed to delete chat message', error, {
+      messageId,
+      deletedBy,
+    });
+    return false;
+  }
 }
 
 /**
  * Send system message to session
  */
-export function sendSystemMessage(
+export async function sendSystemMessage(
   io: Server,
   sessionId: string,
   message: string
-): void {
+): Promise<void> {
   const sessionRoomId = RoomManager.createRoomId(RoomType.SESSION, sessionId);
+
+  // Store system message in database
+  const storedMessage = await prisma.chatMessage.create({
+    data: {
+      sessionId,
+      senderId: 'system',
+      senderRole: 'admin',
+      message,
+    },
+  });
 
   const systemMessage: ChatMessageData = {
     session_id: sessionId,
     message,
     sender_id: 'system',
     sender_role: 'admin',
-    timestamp: new Date().toISOString(),
+    timestamp: storedMessage.createdAt.toISOString(),
+    message_id: storedMessage.id,
   };
 
   io.to(sessionRoomId).emit('chat:message', systemMessage);
 
   logger.info('System message sent', {
     sessionId,
-    message,
+    messageId: storedMessage.id,
   });
 }
 
 /**
- * Broadcast announcement to all sessions
+ * Broadcast announcement to all sessions (not persisted)
  */
 export function broadcastAnnouncement(
   io: Server,
@@ -235,5 +335,17 @@ export function broadcastAnnouncement(
   logger.info('Announcement broadcast', {
     message,
     targetRole: targetRole || 'all',
+  });
+}
+
+/**
+ * Get message count for a session
+ */
+export async function getSessionMessageCount(sessionId: string): Promise<number> {
+  return prisma.chatMessage.count({
+    where: {
+      sessionId,
+      isDeleted: false,
+    },
   });
 }

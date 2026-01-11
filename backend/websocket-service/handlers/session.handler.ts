@@ -390,3 +390,128 @@ export function notifySessionEnded(
     reason,
   });
 }
+
+/**
+ * Auto-terminate session due to security violation
+ * This terminates the session in the database and notifies all participants
+ */
+export async function terminateSessionForSecurityViolation(
+  io: Server,
+  sessionId: string,
+  reason: string,
+  eventType: string,
+  severity: string
+): Promise<boolean> {
+  try {
+    logger.warn('Auto-terminating session due to security violation', {
+      sessionId,
+      reason,
+      eventType,
+      severity,
+    });
+
+    // Update session status in database
+    const updatedSession = await prisma.interviewSession.update({
+      where: { id: sessionId },
+      data: {
+        status: 'ended',
+        actualEnd: new Date(),
+        metadata: {
+          terminationReason: 'security_violation',
+          terminatedAt: new Date().toISOString(),
+          violationType: eventType,
+          violationSeverity: severity,
+          violationDescription: reason,
+        },
+      },
+    });
+
+    if (!updatedSession) {
+      logger.error('Failed to update session status', { sessionId });
+      return false;
+    }
+
+    // Calculate duration if session was active
+    if (updatedSession.actualStart) {
+      const durationMs = new Date().getTime() - updatedSession.actualStart.getTime();
+      const durationMinutes = Math.round(durationMs / 60000);
+      await prisma.interviewSession.update({
+        where: { id: sessionId },
+        data: { durationMinutes },
+      });
+    }
+
+    // Notify all participants about the termination
+    notifySessionEnded(io, sessionId, `Session terminated: ${reason}`);
+
+    // Send a specific termination event with more details
+    broadcastSessionEvent(io, sessionId, 'session:terminated', {
+      reason: 'security_violation',
+      description: reason,
+      event_type: eventType,
+      severity,
+    });
+
+    logger.info('Session terminated successfully', {
+      sessionId,
+      reason,
+    });
+
+    return true;
+  } catch (error) {
+    logger.error('Error terminating session', error, {
+      sessionId,
+      reason,
+    });
+    return false;
+  }
+}
+
+/**
+ * Configuration for auto-termination
+ */
+export interface AutoTerminationConfig {
+  enabled: boolean;
+  terminateOnCritical: boolean;
+  criticalEventThreshold: number; // Number of critical events before termination
+  eventTypesToTerminate: string[]; // Specific event types that trigger immediate termination
+}
+
+/**
+ * Default auto-termination configuration
+ */
+export const defaultAutoTerminationConfig: AutoTerminationConfig = {
+  enabled: true,
+  terminateOnCritical: true,
+  criticalEventThreshold: 1, // Terminate on first critical event
+  eventTypesToTerminate: [
+    'vm_detected',
+    'screen_recording_detected',
+    'unauthorized_browser',
+  ],
+};
+
+/**
+ * Check if session should be auto-terminated based on security event
+ */
+export function shouldAutoTerminate(
+  eventType: string,
+  severity: string,
+  config: AutoTerminationConfig = defaultAutoTerminationConfig
+): boolean {
+  if (!config.enabled) {
+    return false;
+  }
+
+  // Immediate termination for specific event types
+  if (config.eventTypesToTerminate.includes(eventType)) {
+    return true;
+  }
+
+  // Terminate on critical events if enabled
+  if (config.terminateOnCritical && severity === 'critical') {
+    return true;
+  }
+
+  return false;
+}

@@ -36,6 +36,7 @@ export interface Config {
   // JWT
   jwt: {
     publicKeyPath: string;
+    accessTokenSecret: string;
     algorithm: string;
     issuer: string;
     audience: string;
@@ -132,7 +133,8 @@ export function getConfig(): Config {
     // JWT
     jwt: {
       publicKeyPath: process.env.JWT_PUBLIC_KEY_PATH || '../auth-service/keys/public.pem',
-      algorithm: process.env.JWT_ALGORITHM || 'RS256',
+      accessTokenSecret: process.env.JWT_ACCESS_TOKEN_SECRET || '',
+      algorithm: process.env.JWT_ALGORITHM || 'HS256',
       issuer: process.env.JWT_ISSUER || 'blockd-auth',
       audience: process.env.JWT_AUDIENCE || 'blockd-api',
     },

@@ -64,10 +64,24 @@ export const config = {
     timeWindow: process.env.RATE_LIMIT_WINDOW || '1 minute'
   },
 
-  // Email (stub)
+  // Email
   email: {
+    provider: (process.env.EMAIL_PROVIDER || 'console') as 'sendgrid' | 'smtp' | 'console',
     from: process.env.EMAIL_FROM || 'noreply@blockd.io',
-    enabled: process.env.EMAIL_ENABLED === 'true'
+    fromName: process.env.EMAIL_FROM_NAME || 'Blockd',
+    enabled: process.env.EMAIL_ENABLED === 'true',
+    // SendGrid
+    sendgrid: {
+      apiKey: process.env.SENDGRID_API_KEY || '',
+    },
+    // SMTP
+    smtp: {
+      host: process.env.SMTP_HOST || 'localhost',
+      port: parseInt(process.env.SMTP_PORT || '587'),
+      secure: process.env.SMTP_SECURE === 'true',
+      user: process.env.SMTP_USER || '',
+      password: process.env.SMTP_PASSWORD || '',
+    },
   },
 
   // CORS
@@ -115,6 +129,19 @@ export function validateConfig(): void {
     errors.push(`MFA_ENCRYPTION_KEY must be 64 characters (32 bytes hex), got ${mfaKey.length} characters`);
   } else if (!/^[0-9a-fA-F]+$/.test(mfaKey)) {
     errors.push('MFA_ENCRYPTION_KEY must contain only hexadecimal characters (0-9, a-f, A-F)');
+  }
+
+  // Validate email configuration (required in production)
+  const emailProvider = process.env.EMAIL_PROVIDER;
+  if (isProduction && process.env.EMAIL_ENABLED === 'true') {
+    if (emailProvider === 'sendgrid' && !process.env.SENDGRID_API_KEY) {
+      errors.push('SENDGRID_API_KEY is required when EMAIL_PROVIDER is sendgrid');
+    }
+    if (emailProvider === 'smtp') {
+      if (!process.env.SMTP_HOST) errors.push('SMTP_HOST is required when EMAIL_PROVIDER is smtp');
+      if (!process.env.SMTP_USER) errors.push('SMTP_USER is required when EMAIL_PROVIDER is smtp');
+      if (!process.env.SMTP_PASSWORD) errors.push('SMTP_PASSWORD is required when EMAIL_PROVIDER is smtp');
+    }
   }
 
   // Log warnings

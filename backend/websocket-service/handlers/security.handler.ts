@@ -9,6 +9,12 @@ import { RoomManager, RoomType } from '../lib/room-manager';
 import { logger } from '../lib/logger';
 import prisma from '../lib/prisma';
 import { SecurityEventType, SeverityLevel } from '@prisma/client';
+import { sendSecurityAlertEmail } from '../lib/email';
+import {
+  terminateSessionForSecurityViolation,
+  shouldAutoTerminate,
+  defaultAutoTerminationConfig,
+} from './session.handler';
 
 /**
  * Setup security handler
@@ -75,21 +81,48 @@ export function setupSecurityHandler(io: Server): void {
             timestamp: event.timestamp,
           });
 
-          // TODO: Send email notification to interviewer
-          // await sendSecurityAlertEmail(session_id, event);
+          // Send email notification to interviewer (fire and forget)
+          sendSecurityAlertEmail({
+            sessionId: session_id,
+            eventType: event_type,
+            severity: severity as 'low' | 'medium' | 'high' | 'critical',
+            description: description || '',
+            timestamp: new Date(event.timestamp),
+            metadata,
+          }).catch((err) => {
+            logger.error('Failed to send security alert email', err, {
+              sessionId: session_id,
+              eventType: event_type,
+            });
+          });
         }
 
-        // Critical events may auto-terminate session
-        if (severity === 'critical') {
-          logger.error('Critical security event - consider session termination', {
+        // Check if session should be auto-terminated based on security event
+        if (shouldAutoTerminate(event_type, severity, defaultAutoTerminationConfig)) {
+          logger.warn('Auto-termination triggered for security violation', {
             eventId: event.id,
             userId,
             sessionId: session_id,
             eventType: event_type,
+            severity,
           });
 
-          // TODO: Implement auto-termination logic based on configuration
-          // This should be configurable per organization
+          // Terminate the session
+          const terminated = await terminateSessionForSecurityViolation(
+            io,
+            session_id,
+            description || `Critical security violation: ${event_type}`,
+            event_type,
+            severity
+          );
+
+          if (terminated) {
+            logger.info('Session auto-terminated due to security violation', {
+              sessionId: session_id,
+              eventType: event_type,
+              severity,
+            });
+          }
         }
       } catch (error) {
         logger.error('Error handling security event', error, {
@@ -187,21 +220,6 @@ async function storeSecurityEvent(eventData: {
   }
 }
 
-/**
- * Send security alert email
- * This should integrate with your email service
- */
-async function sendSecurityAlertEmail(sessionId: string, event: any): Promise<void> {
-  // TODO: Implement email notification
-  // This should send email to interviewer and admins
-
-  logger.debug('Sending security alert email', {
-    sessionId,
-    eventId: event.id,
-  });
-
-  // Placeholder - integrate with email service
-}
 
 /**
  * Get security event statistics for a session

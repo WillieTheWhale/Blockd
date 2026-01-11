@@ -39,7 +39,7 @@ export interface UpdateUserData {
 }
 
 export interface UserWithPassword extends UserProfile {
-  password_hash: string;
+  password_hash: string | null; // null for OAuth-only users
   mfa_secret?: string | null;
 }
 
