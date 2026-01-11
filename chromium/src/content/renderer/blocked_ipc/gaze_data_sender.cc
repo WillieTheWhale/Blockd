@@ -6,7 +6,6 @@
 
 #include "base/logging.h"
 #include "base/no_destructor.h"
-#include "content/public/common/blocked_mojom/blocked_mojom_traits.h"
 
 namespace content {
 
@@ -50,14 +49,22 @@ void GazeDataSender::SendGazeBatch(
     return;
   }
 
-  std::vector<blocked::GazeData> gazes;
+  // Convert to mojom GazeData pointers for IPC.
+  std::vector<blocked::mojom::GazeDataPtr> gazes;
   gazes.reserve(gaze_points.size());
 
   for (const auto& point : gaze_points) {
-    gazes.push_back(CreateNativeGazeData(point));
+    auto gaze = blocked::mojom::GazeData::New();
+    gaze->x = point.x;
+    gaze->y = point.y;
+    gaze->confidence = point.confidence;
+    gaze->is_off_screen = point.is_off_screen;
+    gaze->off_screen_direction = point.off_screen_direction;
+    gaze->timestamp = point.timestamp;
+    gazes.push_back(std::move(gaze));
   }
 
-  host_->OnGazeBatch(gazes);
+  host_->OnGazeBatch(std::move(gazes));
   total_sent_ += static_cast<int>(gaze_points.size());
 
   VLOG(1) << "Sent batch of " << gaze_points.size() << " gaze points";
@@ -104,30 +111,26 @@ void GazeDataSender::SendBufferedData() {
     return;
   }
 
-  // Send as batch for efficiency.
-  std::vector<blocked::GazeData> gazes;
+  // Send as batch for efficiency using mojom types.
+  std::vector<blocked::mojom::GazeDataPtr> gazes;
   gazes.reserve(gaze_buffer_.size());
 
   for (const auto& point : gaze_buffer_) {
-    gazes.push_back(CreateNativeGazeData(point));
+    auto gaze = blocked::mojom::GazeData::New();
+    gaze->x = point.x;
+    gaze->y = point.y;
+    gaze->confidence = point.confidence;
+    gaze->is_off_screen = point.is_off_screen;
+    gaze->off_screen_direction = point.off_screen_direction;
+    gaze->timestamp = point.timestamp;
+    gazes.push_back(std::move(gaze));
   }
 
-  host_->OnGazeBatch(gazes);
+  host_->OnGazeBatch(std::move(gazes));
   total_sent_ += static_cast<int>(gaze_buffer_.size());
 
   VLOG(2) << "Sent buffered " << gaze_buffer_.size() << " gaze points";
   gaze_buffer_.clear();
-}
-
-blocked::GazeData GazeDataSender::CreateNativeGazeData(
-    const GazeDataPoint& point) {
-  return blocked::GazeData(
-      point.x,
-      point.y,
-      point.confidence,
-      point.is_off_screen,
-      point.off_screen_direction,
-      point.timestamp);
 }
 
 }  // namespace content

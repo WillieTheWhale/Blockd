@@ -6,6 +6,25 @@
 
 namespace blocked {
 
+// GazeData implementation.
+GazeData::GazeData() = default;
+
+GazeData::GazeData(float x, float y, float confidence, bool is_off_screen,
+                   const std::string& off_screen_direction,
+                   base::TimeTicks timestamp)
+    : x(x),
+      y(y),
+      confidence(confidence),
+      is_off_screen(is_off_screen),
+      off_screen_direction(off_screen_direction),
+      timestamp(timestamp) {}
+
+GazeData::~GazeData() = default;
+GazeData::GazeData(const GazeData&) = default;
+GazeData& GazeData::operator=(const GazeData&) = default;
+GazeData::GazeData(GazeData&&) noexcept = default;
+GazeData& GazeData::operator=(GazeData&&) noexcept = default;
+
 // VideoFrameMetadata implementation.
 VideoFrameMetadata::VideoFrameMetadata() = default;
 VideoFrameMetadata::~VideoFrameMetadata() = default;
@@ -54,6 +73,20 @@ bool StructTraits<blocked::mojom::AudioFrameMetadataDataView,
   out->bits_per_sample = data.bits_per_sample();
   out->frame_number = data.frame_number();
   out->duration_ms = data.duration_ms();
+  return data.ReadTimestamp(&out->timestamp);
+}
+
+// GazeData Read implementation.
+bool StructTraits<blocked::mojom::GazeDataDataView, blocked::GazeData>::Read(
+    blocked::mojom::GazeDataDataView data,
+    blocked::GazeData* out) {
+  out->x = data.x();
+  out->y = data.y();
+  out->confidence = data.confidence();
+  out->is_off_screen = data.is_off_screen();
+  if (!data.ReadOffScreenDirection(&out->off_screen_direction)) {
+    return false;
+  }
   return data.ReadTimestamp(&out->timestamp);
 }
 
