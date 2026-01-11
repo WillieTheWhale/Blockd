@@ -3,6 +3,7 @@
  */
 
 import { FastifyInstance } from 'fastify';
+import { Prisma } from '@prisma/client';
 import { authenticate, requireRole } from '../middleware/auth.middleware';
 import { authRateLimiter, sessionCreationRateLimiter } from '../middleware/rate-limit.middleware';
 import { validateBody, validateParams, validateQuery } from '../middleware/validation.middleware';
@@ -57,7 +58,7 @@ export default async function sessionsRoutes(fastify: FastifyInstance) {
           organizationId,
           scheduledStart,
           status: 'scheduled',
-          metadata: (metadata || {}) as any,
+          metadata: (metadata || {}) as Prisma.InputJsonValue,
         },
       });
 
