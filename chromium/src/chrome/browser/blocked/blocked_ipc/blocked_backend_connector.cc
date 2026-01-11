@@ -8,15 +8,12 @@
 #include <cmath>
 #include <utility>
 
-#include "base/base64.h"
 #include "base/functional/bind.h"
-#include "base/json/json_reader.h"
-#include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/time/time.h"
-#include "base/values.h"
 #include "mojo/public/cpp/system/simple_watcher.h"
+#include "net/base/io_buffer.h"
 #include "net/base/isolation_info.h"
 #include "net/base/net_errors.h"
 #include "net/cookies/site_for_cookies.h"
@@ -62,9 +59,10 @@ BlockedBackendConnector::BlockedBackendConnector(
     const std::string& backend_url,
     network::mojom::NetworkContext* network_context)
     : backend_url_(backend_url),
-      network_context_(network_context) {
+      network_context_(network_context),
+      read_buffer_(base::MakeRefCounted<net::IOBufferWithSize>(kReadBufferSize)) {
   DCHECK(network_context_);
-  LOG(INFO) << "BlockedBackendConnector initialized with URL: " << backend_url_;
+  VLOG(1) << "BlockedBackendConnector initialized with URL: " << backend_url_;
 }
 
 BlockedBackendConnector::~BlockedBackendConnector() {
@@ -75,7 +73,7 @@ BlockedBackendConnector::~BlockedBackendConnector() {
 void BlockedBackendConnector::Shutdown() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  LOG(INFO) << "BlockedBackendConnector shutting down";
+  VLOG(1) << "BlockedBackendConnector shutting down";
 
   heartbeat_timer_.Stop();
   reconnect_timer_.Stop();
@@ -98,10 +96,8 @@ void BlockedBackendConnector::Shutdown() {
   state_ = ConnectionState::DISCONNECTED;
   NotifyObservers(state_);
 
-  // Clear pending messages
-  while (!pending_messages_.empty()) {
-    pending_messages_.pop();
-  }
+  // Clear pending messages - circular_deque has clear()
+  pending_messages_.clear();
 }
 
 void BlockedBackendConnector::Connect(const std::string& session_token) {
@@ -109,7 +105,7 @@ void BlockedBackendConnector::Connect(const std::string& session_token) {
 
   if (state_ == ConnectionState::CONNECTED ||
       state_ == ConnectionState::CONNECTING) {
-    LOG(WARNING) << "Already connected or connecting to backend";
+    VLOG(1) << "Already connected or connecting to backend";
     return;
   }
 
@@ -125,7 +121,7 @@ void BlockedBackendConnector::InitiateConnection() {
   state_ = ConnectionState::CONNECTING;
   NotifyObservers(state_);
 
-  LOG(INFO) << "Initiating WebSocket connection to: " << backend_url_;
+  VLOG(1) << "Initiating WebSocket connection to: " << backend_url_;
 
   // Construct WebSocket URL with session token
   GURL ws_url(backend_url_);
@@ -187,7 +183,7 @@ void BlockedBackendConnector::InitiateConnection() {
       /*header_client=*/mojo::NullRemote(),
       /*throttling_profile_id=*/std::nullopt);
 
-  LOG(INFO) << "WebSocket connection request sent to network context";
+  VLOG(1) << "WebSocket connection request sent to network context";
 }
 
 void BlockedBackendConnector::Disconnect() {
@@ -197,7 +193,7 @@ void BlockedBackendConnector::Disconnect() {
     return;
   }
 
-  LOG(INFO) << "Disconnecting from backend";
+  VLOG(1) << "Disconnecting from backend";
 
   heartbeat_timer_.Stop();
   reconnect_timer_.Stop();
@@ -239,8 +235,8 @@ void BlockedBackendConnector::Reconnect() {
   state_ = ConnectionState::RECONNECTING;
   NotifyObservers(state_);
 
-  LOG(INFO) << "Scheduling reconnection attempt " << reconnect_attempts_
-            << " in " << delay.InSeconds() << " seconds";
+  VLOG(1) << "Scheduling reconnection attempt " << reconnect_attempts_
+          << " in " << delay.InSeconds() << " seconds";
 
   reconnect_timer_.Start(
       FROM_HERE,
@@ -262,16 +258,16 @@ bool BlockedBackendConnector::SendMessage(const std::string& message) {
     if (state_ == ConnectionState::CONNECTING ||
         state_ == ConnectionState::RECONNECTING) {
       if (pending_messages_.size() < kMaxPendingMessages) {
-        pending_messages_.push(message);
+        pending_messages_.push_back(message);
         VLOG(2) << "Message queued (pending connection): " << message.size()
                 << " bytes";
         return true;
       } else {
-        LOG(WARNING) << "Pending message queue full, dropping message";
+        VLOG(1) << "Pending message queue full, dropping message";
         return false;
       }
     }
-    LOG(WARNING) << "Cannot send message: not connected";
+    VLOG(1) << "Cannot send message: not connected";
     return false;
   }
 
@@ -288,8 +284,11 @@ void BlockedBackendConnector::ProcessPendingMessages() {
 
   while (!pending_messages_.empty() && state_ == ConnectionState::CONNECTED) {
     std::string message = std::move(pending_messages_.front());
-    pending_messages_.pop();
-    SendMessage(message);
+    pending_messages_.pop_front();
+
+    // All queued messages are binary protobuf - send as binary frames
+    std::vector<uint8_t> binary_data(message.begin(), message.end());
+    WriteBinaryToDataPipe(binary_data);
   }
 }
 
@@ -300,33 +299,21 @@ bool BlockedBackendConnector::SendSecurityEvent(
     const std::string& metadata) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  base::Value::Dict message;
-  message.Set("type", "security_event");
-  message.Set("session_id", session_id_);
-  message.Set("event_type", event_type);
-  message.Set("severity", severity);
-  message.Set("description", description);
-  message.Set("timestamp",
-              base::NumberToString(base::Time::Now().InMillisecondsSinceUnixEpoch()));
+  proto::BlockedMessage message;
+  message.set_type(proto::SECURITY_EVENT);
 
-  // Parse metadata as JSON if possible
-  auto metadata_value = base::JSONReader::Read(metadata);
-  if (metadata_value) {
-    message.Set("metadata", std::move(*metadata_value));
-  } else {
-    message.Set("metadata", metadata);
-  }
+  auto* security_event = message.mutable_security_event();
+  security_event->set_session_id(session_id_);
+  security_event->set_event_type(event_type);
+  security_event->set_severity(severity);
+  security_event->set_description(description);
+  security_event->set_timestamp(base::Time::Now().InMillisecondsSinceUnixEpoch());
+  security_event->set_metadata_json(metadata);
 
-  std::string json;
-  if (!base::JSONWriter::Write(message, &json)) {
-    LOG(ERROR) << "Failed to serialize security event";
-    return false;
-  }
+  VLOG(1) << "Sending security event: " << event_type
+          << " (severity: " << severity << ")";
 
-  LOG(INFO) << "Sending security event: " << event_type
-            << " (severity: " << severity << ")";
-
-  return SendMessage(json);
+  return SendProtobufMessage(message);
 }
 
 bool BlockedBackendConnector::SendGazeData(
@@ -337,30 +324,26 @@ bool BlockedBackendConnector::SendGazeData(
     return true;  // Nothing to send
   }
 
-  base::Value::Dict message;
-  message.Set("type", "gaze_data");
-  message.Set("session_id", session_id_);
-  message.Set("timestamp",
-              base::NumberToString(base::Time::Now().InMillisecondsSinceUnixEpoch()));
+  proto::BlockedMessage message;
+  message.set_type(proto::GAZE_DATA);
 
-  base::Value::List points;
+  auto* gaze_batch = message.mutable_gaze_data();
+  gaze_batch->set_session_id(session_id_);
+
+  // Gaze points come in pairs (x, y)
+  int64_t timestamp = base::Time::Now().InMillisecondsSinceUnixEpoch();
   for (size_t i = 0; i + 1 < gaze_points.size(); i += 2) {
-    base::Value::Dict point;
-    point.Set("x", static_cast<double>(gaze_points[i]));
-    point.Set("y", static_cast<double>(gaze_points[i + 1]));
-    points.Append(std::move(point));
-  }
-  message.Set("points", std::move(points));
-
-  std::string json;
-  if (!base::JSONWriter::Write(message, &json)) {
-    LOG(ERROR) << "Failed to serialize gaze data";
-    return false;
+    auto* point = gaze_batch->add_points();
+    point->set_gaze_x(gaze_points[i]);
+    point->set_gaze_y(gaze_points[i + 1]);
+    point->set_confidence(1.0f);  // Default confidence
+    point->set_timestamp(timestamp);
+    point->set_is_off_screen(false);  // Caller should set this if needed
   }
 
-  VLOG(2) << "Sending gaze data: " << (gaze_points.size() / 2) << " points";
+  VLOG(2) << "Sending gaze data: " << gaze_batch->points_size() << " points";
 
-  return SendMessage(json);
+  return SendProtobufMessage(message);
 }
 
 bool BlockedBackendConnector::SendTelemetry(double cpu_percent,
@@ -368,24 +351,20 @@ bool BlockedBackendConnector::SendTelemetry(double cpu_percent,
                                              int active_processes) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  base::Value::Dict message;
-  message.Set("type", "telemetry");
-  message.Set("session_id", session_id_);
-  message.Set("cpu_percent", cpu_percent);
-  message.Set("memory_mb", static_cast<int>(memory_mb));
-  message.Set("active_processes", active_processes);
-  message.Set("timestamp",
-              base::NumberToString(base::Time::Now().InMillisecondsSinceUnixEpoch()));
+  proto::BlockedMessage message;
+  message.set_type(proto::TELEMETRY_DATA);
 
-  std::string json;
-  if (!base::JSONWriter::Write(message, &json)) {
-    LOG(ERROR) << "Failed to serialize telemetry data";
-    return false;
-  }
+  auto* telemetry = message.mutable_telemetry();
+  telemetry->set_session_id(session_id_);
+  telemetry->set_timestamp(base::Time::Now().InMillisecondsSinceUnixEpoch());
+  telemetry->set_cpu_percent(cpu_percent);
+  telemetry->set_memory_mb(memory_mb);
+  telemetry->set_active_processes(active_processes);
+  telemetry->set_window_focused(true);  // Can be enhanced to track focus
 
   VLOG(2) << "Sending telemetry data";
 
-  return SendMessage(json);
+  return SendProtobufMessage(message);
 }
 
 bool BlockedBackendConnector::SendAudioData(
@@ -398,28 +377,26 @@ bool BlockedBackendConnector::SendAudioData(
     return true;  // Nothing to send
   }
 
-  base::Value::Dict message;
-  message.Set("type", "audio_data");
-  message.Set("session_id", session_id.empty() ? session_id_ : session_id);
-  message.Set("source_type", source_type);  // 0=mic, 1=tab, 2=mixed
-  message.Set("timestamp",
-              base::NumberToString(base::Time::Now().InMillisecondsSinceUnixEpoch()));
+  // Audio data is sent as binary WebSocket frames for efficiency.
+  // Format: 4-byte header (type=0x01, source_type, reserved, reserved)
+  //         followed by raw audio bytes.
+  // This avoids the 33% overhead of base64 encoding.
 
-  // For binary audio data, we need to encode it as base64.
-  // In production, you would use a binary WebSocket frame instead.
-  std::string encoded_data = base::Base64Encode(audio_data);
-  message.Set("data", encoded_data);
-  message.Set("size", static_cast<int>(audio_data.size()));
+  std::vector<uint8_t> binary_frame;
+  binary_frame.reserve(4 + audio_data.size());
 
-  std::string json;
-  if (!base::JSONWriter::Write(message, &json)) {
-    LOG(ERROR) << "Failed to serialize audio data";
-    return false;
-  }
+  // Header: [0x01=audio, source_type, 0x00, 0x00]
+  binary_frame.push_back(0x01);  // Message type: audio
+  binary_frame.push_back(static_cast<uint8_t>(source_type));  // 0=mic, 1=tab, 2=mixed
+  binary_frame.push_back(0x00);  // Reserved
+  binary_frame.push_back(0x00);  // Reserved
 
-  VLOG(3) << "Sending audio data: " << audio_data.size() << " bytes";
+  // Append audio data
+  binary_frame.insert(binary_frame.end(), audio_data.begin(), audio_data.end());
 
-  return SendMessage(json);
+  VLOG(3) << "Sending audio data: " << audio_data.size() << " bytes (binary)";
+
+  return SendBinaryMessage(binary_frame);
 }
 
 void BlockedBackendConnector::SendHeartbeat() {
@@ -429,34 +406,30 @@ void BlockedBackendConnector::SendHeartbeat() {
     return;
   }
 
-  base::Value::Dict message;
-  message.Set("type", "heartbeat");
-  message.Set("session_id", session_id_);
-  message.Set("timestamp",
-              base::NumberToString(base::Time::Now().InMillisecondsSinceUnixEpoch()));
+  proto::BlockedMessage message;
+  message.set_type(proto::HEARTBEAT);
 
-  std::string json;
-  if (base::JSONWriter::Write(message, &json)) {
-    VLOG(2) << "Sending heartbeat";
-    SendMessage(json);
-  }
+  auto* heartbeat = message.mutable_heartbeat();
+  heartbeat->set_timestamp(base::Time::Now().InMillisecondsSinceUnixEpoch());
+
+  VLOG(2) << "Sending heartbeat";
+  SendProtobufMessage(message);
 }
 
 void BlockedBackendConnector::AddObserver(Observer* observer) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  observers_.push_back(observer);
+  observers_.AddObserver(observer);
 }
 
 void BlockedBackendConnector::RemoveObserver(Observer* observer) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  observers_.erase(
-      std::remove(observers_.begin(), observers_.end(), observer),
-      observers_.end());
+  observers_.RemoveObserver(observer);
 }
 
 void BlockedBackendConnector::NotifyObservers(ConnectionState state) {
-  for (auto* observer : observers_) {
-    observer->OnConnectionStateChanged(state);
+  // ObserverList handles safe iteration even if observers modify the list
+  for (Observer& observer : observers_) {
+    observer.OnConnectionStateChanged(state);
   }
 }
 
@@ -490,7 +463,7 @@ void BlockedBackendConnector::OnConnectionEstablished(
     mojo::ScopedDataPipeProducerHandle writable) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  LOG(INFO) << "WebSocket connection established";
+  VLOG(1) << "WebSocket connection established";
 
   websocket_.Bind(std::move(socket));
   client_receiver_.Bind(std::move(client_receiver));
@@ -579,26 +552,27 @@ void BlockedBackendConnector::ReadFromDataPipe(
     return;
   }
 
-  std::vector<uint8_t> buffer(4096);
-  size_t num_bytes = buffer.size();
+  // Use persistent read buffer to avoid allocation per read
+  size_t num_bytes = read_buffer_->size();
 
   MojoResult read_result = readable_pipe_->ReadData(
       MOJO_READ_DATA_FLAG_NONE,
-      base::span<uint8_t>(buffer.data(), buffer.size()),
+      base::span<uint8_t>(reinterpret_cast<uint8_t*>(read_buffer_->data()),
+                          read_buffer_->size()),
       num_bytes);
 
   if (read_result == MOJO_RESULT_OK && num_bytes > 0) {
-    std::string data(buffer.begin(), buffer.begin() + num_bytes);
-    incoming_message_ += data;
+    incoming_message_.append(read_buffer_->data(), num_bytes);
     bytes_received_ += num_bytes;
 
     // Check if we have a complete message
     if (incoming_message_.size() >= expected_data_length_ ||
         expected_data_length_ == 0) {
-      VLOG(2) << "Received message: " << incoming_message_;
+      VLOG(2) << "Received message: " << incoming_message_.size() << " bytes";
 
-      for (auto* observer : observers_) {
-        observer->OnMessageReceived(incoming_message_);
+      // ObserverList handles safe iteration
+      for (Observer& observer : observers_) {
+        observer.OnMessageReceived(incoming_message_);
       }
 
       incoming_message_.clear();
@@ -616,11 +590,11 @@ void BlockedBackendConnector::WriteToDataPipe(const std::string& message) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   if (!writable_pipe_.is_valid() || !websocket_.is_bound()) {
-    LOG(WARNING) << "Cannot write: WebSocket not connected";
+    VLOG(1) << "Cannot write: WebSocket not connected";
     return;
   }
 
-  // Notify WebSocket about the outgoing frame
+  // Notify WebSocket about the outgoing text frame
   websocket_->SendMessage(network::mojom::WebSocketMessageType::TEXT,
                           message.size());
 
@@ -631,10 +605,92 @@ void BlockedBackendConnector::WriteToDataPipe(const std::string& message) {
 
   if (result == MOJO_RESULT_OK) {
     bytes_sent_ += num_bytes;
-    VLOG(2) << "Wrote " << num_bytes << " bytes to WebSocket";
+    VLOG(2) << "Wrote " << num_bytes << " bytes to WebSocket (text)";
   } else {
     LOG(ERROR) << "Failed to write to WebSocket data pipe: " << result;
   }
+}
+
+void BlockedBackendConnector::WriteBinaryToDataPipe(
+    const std::vector<uint8_t>& data) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  if (!writable_pipe_.is_valid() || !websocket_.is_bound()) {
+    VLOG(1) << "Cannot write: WebSocket not connected";
+    return;
+  }
+
+  // Notify WebSocket about the outgoing BINARY frame
+  websocket_->SendMessage(network::mojom::WebSocketMessageType::BINARY,
+                          data.size());
+
+  // Write binary data to the pipe
+  size_t num_bytes = data.size();
+  MojoResult result = writable_pipe_->WriteData(
+      base::span<const uint8_t>(data), MOJO_WRITE_DATA_FLAG_NONE, num_bytes);
+
+  if (result == MOJO_RESULT_OK) {
+    bytes_sent_ += num_bytes;
+    VLOG(2) << "Wrote " << num_bytes << " bytes to WebSocket (binary)";
+  } else {
+    LOG(ERROR) << "Failed to write binary to WebSocket data pipe: " << result;
+  }
+}
+
+bool BlockedBackendConnector::SendBinaryMessage(
+    const std::vector<uint8_t>& data) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  if (state_ != ConnectionState::CONNECTED) {
+    VLOG(1) << "Cannot send binary message: not connected";
+    return false;
+  }
+
+  WriteBinaryToDataPipe(data);
+  return true;
+}
+
+bool BlockedBackendConnector::SendProtobufMessage(
+    const proto::BlockedMessage& message) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  std::vector<uint8_t> serialized = SerializeProtobuf(message);
+  if (serialized.empty()) {
+    LOG(ERROR) << "Failed to serialize protobuf message";
+    return false;
+  }
+
+  if (state_ != ConnectionState::CONNECTED) {
+    // Queue as string for compatibility with pending_messages_
+    // In a more complete implementation, we'd have a binary queue
+    if (state_ == ConnectionState::CONNECTING ||
+        state_ == ConnectionState::RECONNECTING) {
+      if (pending_messages_.size() < kMaxPendingMessages) {
+        std::string serialized_str(serialized.begin(), serialized.end());
+        pending_messages_.push_back(std::move(serialized_str));
+        VLOG(2) << "Protobuf message queued: " << serialized.size() << " bytes";
+        return true;
+      } else {
+        VLOG(1) << "Pending message queue full, dropping protobuf message";
+        return false;
+      }
+    }
+    VLOG(1) << "Cannot send protobuf message: not connected";
+    return false;
+  }
+
+  WriteBinaryToDataPipe(serialized);
+  VLOG(2) << "Sent protobuf message: " << serialized.size() << " bytes";
+  return true;
+}
+
+std::vector<uint8_t> BlockedBackendConnector::SerializeProtobuf(
+    const proto::BlockedMessage& message) {
+  std::vector<uint8_t> buffer(message.ByteSizeLong());
+  if (!message.SerializeToArray(buffer.data(), buffer.size())) {
+    return {};
+  }
+  return buffer;
 }
 
 }  // namespace blocked
