@@ -1,0 +1,59 @@
+BLOCKD BROWSER END USER LICENSE AGREEMENT
+
+Copyright 2025 Blockd Inc. All rights reserved.
+
+BY INSTALLING, COPYING, OR OTHERWISE USING THIS SOFTWARE, YOU AGREE TO BE BOUND BY
+THE TERMS OF THIS LICENSE AGREEMENT.
+
+1. GRANT OF LICENSE
+   Blockd Inc. grants you a non-exclusive, non-transferable license to use the
+   Blockd Browser software ("Software") for personal or business purposes in
+   connection with authorized interview sessions.
+
+2. RESTRICTIONS
+   You may not:
+   - Modify, reverse engineer, decompile, or disassemble the Software
+   - Rent, lease, or lend the Software to third parties
+   - Use the Software to circumvent interview security measures
+   - Remove or alter any proprietary notices or labels on the Software
+
+3. PRIVACY & DATA COLLECTION
+   The Software collects data during interview sessions including:
+   - Video and audio recordings
+   - Eye tracking and gaze data
+   - System telemetry and process information
+   - Response timing and behavioral metrics
+
+   This data is used solely for interview integrity purposes and is handled
+   in accordance with our Privacy Policy at https://blockd.com/privacy.
+
+4. INTELLECTUAL PROPERTY
+   The Software is protected by copyright and other intellectual property laws.
+   Blockd Inc. retains all rights not expressly granted in this Agreement.
+
+5. DISCLAIMER OF WARRANTIES
+   THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND. BLOCKD INC.
+   DISCLAIMS ALL WARRANTIES, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+   WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+
+6. LIMITATION OF LIABILITY
+   IN NO EVENT SHALL BLOCKD INC. BE LIABLE FOR ANY INDIRECT, INCIDENTAL,
+   SPECIAL, OR CONSEQUENTIAL DAMAGES ARISING OUT OF THE USE OR INABILITY
+   TO USE THE SOFTWARE.
+
+7. TERMINATION
+   This license is effective until terminated. It will terminate automatically
+   if you fail to comply with any term of this Agreement.
+
+8. GOVERNING LAW
+   This Agreement shall be governed by the laws of the State of California,
+   United States of America.
+
+9. CHROMIUM COMPONENTS
+   This Software is based on the Chromium open source project.
+   Chromium is licensed under the BSD license.
+   See https://chromium.googlesource.com/chromium/src/+/main/LICENSE
+
+For questions about this license, contact: legal@blockd.com
+
+Last updated: January 2026
