@@ -82,35 +82,24 @@ clang_use_chrome_plugins = true  # Enable Chrome-specific compiler plugins
 # ============================================
 # Platform-Specific Settings
 # ============================================
+# Note: Platform conditionals are handled in BUILD.gn files.
+# These are common settings that apply across platforms.
 
-# Windows
-if (is_win) {
-  # Windows 10 minimum
-  win_console_app = false
+# Windows settings (applied when building on Windows)
+win_console_app = false
 
-  # Code signing (uncomment and configure for production)
-  # win_signing_cert_path = "path/to/cert.pfx"
-  # win_signing_cert_password = "password"
-}
+# macOS settings (applied when building on macOS)
+mac_deployment_target = "12.0"
 
-# macOS
-if (is_mac) {
-  # macOS 12.0 minimum
-  mac_deployment_target = "12.0"
+# Linux settings (use bundled libraries for consistency)
+use_system_freetype = false
+use_system_harfbuzz = false
+use_system_lcms2 = false
+use_system_libdrm = false
 
-  # Code signing (uncomment and configure for production)
-  # mac_signing_identity = "Developer ID Application: Your Name"
-  # mac_signing_keychain = "~/Library/Keychains/login.keychain-db"
-}
-
-# Linux
-if (is_linux) {
-  # Use system libraries where possible
-  use_system_freetype = false    # Use bundled FreeType
-  use_system_harfbuzz = false    # Use bundled HarfBuzz
-  use_system_lcms2 = false       # Use bundled LCMS2
-  use_system_libdrm = false      # Use bundled libdrm
-}
+# Code signing configuration (set these for production builds):
+# Windows: win_signing_cert_path, win_signing_cert_password
+# macOS: mac_signing_identity, mac_signing_keychain
 
 # ============================================
 # Testing
