@@ -76,7 +76,11 @@ export function SessionsPage() {
   }
 
   const handleStatusFilter = (status: SessionStatus | 'all') => {
-    setFilters({ status: status === 'all' ? undefined : status })
+    if (status === 'all') {
+      setFilters({})
+    } else {
+      setFilters({ status })
+    }
   }
 
   const handleStartSession = async (id: string) => {
@@ -325,7 +329,8 @@ export function SessionsPage() {
                         })
                         .map((page, idx, arr) => {
                           // Add ellipsis
-                          const showEllipsis = idx > 0 && page - arr[idx - 1] > 1
+                          const prevPage = arr[idx - 1]
+                          const showEllipsis = idx > 0 && prevPage !== undefined && page - prevPage > 1
                           return (
                             <div key={page} className="flex items-center">
                               {showEllipsis && <span className="px-2">...</span>}

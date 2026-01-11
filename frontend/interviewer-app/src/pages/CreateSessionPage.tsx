@@ -18,6 +18,7 @@ import {
 import { Separator } from '@/components/ui/separator'
 import { toast } from 'sonner'
 import { useSessionStore } from '@/stores/session-store'
+import { stripUndefined } from '@/lib/utils'
 import { createSessionSchema, type CreateSessionFormData } from '@/lib/validations'
 import { QUESTION_TYPES, DIFFICULTY_LEVELS } from '@/lib/constants'
 import { Loader2, Plus, Trash2, GripVertical, Eye } from 'lucide-react'
@@ -71,7 +72,10 @@ export function CreateSessionPage() {
   const questions = watch('questions')
 
   const onSubmit = async (data: CreateSessionFormData) => {
-    const result = await createSession(data)
+    // Strip undefined values for exactOptionalPropertyTypes compliance
+    // Cast needed because RHF returns `| undefined` for optional fields
+    const cleanData = stripUndefined(data as Record<string, unknown>) as CreateSessionFormData
+    const result = await createSession(cleanData)
 
     if (result.success) {
       toast.success('Session created', {

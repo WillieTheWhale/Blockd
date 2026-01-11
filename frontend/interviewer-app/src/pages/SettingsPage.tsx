@@ -18,6 +18,7 @@ import {
 import { toast } from 'sonner'
 import { useUIStore } from '@/stores/ui-store'
 import { useAuthStore } from '@/stores/auth-store'
+import { stripUndefined } from '@/lib/utils'
 import {
   profileUpdateSchema,
   passwordChangeSchema,
@@ -52,7 +53,10 @@ export function SettingsPage() {
   })
 
   const handleProfileUpdate = async (data: ProfileUpdateFormData) => {
-    const result = await updateProfile(data)
+    // Strip undefined values for exactOptionalPropertyTypes compliance
+    // Cast needed because RHF returns `| undefined` for optional fields
+    const cleanData = stripUndefined(data as Record<string, unknown>) as ProfileUpdateFormData
+    const result = await updateProfile(cleanData)
     if (result.success) {
       toast.success('Profile updated', {
         description: 'Your profile has been updated successfully.',
