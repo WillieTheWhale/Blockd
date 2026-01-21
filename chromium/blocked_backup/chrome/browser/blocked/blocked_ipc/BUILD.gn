@@ -1,0 +1,24 @@
+# Copyright 2025 The Blocked Authors. All rights reserved.
+
+import("//third_party/protobuf/proto_library.gni")
+
+proto_library("blocked_protocol_proto") {
+  sources = [ "blocked_protocol.proto" ]
+
+  extra_configs = [ "//build/config/compiler:wexit_time_destructors" ]
+}
+
+source_set("ipc") {
+  sources = [
+    "blocked_backend_connector.cc",
+    "blocked_backend_connector.h",
+  ]
+
+  deps = [
+    ":blocked_protocol_proto",
+    "//base",
+    "//components/keyed_service/core",
+  ]
+
+  configs += [ "//chrome/browser/blocked:blocked_config" ]
+}

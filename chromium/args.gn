@@ -1,5 +1,5 @@
-# Blocked Browser - GN Build Arguments
-# Production build configuration for Blocked Interview Browser
+# Blockd Browser - GN Build Arguments
+# Production build configuration for Blockd Interview Browser
 
 # ============================================
 # Core Build Settings
@@ -10,7 +10,7 @@ is_debug = false                 # No debug assertions
 symbol_level = 1                 # Minimal symbols for crash reporting
 
 # ============================================
-# Blocked Feature Flags
+# Blockd Feature Flags
 # ============================================
 blocked_enable_security_monitoring = true
 blocked_enable_eye_tracking = true
@@ -19,10 +19,15 @@ blocked_enable_video_capture = true
 blocked_backend_url = "wss://api.blockd.com"
 
 # ============================================
-# Branding
+# Branding - BLOCKD CUSTOM BRANDING
 # ============================================
-# Use Chromium branding (not Chrome branding)
+# Use Chromium base (not Chrome branding)
 is_chrome_branded = false
+
+# Point to Blockd branding instead of default Chromium
+branding_path_component = "blocked"
+branding_path_product = "blocked"
+branding_file_path = "//chrome/app/theme/blocked/BRANDING"
 
 # ============================================
 # Compiler Optimization
@@ -96,6 +101,9 @@ use_system_freetype = false
 use_system_harfbuzz = false
 use_system_lcms2 = false
 use_system_libdrm = false
+
+# Use older SDK to avoid macOS 26.2 header redefinition bugs
+mac_sdk_path = "/Library/Developer/CommandLineTools/SDKs/MacOSX15.5.sdk"
 
 # Code signing configuration (set these for production builds):
 # Windows: win_signing_cert_path, win_signing_cert_password

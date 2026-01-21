@@ -1,14 +1,17 @@
 <svg viewBox="0 0 64 80" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <!-- Stylized B with keyhole - based on Blockd logo -->
+  <!-- Blockd B icon with keyhole - uses currentColor for flexibility -->
+
+  <!-- Stylized B shape -->
   <path
     fill-rule="evenodd"
     clip-rule="evenodd"
-    d="M0 0 L0 80 L40 80 C55 80 64 70 64 56 C64 47 59 40 52 36 C58 32 62 25 62 17 C62 7 53 0 40 0 L0 0 Z
-    M14 14 L38 14 C45 14 48 18 48 24 C48 30 45 34 38 34 L14 34 L14 14 Z
-    M14 48 L38 48 C48 48 50 53 50 60 C50 67 48 72 38 72 L14 72 L14 48 Z"
+    d="M0 0 L0 80 L40 80 C55 80 64 68 64 54 C64 44 58 36 50 32 C56 28 60 22 60 14 C60 5 52 0 40 0 L0 0 Z
+    M14 12 L36 12 C44 12 48 17 48 23 C48 29 44 34 36 34 L14 34 L14 12 Z
+    M14 46 L36 46 C46 46 50 52 50 60 C50 68 46 74 36 74 L14 74 L14 46 Z"
     fill="currentColor"
   />
-  <!-- Keyhole - positioned in center of the B -->
-  <ellipse cx="32" cy="52" rx="7" ry="8" fill="white"/>
-  <path d="M28 52 L28 68 L36 68 L36 52 Z" fill="white"/>
+
+  <!-- Keyhole cutout -->
+  <ellipse cx="30" cy="54" rx="8" ry="9" fill="white"/>
+  <path d="M24 54 L24 72 L36 72 L36 54 Z" fill="white"/>
 </svg>

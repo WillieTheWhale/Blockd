@@ -1,0 +1,15 @@
+# Copyright 2025 The Blocked Authors. All rights reserved.
+
+source_set("telemetry") {
+  sources = [
+    "blocked_telemetry_service.cc",
+    "blocked_telemetry_service.h",
+  ]
+
+  deps = [
+    "//base",
+    "//components/keyed_service/core",
+  ]
+
+  configs += [ "//chrome/browser/blocked:blocked_config" ]
+}

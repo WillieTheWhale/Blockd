@@ -3,64 +3,40 @@
 
 @layer base {
   :root {
-    /* Light mode - Professional white-based theme */
-    --background: 210 40% 98%; /* #F8FAFC - Off-white */
-    --foreground: 222.2 47.4% 11.2%; /* #0F172A - Dark navy for text */
-    --card: 0 0% 100%; /* Pure white */
-    --card-foreground: 222.2 47.4% 11.2%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 47.4% 11.2%;
-    --primary: 217.2 91.2% 59.8%; /* #3B82F6 - Blue accent */
-    --primary-foreground: 0 0% 100%;
-    --secondary: 210 40% 96.1%; /* Light gray */
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215 25% 45%; /* #64748B - Slate gray */
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 214.3 31.8% 91.4%; /* Light border */
-    --input: 214.3 31.8% 91.4%;
-    --ring: 217.2 91.2% 59.8%;
+    /* Blockd Brand Color Palette - Light mode only */
+    /* Primary: Egg White #F3F6FB - Background */
+    /* Dark: Black Blue #01101B - Text */
+    /* Secondary: Grey Blue #36454F - Secondary text */
+    /* Accent: Darker Teal #687193 - Interactive elements */
+    /* Highlight: Teal #9099BB - Hover states */
+
+    --background: 220 47% 97%; /* #F3F6FB - Egg White (Primary Background) */
+    --foreground: 209 93% 5%; /* #01101B - Black Blue (Primary Text) */
+    --card: 220 47% 99%; /* Slightly lighter egg white for cards */
+    --card-foreground: 209 93% 5%;
+    --popover: 220 47% 99%;
+    --popover-foreground: 209 93% 5%;
+    --primary: 226 17% 49%; /* #687193 - Darker Teal (Interactive) */
+    --primary-foreground: 220 47% 97%; /* Egg white text on primary */
+    --secondary: 228 23% 65%; /* #9099BB - Teal (Highlight) */
+    --secondary-foreground: 209 93% 5%;
+    --muted: 220 30% 92%; /* Light muted background */
+    --muted-foreground: 204 18% 26%; /* #36454F - Grey Blue */
+    --accent: 228 23% 65%; /* #9099BB - Teal accent */
+    --accent-foreground: 209 93% 5%;
+    --destructive: 0 84.2% 60.2%; /* Keep red for errors */
+    --destructive-foreground: 220 47% 97%;
+    --border: 220 25% 88%; /* Light border matching egg white */
+    --input: 220 25% 88%;
+    --ring: 226 17% 49%; /* Darker Teal ring */
     --radius: 0.5rem;
 
-    /* Chart colors */
-    --chart-1: 217.2 91.2% 59.8%; /* Blue */
-    --chart-2: 160 84% 39%; /* Emerald */
-    --chart-3: 38 92% 50%; /* Amber */
-    --chart-4: 0 84% 60%; /* Red */
-    --chart-5: 263 70% 50%; /* Violet */
-  }
-
-  .dark {
-    /* Dark mode - Navy-based theme */
-    --background: 222.2 47.4% 11.2%; /* #0F172A - Dark Navy */
-    --foreground: 210 40% 98%; /* #F8FAFC - Off-White */
-    --card: 215 25% 15%; /* Slightly lighter than background */
-    --card-foreground: 210 40% 98%;
-    --popover: 215 25% 13%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%; /* #3B82F6 - Blue */
-    --primary-foreground: 0 0% 100%;
-    --secondary: 215 25% 20%; /* #334155 - Slate */
-    --secondary-foreground: 210 40% 98%;
-    --muted: 215 25% 20%;
-    --muted-foreground: 214.3 31.8% 70%; /* Lighter gray for dark mode */
-    --accent: 215 25% 20%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 50%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 215 25% 25%;
-    --input: 215 25% 25%;
-    --ring: 217.2 91.2% 59.8%;
-
-    /* Chart colors - slightly brighter for dark mode */
-    --chart-1: 217.2 91.2% 59.8%;
-    --chart-2: 160 84% 45%;
-    --chart-3: 38 92% 55%;
-    --chart-4: 0 84% 65%;
-    --chart-5: 263 70% 55%;
+    /* Chart colors - Blockd palette based */
+    --chart-1: 226 17% 49%; /* Darker Teal */
+    --chart-2: 228 23% 65%; /* Teal */
+    --chart-3: 204 18% 26%; /* Grey Blue */
+    --chart-4: 0 84% 60%; /* Red for alerts */
+    --chart-5: 209 93% 15%; /* Lighter Black Blue */
   }
 }
 
@@ -74,7 +50,7 @@
   }
 }
 
-/* Custom scrollbar */
+/* Custom scrollbar - Blockd palette */
 @layer base {
   ::-webkit-scrollbar {
     width: 8px;
@@ -86,20 +62,12 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background-color: hsl(214.3 31.8% 85%);
+    background-color: hsl(228 23% 75%); /* Lighter Teal */
     border-radius: 4px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background-color: hsl(214.3 31.8% 75%);
-  }
-
-  .dark ::-webkit-scrollbar-thumb {
-    background-color: hsl(215 25% 30%);
-  }
-
-  .dark ::-webkit-scrollbar-thumb:hover {
-    background-color: hsl(215 25% 40%);
+    background-color: hsl(226 17% 49%); /* Darker Teal */
   }
 }
 
@@ -164,14 +132,14 @@
   }
 }
 
-/* Gradient backgrounds */
+/* Gradient backgrounds - Blockd palette */
 @layer utilities {
   .bg-gradient-primary {
-    background: linear-gradient(135deg, hsl(217.2 91.2% 59.8%) 0%, hsl(217.2 91.2% 50%) 100%);
+    background: linear-gradient(135deg, hsl(226 17% 49%) 0%, hsl(226 17% 40%) 100%); /* Darker Teal gradient */
   }
 
   .bg-gradient-subtle {
-    background: linear-gradient(180deg, hsl(210 40% 98%) 0%, hsl(210 40% 96%) 100%);
+    background: linear-gradient(180deg, hsl(220 47% 97%) 0%, hsl(220 30% 92%) 100%); /* Egg White gradient */
   }
 }
 

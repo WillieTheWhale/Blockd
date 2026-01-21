@@ -1,0 +1,73 @@
+# Copyright 2025 The Blockd Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# Mojo interfaces for Blocked browser-renderer IPC.
+
+import("//mojo/public/tools/bindings/mojom.gni")
+
+mojom("mojom") {
+  sources = [
+    "eye_tracking.mojom",
+    "session.mojom",
+    "video_capture.mojom",
+  ]
+
+  public_deps = [
+    "//mojo/public/mojom/base",
+  ]
+
+  # Generate C++ bindings with type mappings for all structs.
+  cpp_typemaps = [
+    {
+      types = [
+        {
+          mojom = "blocked.mojom.GazeData"
+          cpp = "::blocked::GazeData"
+        },
+        {
+          mojom = "blocked.mojom.CalibrationPoint"
+          cpp = "::blocked::CalibrationPoint"
+        },
+        {
+          mojom = "blocked.mojom.CalibrationSettings"
+          cpp = "::blocked::CalibrationSettings"
+        },
+        {
+          mojom = "blocked.mojom.VideoFrameMetadata"
+          cpp = "::blocked::VideoFrameMetadata"
+        },
+        {
+          mojom = "blocked.mojom.VideoCaptureSettings"
+          cpp = "::blocked::VideoCaptureSettings"
+        },
+      ]
+      traits_headers = [
+        "//chrome/browser/blocked/public/mojom/blocked_mojom_traits.h",
+      ]
+      traits_sources = [
+        "//chrome/browser/blocked/public/mojom/blocked_mojom_traits.cc",
+      ]
+      traits_public_deps = [
+        "//base",
+      ]
+    },
+  ]
+
+  # Generate JavaScript bindings for web API.
+  webui_module_path = "chrome/browser/blocked/public/mojom"
+}
+
+# Shared types and constants.
+source_set("blocked_mojom_traits") {
+  sources = [
+    "blocked_mojom_traits.cc",
+    "blocked_mojom_traits.h",
+  ]
+
+  deps = [
+    ":mojom",
+    "//base",
+    "//mojo/public/cpp/bindings",
+  ]
+}

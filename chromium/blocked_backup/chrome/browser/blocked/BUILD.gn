@@ -1,0 +1,37 @@
+# Copyright 2025 The Blocked Authors. All rights reserved.
+# Build file for Blocked browser modules
+
+import("//build/config/features.gni")
+
+# Main Blocked browser modules aggregation
+group("blocked_browser_modules") {
+  deps = [
+    "//chrome/browser/blocked/blocked_security:security_monitoring",
+    "//chrome/browser/blocked/blocked_telemetry:telemetry",
+    "//chrome/browser/blocked/blocked_ipc:ipc",
+    "//chrome/browser/blocked/blocked_video:video_capture",
+  ]
+}
+
+# Configuration for Blocked-specific flags
+config("blocked_config") {
+  defines = [
+    "BLOCKED_BROWSER",
+  ]
+
+  if (blocked_enable_security_monitoring) {
+    defines += [ "BLOCKED_ENABLE_SECURITY_MONITORING" ]
+  }
+
+  if (blocked_enable_eye_tracking) {
+    defines += [ "BLOCKED_ENABLE_EYE_TRACKING" ]
+  }
+
+  if (blocked_enable_telemetry) {
+    defines += [ "BLOCKED_ENABLE_TELEMETRY" ]
+  }
+
+  if (blocked_backend_url != "") {
+    defines += [ "BLOCKED_BACKEND_URL=\"${blocked_backend_url}\"" ]
+  }
+}

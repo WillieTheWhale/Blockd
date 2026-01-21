@@ -46,32 +46,52 @@ export default {
           4: 'hsl(var(--chart-4))',
           5: 'hsl(var(--chart-5))',
         },
-        // Brand colors
-        navy: {
-          DEFAULT: '#0F172A',
-          50: '#E2E8F0',
-          100: '#CBD5E1',
-          200: '#94A3B8',
-          300: '#64748B',
-          400: '#475569',
-          500: '#334155',
-          600: '#1E293B',
-          700: '#0F172A',
-          800: '#0D1424',
-          900: '#0A0F1A',
+        // Blockd Brand Colors
+        blockd: {
+          // Primary Background
+          'egg-white': '#F3F6FB',
+          // Primary Text/Dark
+          'black-blue': '#01101B',
+          // Secondary Text
+          'grey-blue': '#36454F',
+          // Interactive Elements
+          'darker-teal': '#687193',
+          // Highlights
+          'teal': '#9099BB',
         },
-        slate: {
-          DEFAULT: '#334155',
-          50: '#F8FAFC',
-          100: '#F1F5F9',
-          200: '#E2E8F0',
-          300: '#CBD5E1',
-          400: '#94A3B8',
-          500: '#64748B',
-          600: '#475569',
-          700: '#334155',
-          800: '#1E293B',
-          900: '#0F172A',
+        // Egg White scale (light backgrounds)
+        'egg-white': {
+          DEFAULT: '#F3F6FB',
+          50: '#FFFFFF',
+          100: '#FAFBFD',
+          200: '#F3F6FB',
+          300: '#E8ECF5',
+          400: '#DDE3F0',
+          500: '#D2DAEB',
+        },
+        // Black Blue scale (dark elements)
+        'black-blue': {
+          DEFAULT: '#01101B',
+          50: '#36454F',
+          100: '#2A3640',
+          200: '#1E2832',
+          300: '#121A24',
+          400: '#060C16',
+          500: '#01101B',
+        },
+        // Teal scale (accents)
+        'teal': {
+          DEFAULT: '#9099BB',
+          50: '#E8EAF2',
+          100: '#D1D5E5',
+          200: '#BAC0D8',
+          300: '#A3ABCB',
+          400: '#9099BB',
+          500: '#687193',
+          600: '#565E7A',
+          700: '#444B61',
+          800: '#323848',
+          900: '#20252F',
         },
       },
       borderRadius: {

@@ -1,0 +1,16 @@
+# Copyright 2025 The Blocked Authors. All rights reserved.
+
+source_set("video_capture") {
+  sources = [
+    "blocked_video_capture_service.cc",
+    "blocked_video_capture_service.h",
+  ]
+
+  deps = [
+    "//base",
+    "//components/keyed_service/core",
+    "//media/capture",
+  ]
+
+  configs += [ "//chrome/browser/blocked:blocked_config" ]
+}
