@@ -24,7 +24,7 @@ jobs:
   build-macos:
     name: Build macOS (Apple Silicon)
     runs-on: macos-14  # Apple Silicon runner
-    if: ${{ inputs.build_macos }}
+    if: ${{ inputs.build_macos == true || inputs.build_macos == 'true' }}
     timeout-minutes: 360  # 6 hours
 
     steps:
@@ -175,7 +175,7 @@ jobs:
   build-windows:
     name: Build Windows
     runs-on: windows-2022
-    if: ${{ inputs.build_windows }}
+    if: ${{ inputs.build_windows == true || inputs.build_windows == 'true' }}
     timeout-minutes: 360  # 6 hours
 
     steps:
