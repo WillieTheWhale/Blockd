@@ -1,0 +1,362 @@
+name: Build Blockd Browser
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g., 1.0.0)'
+        required: true
+        default: '1.0.0'
+      build_windows:
+        description: 'Build Windows version'
+        type: boolean
+        default: true
+      build_macos:
+        description: 'Build macOS version'
+        type: boolean
+        default: true
+
+env:
+  CHROMIUM_VERSION: '142.0.6367.78'
+  DEPOT_TOOLS_UPDATE: '0'
+
+jobs:
+  build-macos:
+    name: Build macOS (Apple Silicon)
+    runs-on: macos-14  # Apple Silicon runner
+    if: ${{ inputs.build_macos }}
+    timeout-minutes: 360  # 6 hours
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          path: blockd
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /Library/Developer/CommandLineTools || true
+          sudo rm -rf /Applications/Xcode_14* || true
+          df -h
+
+      - name: Install Xcode Command Line Tools
+        run: |
+          xcode-select --install || true
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      - name: Setup depot_tools
+        run: |
+          git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
+          echo "$PWD/depot_tools" >> $GITHUB_PATH
+
+      - name: Create .gclient file
+        run: |
+          mkdir chromium && cd chromium
+          cat > .gclient << 'EOF'
+          solutions = [
+            {
+              "name": "src",
+              "url": "https://chromium.googlesource.com/chromium/src.git@main",
+              "managed": False,
+              "custom_deps": {},
+              "custom_vars": {},
+            },
+          ]
+          target_os = ["mac"]
+          EOF
+
+      - name: Sync Chromium source
+        run: |
+          cd chromium
+          gclient sync --no-history --shallow --force
+        env:
+          DEPOT_TOOLS_WIN_TOOLCHAIN: '0'
+
+      - name: Integrate Blockd modifications
+        run: |
+          cd chromium/src
+          # Copy Blockd modules
+          cp -r $GITHUB_WORKSPACE/blockd/chromium/blocked_backup/chrome/browser/blocked chrome/browser/
+          cp -r $GITHUB_WORKSPACE/blockd/chromium/blocked_backup/chrome/browser/ui/blocked chrome/browser/ui/
+          cp -r $GITHUB_WORKSPACE/blockd/chromium/blocked_backup/chrome/browser/resources/blocked chrome/browser/resources/
+          cp -r $GITHUB_WORKSPACE/blockd/chromium/blocked_backup/chrome/app/theme/blocked chrome/app/theme/
+          cp -r $GITHUB_WORKSPACE/blockd/chromium/blocked_backup/content/renderer/blocked_eye_tracking content/renderer/
+          cp -r $GITHUB_WORKSPACE/blockd/chromium/blocked_backup/content/renderer/blocked_ipc content/renderer/
+          cp -r $GITHUB_WORKSPACE/blockd/chromium/blocked_backup/content/renderer/blocked_video content/renderer/
+          cp -r $GITHUB_WORKSPACE/blockd/chromium/blocked_backup/content/common/blocked content/common/
+
+      - name: Configure build
+        run: |
+          cd chromium/src
+          mkdir -p out/Blockd
+          cat > out/Blockd/args.gn << 'EOF'
+          # Core Build Settings
+          is_component_build = false
+          is_official_build = false
+          is_debug = false
+          symbol_level = 1
+          chrome_pgo_phase = 0
+
+          # Branding
+          is_chrome_branded = false
+
+          # Codecs & Media
+          proprietary_codecs = true
+          ffmpeg_branding = "Chrome"
+          enable_widevine = false
+
+          # Platform Features
+          enable_nacl = false
+          enable_pdf = true
+          enable_print_preview = true
+          enable_extensions = true
+
+          # macOS specific
+          target_cpu = "arm64"
+          mac_deployment_target = "12.0"
+
+          # Build Performance
+          use_goma = false
+
+          # Disable unused features
+          enable_vr = false
+          enable_mdns = false
+
+          # Blockd Feature Flags
+          blocked_enable_security_monitoring = true
+          blocked_enable_eye_tracking = true
+          blocked_enable_telemetry = true
+          blocked_enable_meeting_detection = true
+          blocked_backend_url = "wss://api.blockd.site/ws/blocked"
+          EOF
+          gn gen out/Blockd
+
+      - name: Build Chrome
+        run: |
+          cd chromium/src
+          autoninja -C out/Blockd chrome -j4
+
+      - name: Create macOS DMG
+        run: |
+          cd chromium/src
+          # Create DMG using Chrome's built-in packaging
+          autoninja -C out/Blockd chrome_mac_packaging
+
+          # Alternative: manual DMG creation
+          if [ ! -f out/Blockd/*.dmg ]; then
+            DMG_NAME="BlockdBrowser-${{ inputs.version }}-mac-arm64.dmg"
+            hdiutil create -volname "Blockd Browser" \
+              -srcfolder out/Blockd/Chromium.app \
+              -ov -format UDZO \
+              "out/Blockd/${DMG_NAME}"
+          fi
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: blockd-browser-macos-arm64
+          path: chromium/src/out/Blockd/*.dmg
+          retention-days: 30
+
+      - name: Upload to S3
+        if: success()
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+        run: |
+          pip install awscli
+          DMG_FILE=$(ls chromium/src/out/Blockd/*.dmg | head -1)
+          aws s3 cp "$DMG_FILE" \
+            "s3://blockd-browser-releases-052808603343/releases/macos/BlockdBrowser-${{ inputs.version }}-mac-arm64.dmg"
+          aws s3 cp "$DMG_FILE" \
+            "s3://blockd-browser-releases-052808603343/releases/macos/BlockdBrowser-latest-mac-arm64.dmg"
+
+  build-windows:
+    name: Build Windows
+    runs-on: windows-2022
+    if: ${{ inputs.build_windows }}
+    timeout-minutes: 360  # 6 hours
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          path: blockd
+
+      - name: Setup depot_tools
+        run: |
+          git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
+          echo "$PWD\depot_tools" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+      - name: Create .gclient file
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Path chromium -Force
+          Set-Location chromium
+          @"
+          solutions = [
+            {
+              "name": "src",
+              "url": "https://chromium.googlesource.com/chromium/src.git@main",
+              "managed": False,
+              "custom_deps": {},
+              "custom_vars": {},
+            },
+          ]
+          target_os = ["win"]
+          "@ | Out-File -FilePath .gclient -Encoding utf8
+
+      - name: Sync Chromium source
+        shell: powershell
+        run: |
+          Set-Location chromium
+          $env:DEPOT_TOOLS_WIN_TOOLCHAIN = "0"
+          gclient sync --no-history --shallow --force
+
+      - name: Integrate Blockd modifications
+        shell: powershell
+        run: |
+          Set-Location chromium/src
+          Copy-Item -Path "$env:GITHUB_WORKSPACE\blockd\chromium\blocked_backup\chrome\browser\blocked" -Destination "chrome\browser\" -Recurse -Force
+          Copy-Item -Path "$env:GITHUB_WORKSPACE\blockd\chromium\blocked_backup\chrome\browser\ui\blocked" -Destination "chrome\browser\ui\" -Recurse -Force
+          Copy-Item -Path "$env:GITHUB_WORKSPACE\blockd\chromium\blocked_backup\chrome\browser\resources\blocked" -Destination "chrome\browser\resources\" -Recurse -Force
+          Copy-Item -Path "$env:GITHUB_WORKSPACE\blockd\chromium\blocked_backup\chrome\app\theme\blocked" -Destination "chrome\app\theme\" -Recurse -Force
+          Copy-Item -Path "$env:GITHUB_WORKSPACE\blockd\chromium\blocked_backup\content\renderer\blocked_eye_tracking" -Destination "content\renderer\" -Recurse -Force
+          Copy-Item -Path "$env:GITHUB_WORKSPACE\blockd\chromium\blocked_backup\content\renderer\blocked_ipc" -Destination "content\renderer\" -Recurse -Force
+          Copy-Item -Path "$env:GITHUB_WORKSPACE\blockd\chromium\blocked_backup\content\renderer\blocked_video" -Destination "content\renderer\" -Recurse -Force
+          Copy-Item -Path "$env:GITHUB_WORKSPACE\blockd\chromium\blocked_backup\content\common\blocked" -Destination "content\common\" -Recurse -Force
+
+      - name: Configure build
+        shell: powershell
+        run: |
+          Set-Location chromium/src
+          New-Item -ItemType Directory -Path "out\Blockd" -Force
+          @"
+          # Core Build Settings
+          is_component_build = false
+          is_official_build = false
+          is_debug = false
+          symbol_level = 1
+          chrome_pgo_phase = 0
+
+          # Branding
+          is_chrome_branded = false
+
+          # Codecs & Media
+          proprietary_codecs = true
+          ffmpeg_branding = "Chrome"
+          enable_widevine = false
+
+          # Platform Features
+          enable_nacl = false
+          enable_pdf = true
+          enable_print_preview = true
+          enable_extensions = true
+
+          # Build Performance
+          use_goma = false
+
+          # Disable unused features
+          enable_vr = false
+          enable_mdns = false
+
+          # Blockd Feature Flags
+          blocked_enable_security_monitoring = true
+          blocked_enable_eye_tracking = true
+          blocked_enable_telemetry = true
+          blocked_enable_meeting_detection = true
+          blocked_backend_url = "wss://api.blockd.site/ws/blocked"
+          "@ | Out-File -FilePath "out\Blockd\args.gn" -Encoding utf8
+          gn gen out/Blockd
+
+      - name: Build Chrome
+        shell: powershell
+        run: |
+          Set-Location chromium/src
+          autoninja -C out/Blockd chrome -j4
+
+      - name: Build mini_installer
+        shell: powershell
+        run: |
+          Set-Location chromium/src
+          autoninja -C out/Blockd mini_installer
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: blockd-browser-windows-x64
+          path: chromium/src/out/Blockd/mini_installer.exe
+          retention-days: 30
+
+      - name: Upload to S3
+        if: success()
+        shell: powershell
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+        run: |
+          pip install awscli
+          aws s3 cp chromium/src/out/Blockd/mini_installer.exe `
+            "s3://blockd-browser-releases-052808603343/releases/windows/BlockdBrowser-${{ inputs.version }}-win64.exe"
+          aws s3 cp chromium/src/out/Blockd/mini_installer.exe `
+            "s3://blockd-browser-releases-052808603343/releases/windows/BlockdBrowser-latest-win64.exe"
+
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build-macos, build-windows]
+    if: always() && (needs.build-macos.result == 'success' || needs.build-windows.result == 'success')
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ inputs.version }}
+          name: Blockd Browser v${{ inputs.version }}
+          body: |
+            ## Blockd Browser v${{ inputs.version }}
+
+            ### Downloads
+            - **Windows (x64)**: BlockdBrowser-${{ inputs.version }}-win64.exe
+            - **macOS (Apple Silicon)**: BlockdBrowser-${{ inputs.version }}-mac-arm64.dmg
+
+            ### What's New
+            - Initial release with integrated security monitoring
+            - Eye tracking support for interview sessions
+            - Meeting platform detection (Google Meet, Zoom, MS Teams)
+
+            ### Installation
+            **Windows**: Run the installer and follow the prompts.
+            **macOS**: Mount the DMG and drag Blockd Browser to Applications.
+          files: |
+            artifacts/**/*
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  update-download-links:
+    name: Update Website Download Links
+    runs-on: ubuntu-latest
+    needs: [create-release]
+    if: success()
+
+    steps:
+      - name: Generate download URLs
+        id: urls
+        run: |
+          VERSION="${{ inputs.version }}"
+          echo "windows_url=https://blockd-browser-releases-052808603343.s3.amazonaws.com/releases/windows/BlockdBrowser-${VERSION}-win64.exe" >> $GITHUB_OUTPUT
+          echo "macos_url=https://blockd-browser-releases-052808603343.s3.amazonaws.com/releases/macos/BlockdBrowser-${VERSION}-mac-arm64.dmg" >> $GITHUB_OUTPUT
+
+      - name: Output download links
+        run: |
+          echo "Windows Download: ${{ steps.urls.outputs.windows_url }}"
+          echo "macOS Download: ${{ steps.urls.outputs.macos_url }}"
