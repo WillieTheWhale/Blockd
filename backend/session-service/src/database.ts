@@ -1,24 +1,61 @@
 /**
  * Prisma Client for Session Service
  *
- * Uses the shared database module with proper connection pooling.
+ * Provides a singleton PrismaClient instance with proper connection management.
  * Session service has the highest connection limit due to high session activity
  * and frequent database operations.
  */
 
-import {
-  createPrismaClient,
-  disconnectPrisma as disconnect,
-  getPoolStats as getStats,
-  healthCheck as checkHealth,
-  getServicePoolConfig,
-} from '@blockd/shared/database';
-import type { PoolStats, HealthCheckResult, PoolConfig } from '@blockd/shared/database';
+import { PrismaClient } from '@prisma/client';
 
-const SERVICE_NAME = 'session-service' as const;
+const SERVICE_NAME = 'session-service';
 
-// Create/get the Prisma client instance
-const prisma = createPrismaClient(SERVICE_NAME);
+// Use global for singleton pattern in development (prevents multiple instances during hot reload)
+const globalForPrisma = globalThis as unknown as {
+  prisma: PrismaClient | undefined;
+};
+
+const prisma =
+  globalForPrisma.prisma ??
+  new PrismaClient({
+    log:
+      process.env.NODE_ENV === 'development'
+        ? ['query', 'info', 'warn', 'error']
+        : ['error'],
+    errorFormat: 'pretty',
+  });
+
+if (process.env.NODE_ENV !== 'production') {
+  globalForPrisma.prisma = prisma;
+}
+
+/**
+ * Pool statistics type for monitoring
+ */
+export interface PoolStats {
+  serviceName: string;
+  activeConnections: number;
+  idleConnections: number;
+  waitingRequests: number;
+}
+
+/**
+ * Pool configuration type
+ */
+export interface PoolConfig {
+  connectionLimit: number;
+  connectTimeout: number;
+  idleTimeout: number;
+}
+
+/**
+ * Health check result type
+ */
+export interface HealthCheckResult {
+  healthy: boolean;
+  latencyMs: number;
+  error?: string;
+}
 
 /**
  * Get the Prisma client instance
@@ -31,32 +68,58 @@ export function getPrismaClient() {
  * Get current pool configuration
  */
 export function getPoolConfig(): PoolConfig {
-  return getServicePoolConfig(SERVICE_NAME);
+  return {
+    connectionLimit: 20, // Default for session service
+    connectTimeout: 10000,
+    idleTimeout: 30000,
+  };
 }
 
 /**
- * Get connection pool statistics
+ * Get connection pool statistics (approximate)
  */
 export async function getPoolStats(): Promise<PoolStats> {
-  return getStats(prisma, SERVICE_NAME);
+  // Prisma doesn't expose pool stats directly, but we can track basic info
+  return {
+    serviceName: SERVICE_NAME,
+    activeConnections: 0, // Would need custom tracking
+    idleConnections: 0,
+    waitingRequests: 0,
+  };
 }
 
 /**
  * Check database connection health
  */
 export async function healthCheck(): Promise<HealthCheckResult> {
-  return checkHealth(prisma);
+  const start = Date.now();
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    return {
+      healthy: true,
+      latencyMs: Date.now() - start,
+    };
+  } catch (error) {
+    return {
+      healthy: false,
+      latencyMs: Date.now() - start,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
 }
 
 /**
- * Gracefully disconnect from database
+ * Gracefully disconnect Prisma
  */
 export async function disconnectDatabase(): Promise<void> {
-  await disconnect(SERVICE_NAME);
+  await prisma.$disconnect();
 }
 
-// Re-export the pool config from the shared module for compatibility
-export { SERVICE_POOL_CONFIGS as POOL_CONFIG } from '@blockd/shared/database';
+// Pool config export for backwards compatibility
+export const POOL_CONFIG = {
+  'session-service': getPoolConfig(),
+};
 
-// Default export for backwards compatibility
+export { SERVICE_POOL_CONFIGS } from './pool-config';
+
 export default prisma;

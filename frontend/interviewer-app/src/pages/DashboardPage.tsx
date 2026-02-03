@@ -19,11 +19,11 @@ import { QuickActions } from '@/components/dashboard/QuickActions'
 export function DashboardPage() {
   const { user } = useAuthStore()
 
-  const { data: sessions, isLoading } = useQuery({
+  const { data: sessions, isLoading: sessionsLoading } = useQuery({
     queryKey: QUERY_KEYS.SESSIONS.LIST({ limit: 5 }),
     queryFn: async () => {
       const response = await apiClient.get<PaginatedResponse<Session>>(API_ENDPOINTS.SESSIONS.LIST, {
-        params: { limit: 5, sortBy: 'createdAt', sortOrder: 'desc' },
+        params: { pageSize: 5, sortBy: 'createdAt', sortOrder: 'desc' },
       })
       return response.data
     },
@@ -31,11 +31,11 @@ export function DashboardPage() {
 
   const getStatusVariant = (status: string) => {
     switch (status) {
-      case 'completed':
+      case 'ended':
         return 'default'
-      case 'in_progress':
+      case 'active':
         return 'secondary'
-      case 'pending':
+      case 'scheduled':
         return 'outline'
       case 'cancelled':
         return 'destructive'
@@ -44,13 +44,31 @@ export function DashboardPage() {
     }
   }
 
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case 'ended':
+        return 'Completed'
+      case 'active':
+        return 'In Progress'
+      case 'scheduled':
+        return 'Scheduled'
+      case 'cancelled':
+        return 'Cancelled'
+      default:
+        return status
+    }
+  }
+
+  // Get first name from user data
+  const firstName = user?.firstName || user?.name?.split(' ')[0] || 'there'
+
   return (
     <div className="space-y-8">
       {/* Welcome Section */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">
-            Welcome back, {user?.name?.split(' ')[0] || 'there'}!
+            Welcome back, {firstName}!
           </h1>
           <p className="text-muted-foreground mt-1">
             Here's an overview of your interview platform activity.
@@ -64,10 +82,10 @@ export function DashboardPage() {
         </Link>
       </div>
 
-      {/* Stats Cards */}
-      <StatsCards isLoading={isLoading} />
+      {/* Stats Cards - fetches its own data */}
+      <StatsCards />
 
-      {/* Charts Row */}
+      {/* Charts Row - each chart fetches its own data */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         <SessionsChart />
         <RiskScoreChart />
@@ -90,7 +108,7 @@ export function DashboardPage() {
             </Link>
           </CardHeader>
           <CardContent>
-            {isLoading ? (
+            {sessionsLoading ? (
               <div className="space-y-4">
                 {Array.from({ length: 3 }).map((_, i) => (
                   <div
@@ -105,7 +123,7 @@ export function DashboardPage() {
                   </div>
                 ))}
               </div>
-            ) : sessions?.data.length === 0 ? (
+            ) : !sessions?.data || sessions.data.length === 0 ? (
               <div className="text-center py-12">
                 <p className="text-muted-foreground mb-4">
                   No sessions yet. Create your first session to get started!
@@ -119,37 +137,44 @@ export function DashboardPage() {
               </div>
             ) : (
               <div className="space-y-3">
-                {sessions?.data.map((session) => (
-                  <Link
-                    key={session.id}
-                    to={`/sessions/${session.id}`}
-                    className="block p-4 rounded-lg border border-border/40 hover:bg-muted/50 transition-colors group"
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="space-y-1">
-                        <h3 className="font-medium group-hover:text-primary transition-colors">
-                          {session.title}
-                        </h3>
-                        <p className="text-sm text-muted-foreground">
-                          {session.candidateName}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {formatDateTime(session.scheduledAt)}
-                        </p>
-                      </div>
-                      <div className="flex flex-col items-end gap-2">
-                        <Badge variant={getStatusVariant(session.status)}>
-                          {session.status.replace('_', ' ')}
-                        </Badge>
-                        {session.riskScore !== undefined && session.riskScore > 0.7 && (
-                          <Badge variant="destructive" className="text-xs">
-                            High Risk
+                {sessions.data.map((session) => {
+                  // Get candidate name from interviewee or email
+                  const candidateName = session.interviewee
+                    ? `${session.interviewee.firstName || ''} ${session.interviewee.lastName || ''}`.trim() || session.interviewee.email
+                    : session.intervieweeEmail || 'Unknown Candidate'
+
+                  return (
+                    <Link
+                      key={session.id}
+                      to={`/sessions/${session.id}`}
+                      className="block p-4 rounded-lg border border-border/40 hover:bg-muted/50 transition-colors group"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="space-y-1">
+                          <h3 className="font-medium group-hover:text-primary transition-colors">
+                            Interview Session
+                          </h3>
+                          <p className="text-sm text-muted-foreground">
+                            {candidateName}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {session.scheduledStart ? formatDateTime(session.scheduledStart) : 'No date scheduled'}
+                          </p>
+                        </div>
+                        <div className="flex flex-col items-end gap-2">
+                          <Badge variant={getStatusVariant(session.status)}>
+                            {getStatusLabel(session.status)}
                           </Badge>
-                        )}
+                          {session.riskScore !== undefined && session.riskScore !== null && Number(session.riskScore) >= 0.7 && (
+                            <Badge variant="destructive" className="text-xs">
+                              High Risk
+                            </Badge>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  </Link>
-                ))}
+                    </Link>
+                  )
+                })}
               </div>
             )}
           </CardContent>
@@ -158,6 +183,7 @@ export function DashboardPage() {
         {/* Right Column */}
         <div className="space-y-6">
           <QuickActions />
+          {/* Activity Timeline - fetches its own data */}
           <ActivityTimeline />
         </div>
       </div>

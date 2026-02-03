@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Users, Calendar, CheckCircle, AlertTriangle, TrendingUp, TrendingDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useAnalyticsOverview } from '@/hooks/use-analytics'
 
 interface Stat {
   title: string
@@ -19,40 +20,68 @@ interface StatsCardsProps {
   isLoading?: boolean
 }
 
-function generateMockStats(): Stat[] {
-  return [
+export function StatsCards({ stats, isLoading: externalLoading }: StatsCardsProps) {
+  const { data: overview, isLoading: analyticsLoading } = useAnalyticsOverview()
+
+  const isLoading = externalLoading || analyticsLoading
+
+  // Transform API data to stat format, or use provided stats, or show zeros for new accounts
+  const data: Stat[] = stats || (overview ? [
     {
       title: 'Total Sessions',
-      value: 156,
-      description: 'All time interviews',
+      value: overview.totalSessions.value,
+      description: overview.totalSessions.description,
       icon: Users,
-      trend: { value: 12, isPositive: true },
+      trend: overview.totalSessions.trend,
     },
     {
       title: 'Active Sessions',
-      value: 3,
+      value: overview.activeSessions.value,
+      description: overview.activeSessions.description,
+      icon: Calendar,
+      trend: overview.activeSessions.trend,
+    },
+    {
+      title: 'Completed Today',
+      value: overview.completedToday.value,
+      description: overview.completedToday.description,
+      icon: CheckCircle,
+      trend: overview.completedToday.trend,
+    },
+    {
+      title: 'High Risk Alerts',
+      value: overview.highRiskAlerts.value,
+      description: overview.highRiskAlerts.description,
+      icon: AlertTriangle,
+      trend: overview.highRiskAlerts.trend,
+    },
+  ] : [
+    // Default empty state for new accounts
+    {
+      title: 'Total Sessions',
+      value: 0,
+      description: 'All time interviews',
+      icon: Users,
+    },
+    {
+      title: 'Active Sessions',
+      value: 0,
       description: 'Currently running',
       icon: Calendar,
     },
     {
       title: 'Completed Today',
-      value: 8,
+      value: 0,
       description: 'Finished interviews',
       icon: CheckCircle,
-      trend: { value: 4, isPositive: true },
     },
     {
       title: 'High Risk Alerts',
-      value: 2,
+      value: 0,
       description: 'Requires attention',
       icon: AlertTriangle,
-      trend: { value: 1, isPositive: false },
     },
-  ]
-}
-
-export function StatsCards({ stats, isLoading }: StatsCardsProps) {
-  const data = stats || generateMockStats()
+  ])
 
   if (isLoading) {
     return (

@@ -124,9 +124,41 @@ variable "enable_grafana" {
   default     = true
 }
 
+# Domain Configuration
+variable "domain_name" {
+  description = "Primary domain name for the application"
+  type        = string
+  default     = "blockd.site"
+}
+
+variable "enable_waf" {
+  description = "Enable WAF protection"
+  type        = bool
+  default     = true
+}
+
+variable "waf_rate_limit" {
+  description = "Rate limit for WAF (requests per 5-minute period per IP)"
+  type        = number
+  default     = 2000
+}
+
+variable "enable_bot_control" {
+  description = "Enable AWS Bot Control managed rule group"
+  type        = bool
+  default     = false
+}
+
 # Tags
 variable "additional_tags" {
   description = "Additional tags to apply to resources"
   type        = map(string)
   default     = {}
+}
+
+# Bootstrap Mode - set to true for initial deployment when EKS doesn't exist yet
+variable "bootstrap_mode" {
+  description = "Set to true for initial deployment before EKS cluster exists"
+  type        = bool
+  default     = false
 }

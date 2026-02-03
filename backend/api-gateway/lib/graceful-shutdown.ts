@@ -5,7 +5,7 @@
 
 import { FastifyInstance } from 'fastify';
 import prisma from './prisma';
-import { getRedisClient } from '../../shared/cache/redis-client';
+import { getRedisClient } from './redis-client';
 import { getAllCircuitBreakerStats, resetAllCircuitBreakers } from './circuit-breaker';
 
 export interface ShutdownOptions {

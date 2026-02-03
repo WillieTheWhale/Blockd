@@ -10,81 +10,11 @@ import {
   XCircle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-
-interface ActivityItem {
-  id: string
-  type: 'session_started' | 'session_ended' | 'alert' | 'candidate_joined' | 'session_cancelled'
-  title: string
-  description: string
-  timestamp: string
-  status?: 'success' | 'warning' | 'error' | 'info'
-}
+import { useAnalyticsActivity, type ActivityItem } from '@/hooks/use-analytics'
 
 interface ActivityTimelineProps {
   activities?: ActivityItem[]
   isLoading?: boolean
-}
-
-// Generate mock data
-function generateMockActivities(): ActivityItem[] {
-  return [
-    {
-      id: '1',
-      type: 'session_ended',
-      title: 'Interview Completed',
-      description: 'John Smith - Frontend Developer',
-      timestamp: '10 minutes ago',
-      status: 'success',
-    },
-    {
-      id: '2',
-      type: 'alert',
-      title: 'Security Alert',
-      description: 'Tab switch detected during session',
-      timestamp: '25 minutes ago',
-      status: 'warning',
-    },
-    {
-      id: '3',
-      type: 'session_started',
-      title: 'Interview Started',
-      description: 'Sarah Johnson - Backend Developer',
-      timestamp: '1 hour ago',
-      status: 'info',
-    },
-    {
-      id: '4',
-      type: 'candidate_joined',
-      title: 'Candidate Joined',
-      description: 'Mike Davis connected to session',
-      timestamp: '2 hours ago',
-      status: 'info',
-    },
-    {
-      id: '5',
-      type: 'session_cancelled',
-      title: 'Session Cancelled',
-      description: 'Candidate no-show after 15 minutes',
-      timestamp: '3 hours ago',
-      status: 'error',
-    },
-    {
-      id: '6',
-      type: 'session_ended',
-      title: 'Interview Completed',
-      description: 'Emily Chen - Data Scientist',
-      timestamp: '4 hours ago',
-      status: 'success',
-    },
-    {
-      id: '7',
-      type: 'alert',
-      title: 'High Risk Score',
-      description: 'AI detection score above threshold',
-      timestamp: '5 hours ago',
-      status: 'warning',
-    },
-  ]
 }
 
 const iconMap = {
@@ -102,8 +32,11 @@ const statusColors = {
   info: 'text-blue-500 bg-blue-500/10',
 }
 
-export function ActivityTimeline({ activities, isLoading }: ActivityTimelineProps) {
-  const items = activities || generateMockActivities()
+export function ActivityTimeline({ activities: externalActivities, isLoading: externalLoading }: ActivityTimelineProps) {
+  const { data: apiActivities, isLoading: apiLoading } = useAnalyticsActivity()
+
+  const isLoading = externalLoading || apiLoading
+  const items = externalActivities || apiActivities || []
 
   return (
     <Card>
@@ -123,6 +56,12 @@ export function ActivityTimeline({ activities, isLoading }: ActivityTimelineProp
                 </div>
               </div>
             ))}
+          </div>
+        ) : items.length === 0 ? (
+          <div className="text-center py-12 text-muted-foreground">
+            <Clock className="h-12 w-12 mx-auto mb-4 opacity-50" />
+            <p className="mb-2">No activity yet</p>
+            <p className="text-sm">Events will appear here as sessions are created and conducted</p>
           </div>
         ) : (
           <ScrollArea className="h-[400px] pr-4">

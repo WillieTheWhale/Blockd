@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Blocked Browser - Patch Application Script
-# Applies all Chromium modifications for Blocked browser
+# Blockd Browser - Patch Application Script
+# Applies all Chromium modifications for Blockd browser
 
 set -e
 
@@ -32,7 +32,7 @@ if [ ! -d "$CHROMIUM_DIR" ]; then
     error "Chromium source not found at: $CHROMIUM_DIR"
 fi
 
-info "Applying Blocked browser patches to Chromium..."
+info "Applying Blockd browser patches to Chromium..."
 
 cd "$CHROMIUM_DIR"
 

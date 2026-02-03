@@ -41,20 +41,30 @@ class Settings(BaseSettings):
     RABBITMQ_PASSWORD: str = Field(default="guest", env="RABBITMQ_PASSWORD")
     RABBITMQ_VHOST: str = Field(default="/", env="RABBITMQ_VHOST")
 
-    # OpenAI API
+    # OpenAI API (GPT-5.2 is the latest flagship model as of 2026)
     OPENAI_API_KEY: Optional[str] = Field(default=None, env="OPENAI_API_KEY")
-    OPENAI_MODEL: str = Field(default="gpt-4-turbo-2024-04-09", env="OPENAI_MODEL")
+    OPENAI_MODEL: str = Field(default="gpt-5.2", env="OPENAI_MODEL")
     OPENAI_MAX_TOKENS: int = Field(default=500, env="OPENAI_MAX_TOKENS")
     OPENAI_TEMPERATURE: float = Field(default=0.7, env="OPENAI_TEMPERATURE")
 
-    # Anthropic API
+    # Anthropic API (Claude Opus 4.5 is the latest flagship model as of 2026)
     ANTHROPIC_API_KEY: Optional[str] = Field(default=None, env="ANTHROPIC_API_KEY")
-    ANTHROPIC_MODEL: str = Field(default="claude-3-5-sonnet-20241022", env="ANTHROPIC_MODEL")
+    ANTHROPIC_MODEL: str = Field(default="claude-opus-4-5", env="ANTHROPIC_MODEL")
     ANTHROPIC_MAX_TOKENS: int = Field(default=500, env="ANTHROPIC_MAX_TOKENS")
 
-    # Google Generative AI API
+    # Google Generative AI API (Gemini 3 Pro is the latest flagship model as of 2026)
     GOOGLE_API_KEY: Optional[str] = Field(default=None, env="GOOGLE_API_KEY")
-    GOOGLE_MODEL: str = Field(default="gemini-1.5-pro", env="GOOGLE_MODEL")
+    GOOGLE_MODEL: str = Field(default="gemini-3-pro-preview", env="GOOGLE_MODEL")
+
+    # Model name mappings for AI answer caching (display names)
+    MODEL_DISPLAY_NAMES: dict = Field(default={
+        "gpt-5.2": "GPT-5.2",
+        "gpt-4o": "GPT-4o",
+        "claude-opus-4-5": "Claude Opus 4.5",
+        "claude-sonnet-4-5": "Claude Sonnet 4.5",
+        "gemini-3-pro-preview": "Gemini 3 Pro",
+        "gemini-2.5-flash": "Gemini 2.5 Flash",
+    })
 
     # Model Configuration
     EMBEDDING_MODEL: str = Field(default="sentence-transformers/all-MiniLM-L6-v2", env="EMBEDDING_MODEL")

@@ -45,10 +45,10 @@ Guide for responding to production incidents and outages.
 ```bash
 # Acknowledge alert
 # Check monitoring dashboards
-https://grafana.blockd.io
+https://grafana.blockd.site
 
 # Check service health
-curl https://blockd.io/api/health
+curl https://blockd.site/api/health
 
 # Check recent deployments
 kubectl rollout history deployment -n production
@@ -292,7 +292,7 @@ kubectl set env deployment/api-gateway \
 
 ## Tools & Access
 
-- **Grafana:** https://grafana.blockd.io
+- **Grafana:** https://grafana.blockd.site
 - **PagerDuty:** https://blockd.pagerduty.com
 - **AWS Console:** https://console.aws.amazon.com
 - **Slack:** #incidents channel

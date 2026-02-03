@@ -25,6 +25,7 @@ interface OAuthCallbackBody {
   code: string;
   codeVerifier: string;
   provider: 'google' | 'microsoft';
+  redirectUri?: string;
 }
 
 /**
@@ -52,7 +53,7 @@ export async function handleOAuthCallback(
   reply: FastifyReply
 ): Promise<void> {
   try {
-    const { code, codeVerifier, provider } = request.body;
+    const { code, codeVerifier, provider, redirectUri } = request.body;
 
     // Validate required fields
     if (!code || typeof code !== 'string') {
@@ -74,7 +75,8 @@ export async function handleOAuthCallback(
     const { tokens: providerTokens, userInfo } = await processOAuthCallback(
       provider,
       code,
-      codeVerifier
+      codeVerifier,
+      redirectUri
     );
 
     // Get or create user in our system

@@ -86,14 +86,14 @@ class UpdateCheckerWin : public UpdateChecker {
       </urls>
       <manifest version="1.0.1">
         <packages>
-          <package name="BlockedBrowser_Setup_v1.0.1.exe"
+          <package name="BlockdBrowser_Setup_v1.0.1.exe"
                    size="86000000"
                    hash_sha256="abc123def456..."
                    required="true"/>
         </packages>
         <actions>
           <action event="update"
-                  run="BlockedBrowser_Setup_v1.0.1.exe"
+                  run="BlockdBrowser_Setup_v1.0.1.exe"
                   arguments="/S /UPDATE"
                   successaction="exitsilentlyonlaunchcmd"/>
         </actions>
@@ -207,7 +207,7 @@ Info.plist configuration:
       </sparkle:releaseNotesLink>
       <pubDate>Mon, 25 Dec 2025 12:00:00 +0000</pubDate>
       <enclosure
-        url="https://downloads.blockd.com/macos/BlockedBrowser-v1.0.1.dmg"
+        url="https://downloads.blockd.com/macos/BlockdBrowser-v1.0.1.dmg"
         sparkle:version="1.0.1"
         sparkle:shortVersionString="1.0.1"
         length="86000000"
@@ -234,7 +234,7 @@ Info.plist configuration:
 ```bash
 # Generate EdDSA signature
 ./Pods/Sparkle/bin/sign_update \
-    BlockedBrowser-v1.0.1.dmg \
+    BlockdBrowser-v1.0.1.dmg \
     sparkle_private.pem
 
 # Output: EdDSA signature for appcast.xml
@@ -247,7 +247,7 @@ For faster updates, Sparkle supports delta patches:
 
 ```xml
 <enclosure
-  url="https://downloads.blockd.com/macos/BlockedBrowser-v1.0.0-to-v1.0.1.delta"
+  url="https://downloads.blockd.com/macos/BlockdBrowser-v1.0.0-to-v1.0.1.delta"
   sparkle:version="1.0.1"
   sparkle:deltaFrom="1.0.0"
   length="15000000"
@@ -317,7 +317,7 @@ class UpdateCheckerLinux : public UpdateChecker {
       "size": 86000000
     },
     "appimage": {
-      "url": "https://downloads.blockd.com/linux/BlockedBrowser-v1.0.1.AppImage",
+      "url": "https://downloads.blockd.com/linux/BlockdBrowser-v1.0.1.AppImage",
       "sha256": "ghi789jkl012...",
       "size": 86000000
     }
@@ -350,7 +350,7 @@ AppImages can update themselves:
 wget https://github.com/AppImage/AppImageUpdate/releases/download/continuous/appimageupdatetool-x86_64.AppImage
 
 # Update AppImage
-./appimageupdatetool-x86_64.AppImage BlockedBrowser-v1.0.0.AppImage
+./appimageupdatetool-x86_64.AppImage BlockdBrowser-v1.0.0.AppImage
 ```
 
 ## Update Server Infrastructure
@@ -362,15 +362,15 @@ Use CloudFront or Cloudflare:
 ```
 downloads.blockd.com (Origin: S3)
 ├── windows/
-│   ├── BlockedBrowser_Setup_v1.0.0.exe
-│   └── BlockedBrowser_Setup_v1.0.1.exe
+│   ├── BlockdBrowser_Setup_v1.0.0.exe
+│   └── BlockdBrowser_Setup_v1.0.1.exe
 ├── macos/
-│   ├── BlockedBrowser-v1.0.0.dmg
-│   └── BlockedBrowser-v1.0.1.dmg
+│   ├── BlockdBrowser-v1.0.0.dmg
+│   └── BlockdBrowser-v1.0.1.dmg
 └── linux/
     ├── blockd-browser_1.0.0_amd64.deb
     ├── blockd-browser_1.0.1_amd64.deb
-    └── BlockedBrowser-v1.0.1.AppImage
+    └── BlockdBrowser-v1.0.1.AppImage
 
 update.blockd.com (Origin: API Server)
 ├── /service/update2 (Windows Omaha)

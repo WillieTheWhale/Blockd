@@ -8,7 +8,7 @@
   <app appid="{BLOCKD-GUID-HERE}" status="ok">
     <updatecheck status="ok">
       <urls>
-        <url codebase="https://update.blockd.com/releases/windows/"/>
+        <url codebase="https://update.blockd.site/releases/windows/"/>
       </urls>
       <manifest version="1.0.0">
         <packages>

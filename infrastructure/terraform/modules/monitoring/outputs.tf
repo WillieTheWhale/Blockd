@@ -5,7 +5,7 @@ output "prometheus_endpoint" {
 
 output "grafana_endpoint" {
   description = "Grafana endpoint"
-  value       = var.enable_grafana ? "https://grafana-${var.environment}.blockd.io" : null
+  value       = var.enable_grafana ? "https://grafana-${var.environment}.blockd.site" : null
 }
 
 output "grafana_admin_password_secret_arn" {

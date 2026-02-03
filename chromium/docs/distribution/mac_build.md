@@ -81,7 +81,7 @@ symbol_level = 1
 blocked_enable_security_monitoring = true
 blocked_enable_eye_tracking = true
 blocked_enable_telemetry = true
-blocked_backend_url = "wss://api.blockd.com"
+blocked_backend_url = "wss://api.blockd.site"
 
 # macOS-specific
 mac_deployment_target = "11.0"

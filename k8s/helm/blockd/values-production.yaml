@@ -2,12 +2,17 @@
 # Override values.yaml for production deployments
 
 global:
-  imageRegistry: "registry.blockd.com"
+  imageRegistry: "registry.blockd.site"
   imagePullSecrets:
     - name: registry-credentials
   storageClass: "fast-ssd"
 
 namespace: blockd
+
+# Network Policies - ENABLED for production
+# Implements service isolation and principle of least privilege
+networkPolicies:
+  enabled: true
 
 # Use specific version tags for production
 images:
@@ -259,13 +264,19 @@ rabbitmq:
 # Production ingress
 ingress:
   hosts:
-    - host: blockd.com
+    - host: blockd.site
       paths:
         - path: /
           pathType: Prefix
           service: frontend
           port: 80
-    - host: api.blockd.com
+    - host: www.blockd.site
+      paths:
+        - path: /
+          pathType: Prefix
+          service: frontend
+          port: 80
+    - host: api.blockd.site
       paths:
         - path: /
           pathType: Prefix
@@ -274,8 +285,9 @@ ingress:
   tls:
     - secretName: blockd-production-tls-cert
       hosts:
-        - blockd.com
-        - api.blockd.com
+        - blockd.site
+        - www.blockd.site
+        - api.blockd.site
 
 # ConfigMap for production
 configMap:

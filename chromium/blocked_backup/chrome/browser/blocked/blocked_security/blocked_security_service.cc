@@ -1,4 +1,4 @@
-// Copyright 2025 The Blocked Authors. All rights reserved.
+// Copyright 2025 The Blockd Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -82,13 +82,13 @@ BlockedSecurityService::BlockedSecurityService() {
 
 #if defined(OS_WIN)
   platform_monitor_ = std::make_unique<WindowsSecurityMonitor>();
-  LOG(INFO) << "Blocked security service initialized (Windows platform)";
+  LOG(INFO) << "Blockd security service initialized (Windows platform)";
 #elif defined(OS_MAC)
   platform_monitor_ = std::make_unique<MacSecurityMonitor>();
-  LOG(INFO) << "Blocked security service initialized (macOS platform)";
+  LOG(INFO) << "Blockd security service initialized (macOS platform)";
 #elif defined(OS_LINUX)
   platform_monitor_ = std::make_unique<LinuxSecurityMonitor>();
-  LOG(INFO) << "Blocked security service initialized (Linux platform)";
+  LOG(INFO) << "Blockd security service initialized (Linux platform)";
 #else
 #error "Unsupported platform"
 #endif
@@ -305,7 +305,7 @@ void BlockedSecurityService::CheckWindowFocus() {
 
   if (!focused_window.empty() && focused_window != last_focused_window_) {
     // Check if focus moved away from our browser
-    if (focused_window.find("Blocked") == std::string::npos) {
+    if (focused_window.find("Blockd") == std::string::npos) {
       base::Value::Dict metadata;
       metadata.Set("focused_window", focused_window);
       metadata.Set("previous_window", last_focused_window_);

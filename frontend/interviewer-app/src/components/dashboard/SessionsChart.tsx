@@ -1,4 +1,3 @@
-import { useMemo } from 'react'
 import {
   AreaChart,
   Area,
@@ -9,40 +8,40 @@ import {
   ResponsiveContainer,
 } from 'recharts'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { useAnalyticsSessions } from '@/hooks/use-analytics'
 
 interface SessionsChartProps {
   data?: { date: string; sessions: number }[]
   isLoading?: boolean
+  days?: number
 }
 
-// Generate mock data for the last 30 days
-function generateMockData() {
-  const data = []
-  const today = new Date()
-  for (let i = 29; i >= 0; i--) {
-    const date = new Date(today)
-    date.setDate(date.getDate() - i)
-    data.push({
-      date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      sessions: Math.floor(Math.random() * 15) + 3,
-    })
-  }
-  return data
-}
+export function SessionsChart({ data: externalData, isLoading: externalLoading, days = 30 }: SessionsChartProps) {
+  const { data: apiData, isLoading: apiLoading } = useAnalyticsSessions(days)
 
-export function SessionsChart({ data, isLoading }: SessionsChartProps) {
-  const chartData = useMemo(() => data || generateMockData(), [data])
+  const isLoading = externalLoading || apiLoading
+  const chartData = externalData || apiData || []
+
+  // Check if there's any data to show
+  const hasData = chartData.length > 0 && chartData.some(d => d.sessions > 0)
 
   return (
     <Card className="col-span-1 lg:col-span-2">
       <CardHeader>
         <CardTitle>Sessions Over Time</CardTitle>
-        <CardDescription>Interview sessions conducted in the last 30 days</CardDescription>
+        <CardDescription>Interview sessions conducted in the last {days} days</CardDescription>
       </CardHeader>
       <CardContent>
         {isLoading ? (
           <div className="h-[300px] flex items-center justify-center">
             <div className="animate-pulse text-muted-foreground">Loading chart...</div>
+          </div>
+        ) : !hasData ? (
+          <div className="h-[300px] flex items-center justify-center">
+            <div className="text-center text-muted-foreground">
+              <p className="mb-2">No session data yet</p>
+              <p className="text-sm">Create your first session to see analytics here</p>
+            </div>
           </div>
         ) : (
           <div className="h-[300px]">
@@ -70,6 +69,7 @@ export function SessionsChart({ data, isLoading }: SessionsChartProps) {
                   axisLine={false}
                   tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
                   tickMargin={8}
+                  allowDecimals={false}
                 />
                 <Tooltip
                   contentStyle={{

@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Blocked Browser - Build Script
-# Builds the Chromium-based Blocked Browser with custom security monitoring
+# Blockd Browser - Build Script
+# Builds the Chromium-based Blockd Browser with custom security monitoring
 
 set -e  # Exit on error
 
@@ -48,7 +48,7 @@ usage() {
     cat << EOF
 Usage: $0 [OPTIONS]
 
-Build the Blocked Browser
+Build the Blockd Browser
 
 OPTIONS:
     -d, --debug         Build debug version (slower, larger, with symbols)
@@ -217,7 +217,7 @@ EOF
 
 generate_default_args() {
     cat > "$BUILD_DIR/args.gn" << 'EOF'
-# Blocked Browser Build Configuration
+# Blockd Browser Build Configuration
 
 # Core build settings
 is_component_build = false
@@ -230,7 +230,7 @@ blocked_enable_security_monitoring = true
 blocked_enable_eye_tracking = true
 blocked_enable_telemetry = true
 blocked_enable_video_capture = true
-blocked_backend_url = "wss://api.blockd.com"
+blocked_backend_url = "wss://api.blockd.site"
 
 # Branding (use Chromium branding, not Chrome)
 is_chrome_branded = false
@@ -395,7 +395,7 @@ estimate_build_time() {
 }
 
 main() {
-    section "Blocked Browser Build Script"
+    section "Blockd Browser Build Script"
     info "Build type: $BUILD_TYPE"
     info "Target: $TARGET"
     info "Parallel jobs: $JOBS"

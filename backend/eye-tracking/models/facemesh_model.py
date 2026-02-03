@@ -31,6 +31,7 @@ class FaceMeshModel:
             min_detection_confidence=settings.MEDIAPIPE_MIN_DETECTION_CONFIDENCE,
             min_tracking_confidence=settings.MEDIAPIPE_MIN_TRACKING_CONFIDENCE
         )
+        self._closed = False
 
         logger.info(
             "mediapipe_facemesh_initialized",
@@ -262,8 +263,35 @@ class FaceMeshModel:
         ear = (v1 + v2) / (2.0 * h)
         return float(ear)
 
+    @property
+    def is_closed(self) -> bool:
+        """Check if the FaceMesh model has been closed"""
+        return self._closed
+
+    def close(self) -> None:
+        """Explicitly close and cleanup the FaceMesh resource"""
+        if not self._closed and hasattr(self, 'face_mesh'):
+            try:
+                self.face_mesh.close()
+                self._closed = True
+                logger.info("facemesh_model_closed_explicitly")
+            except Exception as e:
+                logger.error("error_closing_facemesh", error=str(e))
+
+    def __enter__(self):
+        """Context manager entry"""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit - ensure cleanup"""
+        self.close()
+        return False
+
     def __del__(self):
-        """Cleanup resources"""
-        if hasattr(self, 'face_mesh'):
-            self.face_mesh.close()
-            logger.info("facemesh_model_closed")
+        """Fallback cleanup in case close() was not called"""
+        if not self._closed and hasattr(self, 'face_mesh'):
+            try:
+                self.face_mesh.close()
+                self._closed = True
+            except Exception:
+                pass  # Suppress exceptions during cleanup

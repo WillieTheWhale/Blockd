@@ -26,6 +26,35 @@ import { refreshToken, revokeToken, revokeAllTokens, getActiveSessions, verifyAc
 // Middleware
 import { validateJWT } from '../middleware/validate-jwt.middleware';
 import { checkAccountLock, getRateLimitConfig, rateLimitKeyGenerator } from '../middleware/rate-limit-auth.middleware';
+import { incrementRateLimit, getRateLimitCount } from '../lib/redis';
+
+/**
+ * Password reset specific rate limiter
+ * Limits to 3 requests per hour per IP to prevent email enumeration
+ */
+async function passwordResetRateLimiter(
+  request: any,
+  reply: any
+): Promise<void> {
+  const ip = request.ip || request.headers['x-forwarded-for'] || 'unknown';
+  const key = `password-reset:${ip}`;
+  const windowSeconds = 3600; // 1 hour
+  const maxAttempts = 3;
+
+  const currentCount = await getRateLimitCount(key);
+
+  if (currentCount >= maxAttempts) {
+    return reply.code(429).send({
+      statusCode: 429,
+      error: 'Too Many Requests',
+      message: 'Too many password reset requests. Please try again later.',
+      code: 'PASSWORD_RESET_RATE_LIMITED',
+      retry_after: windowSeconds
+    });
+  }
+
+  await incrementRateLimit(key, windowSeconds);
+}
 
 /**
  * Create Fastify application
@@ -111,8 +140,11 @@ export async function createApp(): Promise<FastifyInstance> {
   // Email Verification
   app.post('/auth/verify-email', verifyEmail);
 
-  // Password Reset
-  app.post('/auth/password-reset/request', requestPasswordReset);
+  // Password Reset (with strict rate limiting to prevent email enumeration)
+  app.post('/auth/password-reset/request', {
+    preHandler: [passwordResetRateLimiter]
+  }, requestPasswordReset);
+
   app.post('/auth/password-reset/confirm', confirmPasswordReset);
 
   // ============================================================================
@@ -179,16 +211,54 @@ export async function createApp(): Promise<FastifyInstance> {
   // ERROR HANDLER
   // ============================================================================
 
-  app.setErrorHandler((error: Error & { statusCode?: number }, request, reply) => {
-    app.log.error(error);
+  app.setErrorHandler((error: Error & { statusCode?: number; code?: string }, request, reply) => {
+    // Log full error internally
+    app.log.error({
+      err: error,
+      requestId: request.id,
+      url: request.url,
+      method: request.method,
+    });
 
     const statusCode = error.statusCode || 500;
-    const message = error.message || 'Internal Server Error';
+    const isProduction = config.nodeEnv === 'production';
+
+    // In production, sanitize error messages to prevent information leakage
+    let message = error.message || 'Internal Server Error';
+    let errorName = error.name || 'Error';
+
+    if (isProduction && statusCode >= 500) {
+      // Don't expose internal error details in production for 5xx errors
+      message = 'An unexpected error occurred. Please try again later.';
+      errorName = 'InternalError';
+    }
+
+    // Sanitize specific error types that might leak sensitive info
+    if (isProduction) {
+      // Don't reveal database errors
+      if (message.toLowerCase().includes('prisma') ||
+          message.toLowerCase().includes('database') ||
+          message.toLowerCase().includes('connection')) {
+        message = 'Service temporarily unavailable. Please try again.';
+        errorName = 'ServiceError';
+      }
+
+      // Don't reveal Redis errors
+      if (message.toLowerCase().includes('redis') ||
+          message.toLowerCase().includes('econnrefused')) {
+        message = 'Service temporarily unavailable. Please try again.';
+        errorName = 'ServiceError';
+      }
+    }
 
     reply.code(statusCode).send({
       statusCode,
-      error: error.name || 'Error',
-      message
+      error: errorName,
+      message,
+      // Only include error code if it's a known application error code
+      ...(error.code && !isProduction ? { code: error.code } : {}),
+      // Include request ID for support correlation
+      requestId: request.id
     });
   });
 

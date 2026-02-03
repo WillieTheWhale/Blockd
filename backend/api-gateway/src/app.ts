@@ -32,6 +32,7 @@ import browserRoutes from '../routes/browser.routes';
 import analysisRoutes from '../routes/analysis.routes';
 import gazeRoutes from '../routes/gaze.routes';
 import reportsRoutes from '../routes/reports.routes';
+import analyticsRoutes from '../routes/analytics.routes';
 
 export interface AppOptions extends FastifyServerOptions {
   prefix?: string;
@@ -122,7 +123,7 @@ async function registerPlugins(app: FastifyInstance): Promise<void> {
           version: '1.0.0',
           contact: {
             name: 'Blockd Team',
-            email: 'support@blockd.io',
+            email: 'support@blockd.site',
           },
           license: {
             name: 'MIT',
@@ -135,7 +136,7 @@ async function registerPlugins(app: FastifyInstance): Promise<void> {
             description: 'Development server',
           },
           {
-            url: 'https://api.blockd.io',
+            url: 'https://api.blockd.site',
             description: 'Production server',
           },
         ],
@@ -147,6 +148,7 @@ async function registerPlugins(app: FastifyInstance): Promise<void> {
           { name: 'Analysis', description: 'AI detection and analysis' },
           { name: 'Gaze', description: 'Eye tracking and gaze analysis' },
           { name: 'Reports', description: 'Session reports and analytics' },
+          { name: 'Analytics', description: 'Dashboard analytics and statistics' },
         ],
         components: {
           securitySchemes: {
@@ -189,6 +191,7 @@ async function registerRoutes(app: FastifyInstance, prefix = '/api/v1'): Promise
   await app.register(analysisRoutes, { prefix: `${prefix}/analysis` });
   await app.register(gazeRoutes, { prefix: `${prefix}/gaze` });
   await app.register(reportsRoutes, { prefix: `${prefix}/reports` });
+  await app.register(analyticsRoutes, { prefix: `${prefix}/analytics` });
 
   // Root endpoint
   app.get('/', async (_request, _reply) => {

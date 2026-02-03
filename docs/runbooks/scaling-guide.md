@@ -144,7 +144,7 @@ kubectl scale deployment api-gateway --replicas=20 -n production
 kubectl scale deployment ai-detection --replicas=15 -n production
 
 # Warm up caches
-curl https://blockd.io/api/health
+curl https://blockd.site/api/health
 ```
 
 ### Run Load Test

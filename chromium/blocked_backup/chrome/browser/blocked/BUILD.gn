@@ -1,15 +1,17 @@
-# Copyright 2025 The Blocked Authors. All rights reserved.
+# Copyright 2025 The Blockd Authors. All rights reserved.
 # Build file for Blocked browser modules
 
-import("//build/config/features.gni")
+import("//chrome/browser/blocked/blocked_features.gni")
 
 # Main Blocked browser modules aggregation
 group("blocked_browser_modules") {
   deps = [
+    "//chrome/browser/blocked/blocked_first_run:blocked_first_run",
     "//chrome/browser/blocked/blocked_security:security_monitoring",
     "//chrome/browser/blocked/blocked_telemetry:telemetry",
     "//chrome/browser/blocked/blocked_ipc:ipc",
-    "//chrome/browser/blocked/blocked_video:video_capture",
+    "//chrome/browser/blocked/blocked_video:blocked_video",
+    "//chrome/browser/blocked/blocked_meeting:blocked_meeting",
   ]
 }
 
@@ -29,6 +31,10 @@ config("blocked_config") {
 
   if (blocked_enable_telemetry) {
     defines += [ "BLOCKED_ENABLE_TELEMETRY" ]
+  }
+
+  if (blocked_enable_meeting_detection) {
+    defines += [ "BLOCKED_ENABLE_MEETING_DETECTION" ]
   }
 
   if (blocked_backend_url != "") {

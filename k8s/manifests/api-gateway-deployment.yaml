@@ -88,11 +88,21 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "500m"
+          # Startup probe allows slower container initialization
+          # Particularly useful for Node.js applications with heavy startup
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30  # 30 * 5s = 150s max startup time
           livenessProbe:
             httpGet:
               path: /health
               port: 3000
-            initialDelaySeconds: 30
+            initialDelaySeconds: 0  # No delay after startup probe succeeds
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 3
@@ -100,7 +110,7 @@ spec:
             httpGet:
               path: /health
               port: 3000
-            initialDelaySeconds: 5
+            initialDelaySeconds: 0
             periodSeconds: 5
             timeoutSeconds: 3
             failureThreshold: 3

@@ -1,4 +1,4 @@
-# Copyright 2025 The Blocked Authors. All rights reserved.
+# Copyright 2025 The Blockd Authors. All rights reserved.
 
 source_set("video_capture") {
   sources = [
@@ -13,4 +13,31 @@ source_set("video_capture") {
   ]
 
   configs += [ "//chrome/browser/blocked:blocked_config" ]
+}
+
+# Media stream capture for webcam and meeting tab capture
+source_set("media_stream_capture") {
+  sources = [
+    "media_stream_capture.cc",
+    "media_stream_capture.h",
+  ]
+
+  deps = [
+    "//base",
+    "//content/public/browser",
+  ]
+
+  public_deps = [
+    "//base",
+  ]
+
+  configs += [ "//chrome/browser/blocked:blocked_config" ]
+}
+
+# Combined blocked_video module
+source_set("blocked_video") {
+  public_deps = [
+    ":media_stream_capture",
+    ":video_capture",
+  ]
 }

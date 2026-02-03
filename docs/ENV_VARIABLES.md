@@ -141,7 +141,7 @@ JWT_REFRESH_TOKEN_TTL=604800
 | `EMAIL_ENABLED` | No | `false` | Enable email sending |
 | `EMAIL_PROVIDER` | No | `console` | Provider: `sendgrid`, `smtp`, `console` |
 | `SENDGRID_API_KEY` | Yes* | - | SendGrid API key (if using SendGrid) |
-| `EMAIL_FROM` | No | `noreply@blockd.io` | From email address |
+| `EMAIL_FROM` | No | `noreply@blockd.site` | From email address |
 | `EMAIL_FROM_NAME` | No | `Blockd` | From display name |
 | `SMTP_HOST` | Yes* | - | SMTP server host (if using SMTP) |
 | `SMTP_PORT` | No | `587` | SMTP server port |
@@ -154,7 +154,7 @@ JWT_REFRESH_TOKEN_TTL=604800
 EMAIL_ENABLED=true
 EMAIL_PROVIDER=sendgrid
 SENDGRID_API_KEY=SG.xxxxx
-EMAIL_FROM=security@blockd.io
+EMAIL_FROM=security@blockd.site
 EMAIL_FROM_NAME=Blockd Security
 ```
 
@@ -363,7 +363,7 @@ JWT_REFRESH_TOKEN_TTL=604800
 EMAIL_ENABLED=true
 EMAIL_PROVIDER=sendgrid
 SENDGRID_API_KEY=${SENDGRID_API_KEY}
-EMAIL_FROM=security@blockd.io
+EMAIL_FROM=security@blockd.site
 
 # AWS
 AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}

@@ -6,9 +6,42 @@
 
 import speakeasy from 'speakeasy';
 import QRCode from 'qrcode';
+import { timingSafeEqual } from 'crypto';
 import { generateBackupCodes, encrypt, decrypt } from '../lib/crypto';
 import { InvalidMFACodeError } from '../lib/errors';
 import { BackupCode } from '../types/user.types';
+
+/**
+ * Constant-time string comparison to prevent timing attacks
+ * @param a First string to compare
+ * @param b Second string to compare
+ * @returns True if strings are equal
+ */
+function constantTimeCompare(a: string, b: string): boolean {
+  // Normalize inputs to uppercase for case-insensitive comparison
+  const normalizedA = a.toUpperCase();
+  const normalizedB = b.toUpperCase();
+
+  // If lengths differ, still perform comparison to prevent timing leak
+  // But we'll return false at the end
+  const lengthsMatch = normalizedA.length === normalizedB.length;
+
+  // Pad shorter string to match length (prevents timing leak from early return)
+  const maxLen = Math.max(normalizedA.length, normalizedB.length);
+  const paddedA = normalizedA.padEnd(maxLen, '\0');
+  const paddedB = normalizedB.padEnd(maxLen, '\0');
+
+  try {
+    const result = timingSafeEqual(
+      Buffer.from(paddedA, 'utf8'),
+      Buffer.from(paddedB, 'utf8')
+    );
+    return result && lengthsMatch;
+  } catch {
+    // If timingSafeEqual throws (shouldn't happen with padding), return false
+    return false;
+  }
+}
 
 const APP_NAME = 'Blockd';
 const ENCRYPTION_KEY = process.env.MFA_ENCRYPTION_KEY || '';
@@ -83,10 +116,16 @@ export async function verifyMFACode(
       const backupCodesJson = decrypt(encryptedBackupCodes, ENCRYPTION_KEY);
       const backupCodes: BackupCode[] = JSON.parse(backupCodesJson);
 
-      // Check if code matches an unused backup code
-      const matchingCode = backupCodes.find(
-        bc => bc.code === code.toUpperCase() && !bc.used
-      );
+      // Check if code matches an unused backup code using constant-time comparison
+      // This prevents timing attacks that could leak information about valid backup codes
+      let matchingCode: BackupCode | undefined;
+      for (const bc of backupCodes) {
+        // Use constant-time comparison to prevent timing attacks
+        if (!bc.used && constantTimeCompare(bc.code, code)) {
+          matchingCode = bc;
+          // Don't break early - continue checking all codes to prevent timing leak
+        }
+      }
 
       if (matchingCode) {
         return { valid: true, usedBackupCode: true };

@@ -18,6 +18,7 @@ export interface User {
   name: string
   role: UserRole
   avatar?: string
+  termsAcceptedAt?: string
   createdAt: string
   updatedAt: string
 }

@@ -39,7 +39,7 @@ spec:
           annotations:
             summary: "OpenAI circuit breaker is open"
             description: "The OpenAI circuit breaker has been open for 1 minute. GPT-4 answers are unavailable."
-            runbook_url: "https://docs.blockd.com/runbooks/circuit-breaker-open"
+            runbook_url: "https://docs.blockd.site/runbooks/circuit-breaker-open"
 
         # Anthropic circuit breaker open
         - alert: AnthropicCircuitBreakerOpen
@@ -78,7 +78,7 @@ spec:
           annotations:
             summary: "All LLM circuit breakers are open"
             description: "All LLM providers (OpenAI, Anthropic, Gemini) are unavailable. AI detection is severely degraded."
-            runbook_url: "https://docs.blockd.com/runbooks/all-circuits-open"
+            runbook_url: "https://docs.blockd.site/runbooks/all-circuits-open"
 
         # Multiple circuit breakers open
         - alert: MultipleLLMCircuitBreakersOpen
@@ -153,7 +153,7 @@ spec:
           annotations:
             summary: "LLM circuit breaker {{ $labels.name }} open for extended period"
             description: "Circuit breaker {{ $labels.name }} has been open for over 10 minutes. Manual intervention may be required."
-            runbook_url: "https://docs.blockd.com/runbooks/circuit-breaker-extended-outage"
+            runbook_url: "https://docs.blockd.site/runbooks/circuit-breaker-extended-outage"
 
         # Circuit breaker recovered
         - alert: LLMCircuitBreakerRecovered
@@ -201,7 +201,7 @@ spec:
           annotations:
             summary: "AI detection service is down"
             description: "The AI detection service is not responding. Answer analysis is unavailable."
-            runbook_url: "https://docs.blockd.com/runbooks/ai-detection-down"
+            runbook_url: "https://docs.blockd.site/runbooks/ai-detection-down"
 
         # AI detection high latency
         - alert: AIDetectionHighLatency

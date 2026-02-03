@@ -63,6 +63,7 @@ export function VideoPlayer({
 }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const mountedRef = useRef(true)
 
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [isMuted, setIsMuted] = useState(false)
@@ -97,9 +98,17 @@ export function VideoPlayer({
     if (!videoRef.current) return
 
     const stream = isProducer ? localStream : remoteStream
+    const videoElement = videoRef.current
+
+    // Clear old stream tracks before setting new srcObject
+    if (videoElement.srcObject && videoElement.srcObject !== stream) {
+      const oldStream = videoElement.srcObject as MediaStream
+      oldStream.getTracks().forEach((track) => track.stop())
+    }
+
     if (stream) {
-      videoRef.current.srcObject = stream
-      videoRef.current.play().catch((err: Error) => {
+      videoElement.srcObject = stream
+      videoElement.play().catch((err: Error) => {
         // AbortError is expected when stream changes rapidly - ignore it
         if (err.name === 'AbortError') return
         // NotAllowedError is expected if autoplay is blocked - user will click to play
@@ -109,6 +118,15 @@ export function VideoPlayer({
         }
         setLocalError(`Video playback failed: ${err.message}`)
       })
+    }
+
+    // Cleanup function to clear stream on unmount or stream change
+    return () => {
+      if (videoElement.srcObject) {
+        const currentStream = videoElement.srcObject as MediaStream
+        currentStream.getTracks().forEach((track) => track.stop())
+        videoElement.srcObject = null
+      }
     }
   }, [localStream, remoteStream, isProducer])
 
@@ -128,6 +146,11 @@ export function VideoPlayer({
    */
   useEffect(() => {
     loadMediaDevices()
+
+    // Cleanup mountedRef on unmount
+    return () => {
+      mountedRef.current = false
+    }
   }, [])
 
   /**
@@ -177,7 +200,7 @@ export function VideoPlayer({
    * Handle screenshot
    */
   const handleScreenshot = useCallback(() => {
-    if (!videoRef.current) return
+    if (!videoRef.current || !mountedRef.current) return
 
     const canvas = document.createElement('canvas')
     canvas.width = videoRef.current.videoWidth
@@ -189,13 +212,14 @@ export function VideoPlayer({
     ctx.drawImage(videoRef.current, 0, 0)
 
     canvas.toBlob((blob) => {
-      if (!blob) return
+      if (!blob || !mountedRef.current) return
 
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
       a.download = `screenshot-${Date.now()}.png`
       a.click()
+      // Revoke URL immediately after click - browser handles download asynchronously
       URL.revokeObjectURL(url)
     })
   }, [])

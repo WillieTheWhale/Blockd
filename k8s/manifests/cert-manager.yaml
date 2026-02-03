@@ -19,7 +19,7 @@ spec:
     # Let's Encrypt production server
     server: https://acme-v02.api.letsencrypt.org/directory
     # Email for certificate notifications
-    email: ops@blockd.com
+    email: ops@blockd.site
     # Secret to store ACME account private key
     privateKeySecretRef:
       name: letsencrypt-prod-account-key
@@ -47,7 +47,7 @@ spec:
   acme:
     # Let's Encrypt staging server (higher rate limits for testing)
     server: https://acme-staging-v02.api.letsencrypt.org/directory
-    email: ops@blockd.com
+    email: ops@blockd.site
     privateKeySecretRef:
       name: letsencrypt-staging-account-key
     solvers:
@@ -79,13 +79,14 @@ spec:
     algorithm: ECDSA
     size: 256
   # Common name
-  commonName: blockd.com
+  commonName: blockd.site
   # Subject Alternative Names (SANs)
   dnsNames:
-    - blockd.com
-    - www.blockd.com
-    - api.blockd.com
-    - ws.blockd.com
+    - blockd.site
+    - www.blockd.site
+    - app.blockd.site
+    - api.blockd.site
+    - ws.blockd.site
 
 ---
 # Certificate for API subdomain (if separate)
@@ -107,9 +108,9 @@ spec:
   privateKey:
     algorithm: ECDSA
     size: 256
-  commonName: api.blockd.com
+  commonName: api.blockd.site
   dnsNames:
-    - api.blockd.com
+    - api.blockd.site
 
 ---
 # Wildcard certificate (requires DNS-01 challenge)
@@ -124,7 +125,7 @@ spec:
 #   issuerRef:
 #     name: letsencrypt-prod
 #     kind: ClusterIssuer
-#   commonName: "*.blockd.com"
+#   commonName: "*.blockd.site"
 #   dnsNames:
-#     - "*.blockd.com"
-#     - blockd.com
+#     - "*.blockd.site"
+#     - blockd.site

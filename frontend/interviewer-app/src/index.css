@@ -3,40 +3,96 @@
 
 @layer base {
   :root {
-    /* Blockd Brand Color Palette - Light mode only */
-    /* Primary: Egg White #F3F6FB - Background */
-    /* Dark: Black Blue #01101B - Text */
-    /* Secondary: Grey Blue #36454F - Secondary text */
-    /* Accent: Darker Teal #687193 - Interactive elements */
-    /* Highlight: Teal #9099BB - Hover states */
+    /* ═══════════════════════════════════════════════════════════════════════════ */
+    /* BLOCKD BRAND COLOR PALETTE - Light Mode                                      */
+    /* From official palette (left to right):                                       */
+    /*   1. Egg White    #F0F4F8  - HSL: 210 33% 96%                                */
+    /*   2. Lavender     #A8B4D0  - HSL: 222 30% 74%                                */
+    /*   3. Slate        #7B8AA8  - HSL: 222 20% 57%                                */
+    /*   4. Dark Slate   #3D4F5F  - HSL: 205 22% 31%                                */
+    /*   5. Void         #0A1628  - HSL: 218 58% 10%                                */
+    /* ═══════════════════════════════════════════════════════════════════════════ */
 
-    --background: 220 47% 97%; /* #F3F6FB - Egg White (Primary Background) */
-    --foreground: 209 93% 5%; /* #01101B - Black Blue (Primary Text) */
-    --card: 220 47% 99%; /* Slightly lighter egg white for cards */
-    --card-foreground: 209 93% 5%;
-    --popover: 220 47% 99%;
-    --popover-foreground: 209 93% 5%;
-    --primary: 226 17% 49%; /* #687193 - Darker Teal (Interactive) */
-    --primary-foreground: 220 47% 97%; /* Egg white text on primary */
-    --secondary: 228 23% 65%; /* #9099BB - Teal (Highlight) */
-    --secondary-foreground: 209 93% 5%;
-    --muted: 220 30% 92%; /* Light muted background */
-    --muted-foreground: 204 18% 26%; /* #36454F - Grey Blue */
-    --accent: 228 23% 65%; /* #9099BB - Teal accent */
-    --accent-foreground: 209 93% 5%;
-    --destructive: 0 84.2% 60.2%; /* Keep red for errors */
-    --destructive-foreground: 220 47% 97%;
-    --border: 220 25% 88%; /* Light border matching egg white */
-    --input: 220 25% 88%;
-    --ring: 226 17% 49%; /* Darker Teal ring */
+    --background: 210 33% 96%; /* #F0F4F8 - Egg White (Primary Background) */
+    --foreground: 218 58% 10%; /* #0A1628 - Void (Primary Text) */
+    --card: 0 0% 100%; /* Pure white for cards - stands out on egg white */
+    --card-foreground: 218 58% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 218 58% 10%;
+    --primary: 205 22% 31%; /* #3D4F5F - Dark Slate (Professional Interactive) */
+    --primary-foreground: 210 33% 96%; /* Egg White text on primary */
+    --secondary: 222 30% 74%; /* #A8B4D0 - Lavender for secondary */
+    --secondary-foreground: 218 58% 10%;
+    --muted: 222 25% 90%; /* Light muted background with lavender tint */
+    --muted-foreground: 222 20% 57%; /* #7B8AA8 - Slate */
+    --accent: 222 30% 74%; /* #A8B4D0 - Lavender accent */
+    --accent-foreground: 218 58% 10%;
+    --destructive: 0 72% 51%; /* Red for errors */
+    --destructive-foreground: 0 0% 100%;
+    --border: 222 25% 85%; /* Light border with lavender tint */
+    --input: 222 25% 88%;
+    --ring: 222 30% 74%; /* Lavender ring for focus */
     --radius: 0.5rem;
 
-    /* Chart colors - Blockd palette based */
-    --chart-1: 226 17% 49%; /* Darker Teal */
-    --chart-2: 228 23% 65%; /* Teal */
-    --chart-3: 204 18% 26%; /* Grey Blue */
-    --chart-4: 0 84% 60%; /* Red for alerts */
-    --chart-5: 209 93% 15%; /* Lighter Black Blue */
+    /* Chart colors - Blockd palette */
+    --chart-1: 205 22% 31%; /* Dark Slate */
+    --chart-2: 222 30% 74%; /* Lavender */
+    --chart-3: 222 20% 57%; /* Slate */
+    --chart-4: 0 72% 51%; /* Red for alerts */
+    --chart-5: 218 58% 10%; /* Void */
+
+    /* Sidebar colors */
+    --sidebar-background: 210 33% 96%;
+    --sidebar-foreground: 218 58% 10%;
+    --sidebar-primary: 205 22% 31%;
+    --sidebar-primary-foreground: 210 33% 96%;
+    --sidebar-accent: 222 30% 74%;
+    --sidebar-accent-foreground: 218 58% 10%;
+    --sidebar-border: 222 25% 85%;
+    --sidebar-ring: 222 30% 74%;
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════════════ */
+  /* BLOCKD DARK MODE - Professional Dark Theme                                   */
+  /* Using the official Blockd palette with proper dark mode hierarchy            */
+  /* ═══════════════════════════════════════════════════════════════════════════ */
+  .dark {
+    --background: 218 58% 10%; /* #0A1628 - Void (Primary Background) */
+    --foreground: 210 33% 96%; /* #F0F4F8 - Egg White (Primary Text) */
+    --card: 205 22% 31%; /* #3D4F5F - Dark Slate (Cards/Panels) */
+    --card-foreground: 210 33% 96%;
+    --popover: 205 22% 31%;
+    --popover-foreground: 210 33% 96%;
+    --primary: 222 30% 74%; /* #A8B4D0 - Lavender (Interactive elements pop in dark) */
+    --primary-foreground: 218 58% 10%;
+    --secondary: 222 20% 57%; /* #7B8AA8 - Slate */
+    --secondary-foreground: 210 33% 96%;
+    --muted: 218 40% 16%; /* Slightly lighter than void */
+    --muted-foreground: 222 25% 70%; /* Lighter slate for readability */
+    --accent: 222 30% 74%; /* #A8B4D0 - Lavender accent */
+    --accent-foreground: 218 58% 10%;
+    --destructive: 0 62% 50%; /* Slightly muted red for dark mode */
+    --destructive-foreground: 0 0% 100%;
+    --border: 218 35% 20%; /* Subtle border based on void */
+    --input: 218 35% 18%;
+    --ring: 222 30% 74%; /* Lavender ring */
+
+    /* Chart colors - Adjusted for dark mode visibility */
+    --chart-1: 222 30% 74%; /* Lavender - primary data */
+    --chart-2: 222 20% 57%; /* Slate - secondary data */
+    --chart-3: 210 33% 85%; /* Light variant */
+    --chart-4: 0 62% 55%; /* Red for alerts */
+    --chart-5: 222 35% 65%; /* Mid-lavender */
+
+    /* Sidebar colors - Dark mode */
+    --sidebar-background: 218 58% 10%;
+    --sidebar-foreground: 210 33% 96%;
+    --sidebar-primary: 222 30% 74%;
+    --sidebar-primary-foreground: 218 58% 10%;
+    --sidebar-accent: 205 22% 31%;
+    --sidebar-accent-foreground: 210 33% 96%;
+    --sidebar-border: 218 35% 20%;
+    --sidebar-ring: 222 30% 74%;
   }
 }
 
@@ -62,34 +118,149 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background-color: hsl(228 23% 75%); /* Lighter Teal */
+    background-color: hsl(222 30% 74%); /* Lavender */
     border-radius: 4px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background-color: hsl(226 17% 49%); /* Darker Teal */
+    background-color: hsl(222 20% 57%); /* Slate */
+  }
+
+  /* Dark mode scrollbar */
+  .dark ::-webkit-scrollbar-thumb {
+    background-color: hsl(218 35% 25%); /* Dark subtle */
+  }
+
+  .dark ::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(222 30% 74%); /* Lavender on hover */
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* BLOCKD ANIMATION SYSTEM - Smooth, Professional Transitions                   */
+/* ═══════════════════════════════════════════════════════════════════════════ */
 
 /* Animation utilities */
 @layer utilities {
+  /* Entry animations */
   .animate-fade-in {
-    animation: fadeIn 0.3s ease-in-out;
+    animation: fadeIn 0.3s ease-out forwards;
   }
 
   .animate-slide-up {
-    animation: slideUp 0.3s ease-out;
+    animation: slideUp 0.3s ease-out forwards;
   }
 
   .animate-slide-down {
-    animation: slideDown 0.3s ease-out;
+    animation: slideDown 0.3s ease-out forwards;
+  }
+
+  .animate-slide-left {
+    animation: slideLeft 0.3s ease-out forwards;
+  }
+
+  .animate-slide-right {
+    animation: slideRight 0.3s ease-out forwards;
   }
 
   .animate-scale-in {
-    animation: scaleIn 0.2s ease-out;
+    animation: scaleIn 0.2s ease-out forwards;
+  }
+
+  .animate-bounce-in {
+    animation: bounceIn 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
+  }
+
+  /* Attention animations */
+  .animate-pulse-subtle {
+    animation: pulseSubtle 2s ease-in-out infinite;
+  }
+
+  .animate-shimmer {
+    animation: shimmer 1.5s ease-in-out infinite;
+  }
+
+  /* Interactive state classes */
+  .interactive-lift {
+    @apply transition-all duration-200 ease-out;
+  }
+
+  .interactive-lift:hover {
+    @apply -translate-y-0.5 shadow-lg;
+  }
+
+  .interactive-lift:active {
+    @apply translate-y-0 shadow-md scale-[0.99];
+  }
+
+  .interactive-glow {
+    @apply transition-all duration-200 ease-out;
+  }
+
+  .interactive-glow:hover {
+    @apply shadow-lg;
+    box-shadow: 0 0 20px -5px hsl(var(--primary) / 0.3);
+  }
+
+  .interactive-scale {
+    @apply transition-transform duration-200 ease-out;
+  }
+
+  .interactive-scale:hover {
+    @apply scale-[1.02];
+  }
+
+  .interactive-scale:active {
+    @apply scale-[0.98];
+  }
+
+  /* Smooth focus ring for all interactive elements */
+  .focus-ring {
+    @apply outline-none ring-offset-2 ring-offset-background transition-all duration-200;
+  }
+
+  .focus-ring:focus-visible {
+    @apply ring-2 ring-ring;
+  }
+
+  /* Staggered animation delays for lists */
+  .stagger-1 { animation-delay: 50ms; }
+  .stagger-2 { animation-delay: 100ms; }
+  .stagger-3 { animation-delay: 150ms; }
+  .stagger-4 { animation-delay: 200ms; }
+  .stagger-5 { animation-delay: 250ms; }
+  .stagger-6 { animation-delay: 300ms; }
+  .stagger-7 { animation-delay: 350ms; }
+  .stagger-8 { animation-delay: 400ms; }
+
+  /* Reduced motion preference */
+  @media (prefers-reduced-motion: reduce) {
+    .animate-fade-in,
+    .animate-slide-up,
+    .animate-slide-down,
+    .animate-slide-left,
+    .animate-slide-right,
+    .animate-scale-in,
+    .animate-bounce-in {
+      animation: none;
+      opacity: 1;
+      transform: none;
+    }
+
+    .animate-pulse-subtle,
+    .animate-shimmer {
+      animation: none;
+    }
+
+    .interactive-lift,
+    .interactive-glow,
+    .interactive-scale {
+      transition: none;
+    }
   }
 }
 
+/* Keyframe definitions */
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -121,6 +292,28 @@
   }
 }
 
+@keyframes slideLeft {
+  from {
+    transform: translateX(10px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideRight {
+  from {
+    transform: translateX(-10px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
 @keyframes scaleIn {
   from {
     transform: scale(0.95);
@@ -132,14 +325,55 @@
   }
 }
 
+@keyframes bounceIn {
+  0% {
+    transform: scale(0.9);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.02);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes pulseSubtle {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
 /* Gradient backgrounds - Blockd palette */
 @layer utilities {
   .bg-gradient-primary {
-    background: linear-gradient(135deg, hsl(226 17% 49%) 0%, hsl(226 17% 40%) 100%); /* Darker Teal gradient */
+    background: linear-gradient(135deg, hsl(205 22% 31%) 0%, hsl(218 58% 10%) 100%); /* Dark Slate to Void */
   }
 
   .bg-gradient-subtle {
-    background: linear-gradient(180deg, hsl(220 47% 97%) 0%, hsl(220 30% 92%) 100%); /* Egg White gradient */
+    background: linear-gradient(180deg, hsl(210 33% 96%) 0%, hsl(222 25% 90%) 100%); /* Egg White to Muted */
+  }
+
+  /* Dark mode gradients */
+  .dark .bg-gradient-primary {
+    background: linear-gradient(135deg, hsl(222 30% 74%) 0%, hsl(222 20% 57%) 100%); /* Lavender to Slate */
+  }
+
+  .dark .bg-gradient-subtle {
+    background: linear-gradient(180deg, hsl(218 58% 10%) 0%, hsl(218 40% 16%) 100%); /* Void to Muted */
   }
 }
 
@@ -152,4 +386,177 @@
   .shadow-card {
     box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.08), 0 1px 2px -1px rgb(0 0 0 / 0.08);
   }
+
+  /* Dark mode shadows - subtle glow effect */
+  .dark .shadow-soft {
+    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.3), 0 1px 2px -1px rgb(0 0 0 / 0.3);
+  }
+
+  .dark .shadow-card {
+    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.4), 0 0 0 1px rgb(255 255 255 / 0.05);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* BLOCKD LANDING PAGE - BRUTALIST DARK THEME                                  */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+@theme inline {
+  /* Blockd Official Color Palette */
+  --color-blockd-void: #0A1628;       /* Darkest - Background */
+  --color-blockd-dark-slate: #3D4F5F; /* Dark Slate - Cards/Surfaces */
+  --color-blockd-slate: #7B8AA8;      /* Slate - Secondary elements */
+  --color-blockd-lavender: #A8B4D0;   /* Lavender - Primary accent */
+  --color-blockd-egg-white: #F0F4F8;  /* Egg White - Light background/text */
+
+  /* Legacy aliases for compatibility */
+  --color-blockd-surface: #3D4F5F;
+  --color-blockd-muted: #7B8AA8;
+  --color-blockd-accent: #A8B4D0;
+  --color-blockd-light: #F0F4F8;
+
+  /* Risk indicator colors */
+  --color-blockd-risk-minimal: #7B8AA8;
+  --color-blockd-risk-low: #4ADE80;
+  --color-blockd-risk-medium: #FBBF24;
+  --color-blockd-risk-high: #FB923C;
+  --color-blockd-risk-critical: #F87171;
+
+  --font-family-display: 'Space Grotesk', system-ui, sans-serif;
+  --font-family-body: 'Inter', system-ui, sans-serif;
+  --font-family-mono: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+/* Landing page specific styles */
+.landing-page {
+  background: var(--color-blockd-void);
+  color: var(--color-blockd-egg-white);
+}
+
+/* Brutalist Panels */
+.glass-panel,
+.brutalist-panel,
+.glass-premium {
+  background: var(--color-blockd-dark-slate);
+  border: 2px solid var(--color-blockd-slate);
+}
+
+.glass-premium:hover {
+  border-color: var(--color-blockd-lavender);
+}
+
+/* Grid Pattern Background */
+.grid-pattern {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.1) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* Typography for landing */
+.font-display {
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+}
+
+.font-body {
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+.font-mono {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Landing scrollbar */
+.landing-page::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.landing-page::-webkit-scrollbar-track {
+  background: var(--color-blockd-void);
+}
+
+.landing-page::-webkit-scrollbar-thumb {
+  background: var(--color-blockd-slate);
+}
+
+.landing-page::-webkit-scrollbar-thumb:hover {
+  background: var(--color-blockd-lavender);
+}
+
+/* Selection for landing */
+.landing-page ::selection {
+  background: var(--color-blockd-lavender);
+  color: var(--color-blockd-void);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* REACT-PDF STYLES - PDF Viewer Text and Annotation Layers                    */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Text layer styling for selectable PDF text */
+.react-pdf__Page__textContent {
+  position: absolute !important;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+  opacity: 0.2;
+  line-height: 1;
+  user-select: text;
+}
+
+.react-pdf__Page__textContent span {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  transform-origin: 0% 0%;
+}
+
+.react-pdf__Page__textContent span::selection {
+  background: hsl(var(--primary) / 0.3);
+}
+
+/* Annotation layer for PDF links and forms */
+.react-pdf__Page__annotations {
+  position: absolute !important;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.react-pdf__Page__annotations a {
+  display: block;
+  position: absolute;
+}
+
+.react-pdf__Page__annotations a:hover {
+  background: hsl(var(--primary) / 0.1);
+}
+
+/* PDF canvas styling */
+.react-pdf__Page__canvas {
+  display: block;
+  user-select: none;
+}
+
+/* Loading state */
+.react-pdf__Document--loading,
+.react-pdf__Page--loading {
+  position: relative;
+}
+
+/* Page container */
+.react-pdf__Page {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: white;
 }

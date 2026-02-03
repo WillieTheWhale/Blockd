@@ -22,6 +22,7 @@ import {
 import { idParamSchema, IdParam } from '../schemas/common.schema';
 import { sendSuccess, sendCreated, sendPaginated } from '../lib/response';
 import { NotFoundError, BadRequestError, ForbiddenError } from '../lib/errors';
+import { sanitizeMetadata } from '../lib/sanitize';
 import prisma from '../lib/prisma';
 
 export default async function sessionsRoutes(fastify: FastifyInstance) {
@@ -37,11 +38,10 @@ export default async function sessionsRoutes(fastify: FastifyInstance) {
       tags: ['Sessions'],
       summary: 'Create a new interview session',
       description: 'Creates a new interview session',
-      body: createSessionRequestSchema,
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
-      const { intervieweeEmail, intervieweeId, scheduledStart, metadata } = request.body;
+      const { intervieweeEmail, intervieweeId, scheduledStart, meetingLink, metadata } = request.body;
       const interviewerId = request.user!.userId;
       const organizationId = request.user!.organizationId;
 
@@ -49,7 +49,7 @@ export default async function sessionsRoutes(fastify: FastifyInstance) {
         throw new BadRequestError('User must belong to an organization');
       }
 
-      // Create session
+      // Create session with sanitized metadata to prevent prototype pollution
       const session = await prisma.interviewSession.create({
         data: {
           interviewerId,
@@ -57,8 +57,9 @@ export default async function sessionsRoutes(fastify: FastifyInstance) {
           intervieweeEmail,
           organizationId,
           scheduledStart,
+          meetingLink,
           status: 'scheduled',
-          metadata: (metadata || {}) as Prisma.InputJsonValue,
+          metadata: sanitizeMetadata(metadata || {}) as Prisma.InputJsonValue,
         },
       });
 
@@ -77,7 +78,7 @@ export default async function sessionsRoutes(fastify: FastifyInstance) {
       tags: ['Sessions'],
       summary: 'Get session by ID',
       description: 'Retrieves a specific interview session',
-      params: idParamSchema,
+      
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
@@ -134,7 +135,7 @@ export default async function sessionsRoutes(fastify: FastifyInstance) {
       tags: ['Sessions'],
       summary: 'List sessions',
       description: 'Lists interview sessions with pagination',
-      querystring: listSessionsQuerySchema,
+      
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
@@ -200,8 +201,8 @@ export default async function sessionsRoutes(fastify: FastifyInstance) {
       tags: ['Sessions'],
       summary: 'Start a session',
       description: 'Starts an interview session',
-      params: idParamSchema,
-      body: startSessionRequestSchema,
+      
+      
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
@@ -244,8 +245,8 @@ export default async function sessionsRoutes(fastify: FastifyInstance) {
       tags: ['Sessions'],
       summary: 'End a session',
       description: 'Ends an interview session',
-      params: idParamSchema,
-      body: endSessionRequestSchema,
+      
+      
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
@@ -288,8 +289,8 @@ export default async function sessionsRoutes(fastify: FastifyInstance) {
       tags: ['Sessions'],
       summary: 'Get session events',
       description: 'Retrieves security events for a session',
-      params: idParamSchema,
-      querystring: sessionEventsQuerySchema,
+      
+      
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {

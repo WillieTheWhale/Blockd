@@ -1,7 +1,6 @@
 import { ReactNode } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { Toaster } from '@/components/ui/toast'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { ErrorBoundary, ErrorFallback } from '@/components/ErrorBoundary'
@@ -12,6 +11,7 @@ import { LandingPage } from '@/pages/LandingPage'
 import { DownloadPage } from '@/pages/DownloadPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { RegisterPage } from '@/pages/RegisterPage'
+import { TermsOfServicePage } from '@/pages/TermsOfServicePage'
 import { ForgotPasswordPage } from '@/pages/ForgotPasswordPage'
 import { ResetPasswordPage } from '@/pages/ResetPasswordPage'
 import { DashboardPage } from '@/pages/DashboardPage'
@@ -71,9 +71,11 @@ function App() {
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
           <Routes>
-            {/* Public pages */}
+            {/* Landing page - standalone with its own dark theme layout */}
+            <Route path="/" element={<LandingPage />} />
+
+            {/* Other public pages with light theme layout */}
             <Route element={<PublicLayout />}>
-              <Route path="/" element={<LandingPage />} />
               <Route path="/download" element={<DownloadPage />} />
             </Route>
 
@@ -84,6 +86,10 @@ function App() {
               <Route path="/forgot-password" element={<ForgotPasswordPage />} />
               <Route path="/reset-password" element={<ResetPasswordPage />} />
             </Route>
+
+            {/* Terms of Service - standalone pages without layout wrapper */}
+            <Route path="/terms-agreement" element={<TermsOfServicePage />} />
+            <Route path="/terms" element={<TermsOfServicePage />} />
 
             {/* OAuth callback - standalone page without layout */}
             <Route path="/auth/callback" element={<OAuthCallbackPage />} />
@@ -112,7 +118,6 @@ function App() {
         </BrowserRouter>
 
         <Toaster />
-        <ReactQueryDevtools initialIsOpen={false} />
       </QueryClientProvider>
     </ErrorBoundary>
   )

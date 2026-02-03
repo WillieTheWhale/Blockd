@@ -1,0 +1,49 @@
+# Copyright 2024 Blockd Inc. All rights reserved.
+# Build configuration for Meeting Platform Detection module
+
+import("//build/config/features.gni")
+
+source_set("blocked_meeting") {
+  sources = [
+    "meeting_fullscreen_controller.cc",
+    "meeting_fullscreen_controller.h",
+    "meeting_navigation_observer.cc",
+    "meeting_navigation_observer.h",
+    "meeting_platform_detector.cc",
+    "meeting_platform_detector.h",
+    "meeting_stream_controller.cc",
+    "meeting_stream_controller.h",
+  ]
+
+  deps = [
+    "//base",
+    "//chrome/browser/blocked/blocked_video:media_stream_capture",
+    "//chrome/browser/ui",
+    "//chrome/browser/ui:browser",
+    "//content/public/browser",
+    "//net",
+    "//url",
+  ]
+
+  public_deps = [
+    "//base",
+  ]
+
+  # Feature flag for meeting detection
+  if (defined(blockd_enable_meeting_detection) && blockd_enable_meeting_detection) {
+    defines = [ "BLOCKD_ENABLE_MEETING_DETECTION" ]
+  }
+}
+
+source_set("blocked_meeting_test_support") {
+  testonly = true
+
+  sources = [
+    "meeting_platform_detector_test_helper.h",
+  ]
+
+  deps = [
+    ":blocked_meeting",
+    "//testing/gtest",
+  ]
+}

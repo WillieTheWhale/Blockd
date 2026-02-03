@@ -33,6 +33,7 @@ class EncodingService:
         """
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
         self.command_builder = FFmpegCommandBuilder()
+        self._shutdown_completed = False
 
     async def create_adaptive_streams(
         self,
@@ -381,6 +382,25 @@ class EncodingService:
             logger.error(f"FFmpeg failed: {e.stderr}")
             raise EncodingError(f"FFmpeg encoding failed: {e.stderr}")
 
+    def shutdown(self):
+        """
+        Explicitly shutdown the ThreadPoolExecutor.
+        Safe to call multiple times.
+        """
+        if not self._shutdown_completed:
+            self.executor.shutdown(wait=True)
+            self._shutdown_completed = True
+            logger.debug("EncodingService executor shutdown completed")
+
+    def __enter__(self):
+        """Context manager entry"""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit - ensures cleanup"""
+        self.shutdown()
+        return False
+
     async def cleanup_encoded_files(self, session_id: str):
         """
         Clean up encoded stream files
@@ -399,5 +419,10 @@ class EncodingService:
                 logger.error(f"Failed to cleanup streams for session {session_id}: {e}")
 
     def __del__(self):
-        """Cleanup executor on deletion"""
-        self.executor.shutdown(wait=True)
+        """Fallback cleanup executor on deletion"""
+        if not self._shutdown_completed:
+            try:
+                self.executor.shutdown(wait=False)
+                self._shutdown_completed = True
+            except Exception:
+                pass  # Ignore errors during garbage collection

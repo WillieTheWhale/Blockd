@@ -115,15 +115,19 @@ export async function register(
     // Send welcome email
     await sendWelcomeEmail(user.email, data.full_name);
 
-    const response: RegisterResponse = {
-      user_id: user.id,
-      email: user.email,
-      access_token: accessToken,
-      refresh_token: refreshToken,
-      expires_in: 3600
-    };
-
-    reply.code(201).send(response);
+    // Send response in format expected by frontend (camelCase)
+    reply.code(201).send({
+      user: {
+        id: user.id,
+        email: user.email,
+        full_name: data.full_name,
+        role: user.role,
+        email_verified: false,
+      },
+      accessToken,
+      refreshToken,
+      expiresIn: 3600
+    });
   } catch (error) {
     const errorResponse = handleError(error);
     reply.code(errorResponse.statusCode).send(errorResponse);
@@ -176,17 +180,10 @@ export async function login(
         // MFA required but not provided - return temporary token
         const mfaToken = generateMFAToken(user.id, user.email);
 
-        const response: LoginResponse = {
-          user_id: user.id,
-          email: user.email,
-          access_token: '',
-          refresh_token: '',
-          expires_in: 0,
-          requires_mfa: true,
-          mfa_token: mfaToken
-        };
-
-        reply.code(200).send(response);
+        reply.code(200).send({
+          requiresMfa: true,
+          mfaToken,
+        });
         return;
       }
 
@@ -224,16 +221,21 @@ export async function login(
       request.headers['user-agent']
     );
 
-    const response: LoginResponse = {
-      user_id: user.id,
-      email: user.email,
-      access_token: accessToken,
-      refresh_token: refreshToken,
-      expires_in: 3600,
-      requires_mfa: false
-    };
-
-    reply.code(200).send(response);
+    // Send response in format expected by frontend (camelCase)
+    reply.code(200).send({
+      user: {
+        id: user.id,
+        email: user.email,
+        full_name: user.full_name || `${user.first_name || ''} ${user.last_name || ''}`.trim(),
+        role: user.role,
+        email_verified: user.email_verified,
+        mfa_enabled: user.mfa_enabled,
+      },
+      accessToken,
+      refreshToken,
+      expiresIn: 3600,
+      requiresMfa: false
+    });
   } catch (error) {
     const errorResponse = handleError(error);
     reply.code(errorResponse.statusCode).send(errorResponse);

@@ -10,6 +10,11 @@ global:
 # Namespace configuration
 namespace: blockd
 
+# Network Policies - Enable in production for service isolation
+# Implements principle of least privilege for inter-service communication
+networkPolicies:
+  enabled: false  # Enable in production: set to true in values-production.yaml
+
 # Image configuration
 images:
   apiGateway:

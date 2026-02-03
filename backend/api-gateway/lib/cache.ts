@@ -3,7 +3,7 @@
  * Provides caching for users, organizations, and sessions with cache-aside pattern
  */
 
-import { getRedisClient } from '../../shared/cache/redis-client';
+import { getRedisClient } from './redis-client';
 import {
   CacheManager,
   CacheKeyBuilder,

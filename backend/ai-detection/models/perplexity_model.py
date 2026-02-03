@@ -207,6 +207,46 @@ class PerplexityModel:
             logger.error(f"Token perplexity calculation failed: {e}")
             raise PerplexityError(str(e))
 
+    def cleanup(self):
+        """
+        Clean up GPU memory by moving model to CPU, deleting it,
+        and clearing CUDA cache.
+
+        This method should be called before unloading the model to prevent
+        GPU memory leaks, especially in long-running services.
+        """
+        if self.model is not None:
+            try:
+                logger.info(f"Cleaning up perplexity model GPU memory")
+
+                # Move model to CPU first to free GPU memory
+                self.model.to('cpu')
+
+                # Delete model reference
+                del self.model
+                self.model = None
+
+                # Delete tokenizer
+                if self.tokenizer is not None:
+                    del self.tokenizer
+                    self.tokenizer = None
+
+                # Clear CUDA cache if GPU was used
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    logger.info("CUDA cache cleared")
+
+                logger.info("Perplexity model cleanup completed")
+
+            except Exception as e:
+                logger.error(f"Error during perplexity model cleanup: {e}")
+                # Still try to clear CUDA cache even if other cleanup failed
+                if torch.cuda.is_available():
+                    try:
+                        torch.cuda.empty_cache()
+                    except Exception:
+                        pass
+
 
 # Singleton instance
 _perplexity_model: Optional[PerplexityModel] = None

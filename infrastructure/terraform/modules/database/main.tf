@@ -100,8 +100,9 @@ resource "aws_db_subnet_group" "main" {
 
 # Generate random password for database
 resource "random_password" "db_password" {
-  length  = 32
-  special = true
+  length           = 32
+  special          = true
+  override_special = "!#$%&*()-_=+[]{}<>:?"  # RDS doesn't allow '/', '@', '"', ' '
 }
 
 # Store database password in Secrets Manager
@@ -123,7 +124,7 @@ resource "aws_secretsmanager_secret_version" "db_password" {
 resource "aws_db_instance" "postgresql" {
   identifier     = "blockd-${var.environment}-postgres"
   engine         = "postgres"
-  engine_version = "17.1"
+  engine_version = "16.11"
   instance_class = var.db_instance_class
 
   allocated_storage     = var.db_allocated_storage
@@ -195,8 +196,8 @@ resource "aws_secretsmanager_secret_version" "redis_auth_token" {
 
 # ElastiCache Redis Replication Group
 resource "aws_elasticache_replication_group" "redis" {
-  replication_group_id       = "blockd-${var.environment}-redis"
-  replication_group_description = "Redis cluster for Blockd ${var.environment}"
+  replication_group_id = "blockd-${var.environment}-redis"
+  description          = "Redis cluster for Blockd ${var.environment}"
 
   engine         = "redis"
   engine_version = "7.1"

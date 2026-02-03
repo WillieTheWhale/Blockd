@@ -68,7 +68,7 @@ Components:
 | Service | Contact | Account ID |
 |---------|---------|------------|
 | AWS Support | Premium Support Portal | 123456789012 |
-| Cloudflare | support@cloudflare.com | blockd.io |
+| Cloudflare | support@cloudflare.com | blockd.site |
 | PagerDuty | Admin Console | blockd |
 
 ---
@@ -524,7 +524,7 @@ kubectl scale deployment --all -n production --replicas=3
 # Quick health check
 kubectl get pods -n production -o wide
 kubectl top pods -n production
-curl -s https://blockd.io/api/v1/health | jq
+curl -s https://blockd.site/api/v1/health | jq
 
 # Logs
 kubectl logs -n production -l app=api-gateway --tail=100 -f

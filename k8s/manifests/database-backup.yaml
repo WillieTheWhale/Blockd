@@ -691,7 +691,7 @@ spec:
           annotations:
             summary: "Database backup job failed"
             description: "PostgreSQL backup job has failed. Check job logs for details."
-            runbook_url: "https://docs.blockd.com/runbooks/backup-failed"
+            runbook_url: "https://docs.blockd.site/runbooks/backup-failed"
 
         - alert: DatabaseBackupMissing
           expr: |
@@ -703,7 +703,7 @@ spec:
           annotations:
             summary: "Database backup missing"
             description: "No successful database backup in the last 25 hours."
-            runbook_url: "https://docs.blockd.com/runbooks/backup-missing"
+            runbook_url: "https://docs.blockd.site/runbooks/backup-missing"
 
         - alert: DatabaseBackupVerificationFailed
           expr: |
@@ -715,7 +715,7 @@ spec:
           annotations:
             summary: "Database backup verification failed"
             description: "Backup verification job has failed. Backup integrity may be compromised."
-            runbook_url: "https://docs.blockd.com/runbooks/backup-verify-failed"
+            runbook_url: "https://docs.blockd.site/runbooks/backup-verify-failed"
 
         - alert: DatabaseRestoreTestFailed
           expr: |
@@ -727,7 +727,7 @@ spec:
           annotations:
             summary: "Database restore test failed"
             description: "Weekly backup restore test has failed. Backup recoverability cannot be guaranteed."
-            runbook_url: "https://docs.blockd.com/runbooks/restore-test-failed"
+            runbook_url: "https://docs.blockd.site/runbooks/restore-test-failed"
 
         - alert: DatabaseRestoreTestMissing
           expr: |
@@ -739,4 +739,4 @@ spec:
           annotations:
             summary: "Database restore test missing"
             description: "No successful database restore test in the last 8 days. DR capabilities unverified."
-            runbook_url: "https://docs.blockd.com/runbooks/restore-test-missing"
+            runbook_url: "https://docs.blockd.site/runbooks/restore-test-missing"

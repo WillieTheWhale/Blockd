@@ -6,6 +6,10 @@ import { MessageQueueError } from '../lib/errors';
 let connection: amqp.ChannelModel | null = null;
 let channel: amqp.Channel | null = null;
 
+// Store event handlers for proper cleanup
+let connectionErrorHandler: ((error: Error) => void) | null = null;
+let connectionCloseHandler: (() => void) | null = null;
+
 export async function connectMessageQueue(): Promise<void> {
   try {
     connection = await amqp.connect(config.rabbitmq.url);
@@ -19,14 +23,17 @@ export async function connectMessageQueue(): Promise<void> {
 
     console.log('RabbitMQ connected');
 
-    // Handle connection errors
-    connection.on('error', (error: Error) => {
+    // Handle connection errors - store handlers for cleanup
+    connectionErrorHandler = (error: Error) => {
       console.error('RabbitMQ connection error:', error);
-    });
+    };
 
-    connection.on('close', () => {
+    connectionCloseHandler = () => {
       console.log('RabbitMQ connection closed');
-    });
+    };
+
+    connection.on('error', connectionErrorHandler);
+    connection.on('close', connectionCloseHandler);
   } catch (error) {
     throw new MessageQueueError(
       'connect',
@@ -42,6 +49,15 @@ export async function disconnectMessageQueue(): Promise<void> {
       channel = null;
     }
     if (connection) {
+      // Remove event listeners to prevent memory leaks
+      if (connectionErrorHandler) {
+        connection.removeListener('error', connectionErrorHandler);
+        connectionErrorHandler = null;
+      }
+      if (connectionCloseHandler) {
+        connection.removeListener('close', connectionCloseHandler);
+        connectionCloseHandler = null;
+      }
       await connection.close();
       connection = null;
     }
@@ -58,10 +74,21 @@ export function getChannel(): amqp.Channel {
 }
 
 export class MessageQueueService {
-  private channel: amqp.Channel;
+  /**
+   * Get channel with lazy initialization
+   */
+  private getChannelSafe(): amqp.Channel {
+    if (!channel) {
+      throw new MessageQueueError('getChannel', 'Channel not initialized. Call connectMessageQueue() first.');
+    }
+    return channel;
+  }
 
-  constructor() {
-    this.channel = getChannel();
+  /**
+   * Check if message queue is connected
+   */
+  isConnected(): boolean {
+    return channel !== null;
   }
 
   /**
@@ -74,9 +101,10 @@ export class MessageQueueService {
     options?: amqp.Options.Publish
   ): Promise<void> {
     try {
+      const ch = this.getChannelSafe();
       const messageBuffer = Buffer.from(JSON.stringify(message));
 
-      this.channel.publish(
+      ch.publish(
         exchange,
         routingKey,
         messageBuffer,

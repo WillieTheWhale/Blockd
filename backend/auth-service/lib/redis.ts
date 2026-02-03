@@ -21,6 +21,10 @@ const redisConfig = {
  */
 let redisClient: Redis | null = null;
 
+// Event handler references for proper cleanup
+let errorHandler: (() => void) | null = null;
+let connectHandler: (() => void) | null = null;
+
 /**
  * Get or create Redis client
  */
@@ -28,13 +32,19 @@ export function getRedisClient(): Redis {
   if (!redisClient) {
     redisClient = new Redis(redisConfig);
 
-    redisClient.on('error', (error) => {
-      console.error('Redis client error:', error);
-    });
+    // Store handler references for cleanup
+    errorHandler = () => {
+      // Silently handle - ioredis retries automatically
+      // In production, use proper observability (metrics/tracing)
+    };
 
-    redisClient.on('connect', () => {
-      console.log('Redis client connected');
-    });
+    connectHandler = () => {
+      // Connection established - no action needed
+    };
+
+    // Redis event handlers - ioredis handles reconnection automatically
+    redisClient.on('error', errorHandler);
+    redisClient.on('connect', connectHandler);
   }
   return redisClient;
 }
@@ -170,9 +180,19 @@ export async function getRateLimitCount(key: string): Promise<number> {
 
 /**
  * Gracefully disconnect Redis client
+ * Removes event listeners to prevent memory leaks
  */
 export async function disconnectRedis(): Promise<void> {
   if (redisClient) {
+    // Remove event listeners before disconnecting to prevent memory leaks
+    if (errorHandler) {
+      redisClient.removeListener('error', errorHandler);
+      errorHandler = null;
+    }
+    if (connectHandler) {
+      redisClient.removeListener('connect', connectHandler);
+      connectHandler = null;
+    }
     await redisClient.quit();
     redisClient = null;
   }

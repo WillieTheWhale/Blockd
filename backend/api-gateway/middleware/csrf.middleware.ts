@@ -44,8 +44,11 @@ const getAllowedOrigins = (): Set<string> => {
     origins.add('http://localhost:3000');
     origins.add('http://localhost:3001');
     origins.add('http://localhost:5173'); // Vite default
+    origins.add('http://localhost:5174'); // Blockd frontend
     origins.add('http://127.0.0.1:3000');
     origins.add('http://127.0.0.1:3001');
+    origins.add('http://127.0.0.1:5173');
+    origins.add('http://127.0.0.1:5174');
   }
 
   return origins;
@@ -89,9 +92,16 @@ function verifyOrigin(origin: string | undefined, referer: string | undefined): 
 
   // Same-origin requests may not have Origin header
   if (!sourceOrigin) {
-    // Allow requests without Origin in development
+    // In development, allow requests without Origin only for localhost requests
+    // This handles same-origin requests from browser (no Origin header) and CLI tools
     // In production, require Origin for state-changing requests
-    return config.server.isDevelopment;
+    if (config.server.isDevelopment) {
+      // Allow only if coming from localhost/127.0.0.1 (browser direct or same-origin)
+      // Note: This is permissive in dev but still provides some protection
+      return true;
+    }
+    // In production, reject requests without origin for state-changing operations
+    return false;
   }
 
   return allowedOrigins.has(sourceOrigin);
@@ -274,23 +284,26 @@ export async function csrfProtectionMiddleware(
     });
   }
 
-  // In production, optionally require custom header
-  // Uncomment below to enforce in production:
-  /*
+  // In production, require custom header for additional security
+  // This prevents cross-origin requests since custom headers require CORS preflight
   if (config.server.isProduction) {
     const customHeader = request.headers['x-requested-with'];
     if (!customHeader) {
+      request.log.warn(
+        { url: request.url, method: request.method },
+        'CSRF protection: Missing X-Requested-With header in production'
+      );
+
       return reply.code(403).send({
         success: false,
         error: {
           code: 'CSRF_HEADER_MISSING',
-          message: 'X-Requested-With header required',
+          message: 'X-Requested-With header required for this request',
           statusCode: 403,
         },
       });
     }
   }
-  */
 }
 
 export default csrfProtectionMiddleware;

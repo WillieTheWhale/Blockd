@@ -49,3 +49,24 @@ out/
 coverage/
 .nyc_output/
 .pytest_cache/
+
+# Chromium build artifacts (large/generated)
+chromium/depot_tools/
+chromium/src/
+chromium/.cipd/
+chromium/.gclient_entries
+chromium/.gclient_previous_sync_commits
+chromium/.gcs_entries
+
+# Windows artifacts
+nul
+
+# Terraform
+infrastructure/terraform/.terraform/
+infrastructure/terraform/*.tfplan
+infrastructure/terraform/tfplan*
+*.tfstate
+*.tfstate.backup
+
+# Large archives
+*.tar

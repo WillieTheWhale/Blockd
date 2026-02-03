@@ -1,5 +1,5 @@
-# Blocked Browser - Root BUILD.gn
-# Custom build targets for Blocked browser components
+# Blockd Browser - Root BUILD.gn
+# Custom build targets for Blockd browser components
 
 import("//build/config/features.gni")
 import("//build/config/ui.gni")
@@ -10,7 +10,7 @@ declare_args() {
   blocked_enable_eye_tracking = true
   blocked_enable_telemetry = true
   blocked_enable_video_capture = true
-  blocked_backend_url = "wss://api.blockd.com"
+  blocked_backend_url = "wss://api.blockd.site"
 }
 
 # Main Blocked browser group

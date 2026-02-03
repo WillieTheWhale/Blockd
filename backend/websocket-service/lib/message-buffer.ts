@@ -20,6 +20,7 @@ export class MessageBuffer {
   private buffers: Map<string, BufferedMessage[]> = new Map();
   private options: Required<MessageBufferOptions>;
   private io: Server | null = null;
+  private cleanupIntervalId: NodeJS.Timer | null = null;
 
   constructor(options: MessageBufferOptions = {}) {
     this.options = {
@@ -29,7 +30,7 @@ export class MessageBuffer {
     };
 
     // Start cleanup interval
-    setInterval(() => this.cleanup(), 60000); // Cleanup every minute
+    this.cleanupIntervalId = setInterval(() => this.cleanup(), 60000); // Cleanup every minute
   }
 
   /**
@@ -265,6 +266,33 @@ export class MessageBuffer {
   clearBuffer(userId: string): void {
     this.buffers.delete(userId);
     logger.debug('Buffer cleared for user', { userId });
+  }
+
+  /**
+   * Clear all buffers
+   */
+  clearAllBuffers(): void {
+    this.buffers.clear();
+    logger.debug('All buffers cleared');
+  }
+
+  /**
+   * Destroy the MessageBuffer and clean up resources
+   */
+  destroy(): void {
+    // Clear the cleanup interval
+    if (this.cleanupIntervalId !== null) {
+      clearInterval(this.cleanupIntervalId);
+      this.cleanupIntervalId = null;
+    }
+
+    // Clear all buffers
+    this.clearAllBuffers();
+
+    // Clear server reference
+    this.io = null;
+
+    logger.debug('MessageBuffer destroyed');
   }
 
   /**

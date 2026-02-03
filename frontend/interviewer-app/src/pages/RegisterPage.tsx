@@ -1,27 +1,24 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Progress } from '@/components/ui/progress'
-import { toast } from 'sonner'
 import { useAuthStore } from '@/stores/auth-store'
 import { registerSchema, type RegisterFormData, calculatePasswordStrength } from '@/lib/validations'
 import { USER_ROLES } from '@/lib/constants'
-import { Loader2, CheckCircle2 } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import { OAuthButton } from '@/components/OAuthButton'
 import type { UserRole, RegisterData } from '@/types'
 
 export function RegisterPage() {
   const navigate = useNavigate()
-  const { register: registerUser, isLoading } = useAuthStore()
-  const [showSuccess, setShowSuccess] = useState(false)
+  const { isLoading } = useAuthStore()
   const [passwordStrength, setPasswordStrength] = useState<{ strength: number; label: 'weak' | 'fair' | 'good' | 'strong'; color: string }>({ strength: 0, label: 'weak', color: 'bg-red-500' })
 
   const {
@@ -40,12 +37,11 @@ export function RegisterPage() {
       role: USER_ROLES.INTERVIEWER,
       organization: '',
       newOrganization: '',
-      acceptTerms: false,
+      acceptTerms: true, // Always true - actual agreement happens on ToS page
     },
   })
 
   const password = watch('password')
-  const acceptTerms = watch('acceptTerms')
   const role = watch('role')
 
   useEffect(() => {
@@ -56,81 +52,23 @@ export function RegisterPage() {
   }, [password])
 
   const onSubmit = async (data: RegisterFormData) => {
-    try {
-      const registerData: RegisterData = {
-        name: data.name,
-        email: data.email,
-        password: data.password,
-        role: data.role,
-      }
-      const orgValue = data.newOrganization || data.organization
-      if (orgValue) registerData.organization = orgValue
-
-      const result = await registerUser(registerData)
-
-      if (result.success) {
-        setShowSuccess(true)
-      } else {
-        toast.error('Registration failed', {
-          description: 'Please try again or contact support.',
-        })
-      }
-    } catch (error) {
-      toast.error('Registration failed', {
-        description: error instanceof Error ? error.message : 'An error occurred',
-      })
+    // Build registration data
+    const registerData: RegisterData = {
+      name: data.name,
+      email: data.email,
+      password: data.password,
+      role: data.role,
     }
-  }
+    const orgValue = data.newOrganization || data.organization
+    if (orgValue) registerData.organization = orgValue
 
-  if (showSuccess) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 p-4">
-        <Card className="w-full max-w-md">
-          <CardHeader className="space-y-1 text-center">
-            <div className="mx-auto mb-4">
-              <CheckCircle2 className="h-16 w-16 text-green-500" />
-            </div>
-            <CardTitle className="text-2xl font-bold">Account Created!</CardTitle>
-            <CardDescription>
-              Welcome to Blockd! Your account has been successfully created.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2 p-4 bg-blue-50 dark:bg-blue-950 rounded-lg border border-blue-200 dark:border-blue-800">
-              <h3 className="font-semibold text-blue-900 dark:text-blue-100">What's Next?</h3>
-              <ul className="space-y-2 text-sm text-blue-800 dark:text-blue-200">
-                <li className="flex items-start gap-2">
-                  <CheckCircle2 className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                  <span>Check your email for a verification link</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <CheckCircle2 className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                  <span>Complete your profile setup</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <CheckCircle2 className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                  <span>Create your first interview session</span>
-                </li>
-              </ul>
-            </div>
-
-            <Button onClick={() => navigate('/dashboard')} className="w-full">
-              Go to Dashboard
-            </Button>
-
-            <div className="text-center text-sm text-muted-foreground">
-              Didn't receive the email?{' '}
-              <button
-                onClick={() => toast.info('Verification email resent')}
-                className="text-primary hover:underline"
-              >
-                Resend
-              </button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    )
+    // Redirect to Terms of Service page with registration data
+    navigate('/terms-agreement', {
+      state: {
+        registerData,
+        fromRegistration: true,
+      },
+    })
   }
 
   return (
@@ -257,44 +195,21 @@ export function RegisterPage() {
               </p>
             </div>
 
-            <div className="flex items-start space-x-2">
-              <Checkbox
-                id="acceptTerms"
-                checked={acceptTerms}
-                onCheckedChange={(checked) => setValue('acceptTerms', checked as boolean)}
-                disabled={isLoading}
-                aria-invalid={errors.acceptTerms ? 'true' : 'false'}
-              />
-              <div className="space-y-1">
-                <Label
-                  htmlFor="acceptTerms"
-                  className="text-sm font-normal cursor-pointer leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                >
-                  I agree to the{' '}
-                  <Link to="/terms" className="text-primary hover:underline" target="_blank">
-                    Terms of Service
-                  </Link>{' '}
-                  and{' '}
-                  <Link to="/privacy" className="text-primary hover:underline" target="_blank">
-                    Privacy Policy
-                  </Link>
-                </Label>
-                {errors.acceptTerms && (
-                  <p className="text-sm text-red-500" role="alert">
-                    {errors.acceptTerms.message}
-                  </p>
-                )}
-              </div>
-            </div>
+            <p className="text-xs text-muted-foreground text-center">
+              By clicking Continue, you'll be asked to review and accept our{' '}
+              <Link to="/terms" className="text-primary hover:underline">
+                Terms of Service
+              </Link>
+            </p>
 
             <Button type="submit" className="w-full" disabled={isLoading}>
               {isLoading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Creating account...
+                  Processing...
                 </>
               ) : (
-                'Create account'
+                'Continue'
               )}
             </Button>
           </form>

@@ -97,7 +97,7 @@ export async function associateQuestionWithSession(
 export async function createCompleteTestScenario() {
   // Create user
   const user = await createTestUser({
-    email: 'scenario@test.blockd.io',
+    email: 'scenario@test.blockd.site',
     role: 'interviewer',
   });
 

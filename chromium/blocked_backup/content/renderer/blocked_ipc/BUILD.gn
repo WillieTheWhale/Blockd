@@ -19,7 +19,7 @@ source_set("blocked_ipc") {
 
   deps = [
     "//base",
-    "//chrome/browser/blocked/public/mojom",
+    "//content/common/blocked/mojom:mojom",
     "//mojo/public/cpp/bindings",
   ]
 

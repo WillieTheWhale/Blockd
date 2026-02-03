@@ -122,9 +122,13 @@ function getMicrosoftConfig(): OAuthProviderConfig {
  */
 export async function exchangeGoogleCode(
   code: string,
-  codeVerifier: string
+  codeVerifier: string,
+  redirectUri?: string
 ): Promise<ProviderTokens> {
   const config = getGoogleConfig();
+
+  // Use provided redirectUri or fall back to config
+  const finalRedirectUri = redirectUri || config.redirectUri;
 
   const params = new URLSearchParams({
     client_id: config.clientId,
@@ -132,7 +136,7 @@ export async function exchangeGoogleCode(
     code,
     code_verifier: codeVerifier,
     grant_type: 'authorization_code',
-    redirect_uri: config.redirectUri,
+    redirect_uri: finalRedirectUri,
   });
 
   const response = await fetch(config.tokenEndpoint, {
@@ -144,8 +148,14 @@ export async function exchangeGoogleCode(
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-    console.error('Google token exchange failed:', error);
+    const errorResponse = await response.json().catch(() => ({ error: 'Unknown error' }));
+    // Security: Only log error type and code, never log tokens or sensitive data
+    console.error('Google token exchange failed:', {
+      error: errorResponse.error,
+      error_description: errorResponse.error_description,
+      status: response.status,
+      // Do NOT log: access_token, refresh_token, code, or full error response
+    });
     throw new ValidationError('Failed to exchange authorization code with Google');
   }
 
@@ -165,9 +175,13 @@ export async function exchangeGoogleCode(
  */
 export async function exchangeMicrosoftCode(
   code: string,
-  codeVerifier: string
+  codeVerifier: string,
+  redirectUri?: string
 ): Promise<ProviderTokens> {
   const config = getMicrosoftConfig();
+
+  // Use provided redirectUri or fall back to config
+  const finalRedirectUri = redirectUri || config.redirectUri;
 
   const params = new URLSearchParams({
     client_id: config.clientId,
@@ -175,7 +189,7 @@ export async function exchangeMicrosoftCode(
     code,
     code_verifier: codeVerifier,
     grant_type: 'authorization_code',
-    redirect_uri: config.redirectUri,
+    redirect_uri: finalRedirectUri,
   });
 
   const response = await fetch(config.tokenEndpoint, {
@@ -187,8 +201,14 @@ export async function exchangeMicrosoftCode(
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-    console.error('Microsoft token exchange failed:', error);
+    const errorResponse = await response.json().catch(() => ({ error: 'Unknown error' }));
+    // Security: Only log error type and code, never log tokens or sensitive data
+    console.error('Microsoft token exchange failed:', {
+      error: errorResponse.error,
+      error_description: errorResponse.error_description,
+      status: response.status,
+      // Do NOT log: access_token, refresh_token, code, or full error response
+    });
     throw new ValidationError('Failed to exchange authorization code with Microsoft');
   }
 
@@ -273,16 +293,17 @@ export async function fetchMicrosoftUserInfo(accessToken: string): Promise<OAuth
 export async function processOAuthCallback(
   provider: 'google' | 'microsoft',
   code: string,
-  codeVerifier: string
+  codeVerifier: string,
+  redirectUri?: string
 ): Promise<{ tokens: ProviderTokens; userInfo: OAuthUserInfo }> {
   let tokens: ProviderTokens;
   let userInfo: OAuthUserInfo;
 
   if (provider === 'google') {
-    tokens = await exchangeGoogleCode(code, codeVerifier);
+    tokens = await exchangeGoogleCode(code, codeVerifier, redirectUri);
     userInfo = await fetchGoogleUserInfo(tokens.accessToken);
   } else if (provider === 'microsoft') {
-    tokens = await exchangeMicrosoftCode(code, codeVerifier);
+    tokens = await exchangeMicrosoftCode(code, codeVerifier, redirectUri);
     userInfo = await fetchMicrosoftUserInfo(tokens.accessToken);
   } else {
     throw new ValidationError(`Unsupported OAuth provider: ${provider}`);

@@ -23,7 +23,7 @@ export interface UserProfile {
 
 export interface CreateUserData {
   email: string;
-  password_hash: string;
+  password_hash?: string; // Optional for OAuth users
   role: UserRole;
   organization_id?: string;
   first_name?: string;

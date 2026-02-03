@@ -176,7 +176,7 @@ build_macos_dmg() {
     # Create app bundle if build exists
     local BUILD_DIR="out/${BUILD_TYPE}"
     local APP_BUNDLE="Blockd Browser.app"
-    local DMG_NAME="BlockedBrowser-v${VERSION}-macOS.dmg"
+    local DMG_NAME="BlockdBrowser-v${VERSION}-macOS.dmg"
 
     if [[ ! -d "$BUILD_DIR" ]]; then
         echo -e "${YELLOW}No build directory found. Creating mock installer...${NC}"
@@ -207,8 +207,8 @@ build_macos_dmg() {
     cd "$SCRIPT_DIR"
 
     # Move to output
-    if [[ -f "BlockedBrowser.dmg" ]]; then
-        mv "BlockedBrowser.dmg" "$OUTPUT_DIR/$DMG_NAME"
+    if [[ -f "BlockdBrowser.dmg" ]]; then
+        mv "BlockdBrowser.dmg" "$OUTPUT_DIR/$DMG_NAME"
         echo -e "${GREEN}Created: $OUTPUT_DIR/$DMG_NAME${NC}"
     fi
 
@@ -218,7 +218,7 @@ build_macos_dmg() {
 
 # Create mock macOS installer for testing
 create_mock_macos_installer() {
-    local DMG_NAME="BlockedBrowser-v${VERSION}-macOS.dmg"
+    local DMG_NAME="BlockdBrowser-v${VERSION}-macOS.dmg"
     local APP_BUNDLE="${SCRIPT_DIR}/Blockd Browser.app"
 
     echo "Creating mock app bundle for testing..."
@@ -297,7 +297,7 @@ build_windows_nsis() {
     echo -e "${BLUE}═══════════════════════════════════════════════════════════${NC}"
 
     local BUILD_DIR="out/${BUILD_TYPE}"
-    local INSTALLER_NAME="BlockedBrowser_Setup_v${VERSION}.exe"
+    local INSTALLER_NAME="BlockdBrowser_Setup_v${VERSION}.exe"
 
     # Check if NSIS is available
     if ! command -v makensis &>/dev/null; then
@@ -333,9 +333,9 @@ build_windows_nsis() {
 
 # Create Windows package (ZIP) when NSIS not available
 create_windows_package() {
-    local ZIP_NAME="BlockedBrowser-v${VERSION}-Windows.zip"
+    local ZIP_NAME="BlockdBrowser-v${VERSION}-Windows.zip"
     local BUILD_DIR="out/${BUILD_TYPE}"
-    local PKG_DIR="BlockedBrowser-Windows"
+    local PKG_DIR="BlockdBrowser-Windows"
 
     echo "Creating Windows distribution package..."
 
@@ -353,7 +353,7 @@ This is a placeholder package. To get the full browser:
 1. Build Chromium with: ./build.sh --release
 2. Re-run installer build: ./build_installers.sh --platform windows
 
-For more information, visit: https://blockd.com
+For more information, visit: https://blockd.site
 EOF
     fi
 
@@ -511,7 +511,7 @@ build_linux_appimage() {
     echo ""
     echo -e "${BLUE}Building AppImage...${NC}"
 
-    local APPIMAGE_NAME="BlockedBrowser-v${VERSION}.AppImage"
+    local APPIMAGE_NAME="BlockdBrowser-v${VERSION}.AppImage"
     local BUILD_DIR="out/${BUILD_TYPE}"
 
     if ! command -v appimagetool &>/dev/null; then
@@ -520,7 +520,7 @@ build_linux_appimage() {
         return 0
     fi
 
-    local APPDIR="BlockedBrowser.AppDir"
+    local APPDIR="BlockdBrowser.AppDir"
     rm -rf "$APPDIR"
     mkdir -p "$APPDIR/usr/bin"
     mkdir -p "$APPDIR/usr/lib"
@@ -573,7 +573,7 @@ EOF
 # Create Linux tarball when specific tools not available
 create_linux_tarball() {
     local TYPE=$1
-    local TAR_NAME="BlockedBrowser-v${VERSION}-Linux-${TYPE}.tar.gz"
+    local TAR_NAME="BlockdBrowser-v${VERSION}-Linux-${TYPE}.tar.gz"
     local BUILD_DIR="out/${BUILD_TYPE}"
     local PKG_DIR="blockd-browser-${VERSION}"
 

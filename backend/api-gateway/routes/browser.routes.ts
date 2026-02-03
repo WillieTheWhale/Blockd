@@ -27,7 +27,7 @@ export default async function browserRoutes(fastify: FastifyInstance) {
       tags: ['Browser'],
       summary: 'Validate session token',
       description: 'Validates a session token for browser client',
-      body: validateSessionRequestSchema,
+      
     },
     handler: async (request, reply) => {
       const { sessionToken } = request.body;
@@ -60,7 +60,7 @@ export default async function browserRoutes(fastify: FastifyInstance) {
       tags: ['Browser'],
       summary: 'Report security event',
       description: 'Reports a security event from the browser client',
-      body: securityEventRequestSchema,
+      
     },
     handler: async (request, reply) => {
       const { sessionId, eventType, severity, description, metadata } = request.body;
@@ -108,7 +108,7 @@ export default async function browserRoutes(fastify: FastifyInstance) {
       tags: ['Browser'],
       summary: 'Submit batch telemetry',
       description: 'Submits a batch of telemetry data from browser client',
-      body: batchTelemetryRequestSchema,
+      
     },
     handler: async (request, reply) => {
       const { events } = request.body;

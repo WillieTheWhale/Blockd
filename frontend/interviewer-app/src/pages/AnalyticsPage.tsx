@@ -1,7 +1,5 @@
-import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { SessionsChart } from '@/components/dashboard/SessionsChart'
 import { RiskScoreChart } from '@/components/dashboard/RiskScoreChart'
@@ -16,8 +14,6 @@ import {
   PieChart,
   Pie,
   Cell,
-  LineChart,
-  Line,
   Legend,
 } from 'recharts'
 import {
@@ -26,97 +22,55 @@ import {
   Users,
   Clock,
   AlertTriangle,
-  Brain,
+  CheckCircle,
 } from 'lucide-react'
-import { apiRequest, getErrorMessage } from '@/lib/api-client'
-import { API_ENDPOINTS, QUERY_KEYS } from '@/lib/constants'
+import { getErrorMessage } from '@/lib/api-client'
+import {
+  useAnalyticsOverview,
+  useAnalyticsDetectionMethods,
+  useAnalyticsWeeklyTrends,
+  useAnalyticsCandidateSources,
+} from '@/hooks/use-analytics'
 
-interface OverviewStats {
-  totalInterviews: number
-  interviewsChange: number
-  avgSessionDuration: number
-  durationChange: number
-  detectionRate: number
-  securityAlerts: number
-  alertsChange: number
-}
-
-interface DetectionMethod {
-  name: string
-  value: number
-  color: string
-  [key: string]: string | number
-}
-
-interface WeeklyTrend {
-  week: string
-  sessions: number
-  alerts: number
-  completionRate: number
-}
-
-interface CandidateSource {
-  source: string
-  count: number
-}
-
-interface RiskScore {
-  month: string
-  aiScore: number
-  eyeScore: number
-  timingScore: number
-}
+// Colors for pie chart
+const COLORS = [
+  'hsl(217.2, 91.2%, 59.8%)',
+  'hsl(160, 84%, 39%)',
+  'hsl(38, 92%, 50%)',
+  'hsl(0, 84%, 55%)',
+  'hsl(280, 65%, 60%)',
+  'hsl(200, 70%, 50%)',
+]
 
 export function AnalyticsPage() {
-  // Fetch overview stats
-  const { data: overviewData, isLoading: overviewLoading, error: overviewError } = useQuery({
-    queryKey: QUERY_KEYS.ANALYTICS.OVERVIEW,
-    queryFn: () => apiRequest<OverviewStats>('GET', API_ENDPOINTS.ANALYTICS.OVERVIEW),
-    staleTime: 60 * 1000, // 1 minute
-  })
+  // Fetch overview stats using the hook
+  const { data: overviewData, isLoading: overviewLoading, error: overviewError } = useAnalyticsOverview()
 
   // Fetch detection methods
-  const { data: detectionData, isLoading: detectionLoading } = useQuery({
-    queryKey: QUERY_KEYS.ANALYTICS.DETECTION_METHODS,
-    queryFn: () => apiRequest<DetectionMethod[]>('GET', API_ENDPOINTS.ANALYTICS.DETECTION_METHODS),
-    staleTime: 60 * 1000,
-  })
+  const { data: detectionData, isLoading: detectionLoading } = useAnalyticsDetectionMethods()
 
   // Fetch weekly trends
-  const { data: trendsData, isLoading: trendsLoading } = useQuery({
-    queryKey: QUERY_KEYS.ANALYTICS.WEEKLY_TRENDS,
-    queryFn: () => apiRequest<WeeklyTrend[]>('GET', API_ENDPOINTS.ANALYTICS.WEEKLY_TRENDS),
-    staleTime: 60 * 1000,
-  })
+  const { data: trendsData, isLoading: trendsLoading } = useAnalyticsWeeklyTrends()
 
   // Fetch candidate sources
-  const { data: sourcesData, isLoading: sourcesLoading } = useQuery({
-    queryKey: QUERY_KEYS.ANALYTICS.CANDIDATE_SOURCES,
-    queryFn: () => apiRequest<CandidateSource[]>('GET', API_ENDPOINTS.ANALYTICS.CANDIDATE_SOURCES),
-    staleTime: 60 * 1000,
-  })
+  const { data: sourcesData, isLoading: sourcesLoading } = useAnalyticsCandidateSources()
 
-  // Fetch risk scores over time
-  const { data: riskScoresData, isLoading: riskScoresLoading } = useQuery({
-    queryKey: QUERY_KEYS.ANALYTICS.RISK_SCORES,
-    queryFn: () => apiRequest<RiskScore[]>('GET', API_ENDPOINTS.ANALYTICS.RISK_SCORES),
-    staleTime: 60 * 1000,
-  })
+  // Transform detection methods data for pie chart
+  const detectionMethods = (detectionData || []).map((item, index) => ({
+    name: item.method,
+    value: item.count,
+    color: COLORS[index % COLORS.length],
+  }))
 
-  const overview = overviewData ?? {
-    totalInterviews: 0,
-    interviewsChange: 0,
-    avgSessionDuration: 0,
-    durationChange: 0,
-    detectionRate: 0,
-    securityAlerts: 0,
-    alertsChange: 0,
-  }
+  // Transform weekly trends for bar chart
+  const weeklyTrends = (trendsData || []).map((item) => ({
+    week: item.week,
+    sessions: item.total,
+    completed: item.completed,
+    highRisk: item.highRisk,
+  }))
 
-  const detectionMethods = detectionData ?? []
-  const weeklyTrends = trendsData ?? []
-  const candidateSources = sourcesData ?? []
-  const riskScores = riskScoresData ?? []
+  const candidateSources = sourcesData || []
 
   return (
     <div className="space-y-8">
@@ -142,7 +96,7 @@ export function AnalyticsPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Total Interviews
+              Total Sessions
             </CardTitle>
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
@@ -152,15 +106,17 @@ export function AnalyticsPage() {
             ) : (
               <>
                 <div className="flex items-baseline gap-2">
-                  <div className="text-2xl font-bold">{overview.totalInterviews.toLocaleString()}</div>
-                  {overview.interviewsChange !== 0 && (
-                    <div className={`flex items-center text-xs font-medium ${overview.interviewsChange > 0 ? 'text-green-500' : 'text-red-500'}`}>
-                      {overview.interviewsChange > 0 ? <TrendingUp className="h-3 w-3 mr-0.5" /> : <TrendingDown className="h-3 w-3 mr-0.5" />}
-                      {Math.abs(overview.interviewsChange)}%
+                  <div className="text-2xl font-bold">
+                    {(overviewData?.totalSessions.value || 0).toLocaleString()}
+                  </div>
+                  {overviewData?.totalSessions.trend && (
+                    <div className={`flex items-center text-xs font-medium ${overviewData.totalSessions.trend.isPositive ? 'text-green-500' : 'text-red-500'}`}>
+                      {overviewData.totalSessions.trend.isPositive ? <TrendingUp className="h-3 w-3 mr-0.5" /> : <TrendingDown className="h-3 w-3 mr-0.5" />}
+                      {overviewData.totalSessions.trend.value}%
                     </div>
                   )}
                 </div>
-                <p className="text-xs text-muted-foreground">Last 30 days</p>
+                <p className="text-xs text-muted-foreground">{overviewData?.totalSessions.description || 'All time interviews'}</p>
               </>
             )}
           </CardContent>
@@ -169,7 +125,7 @@ export function AnalyticsPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Avg. Session Duration
+              Active Sessions
             </CardTitle>
             <Clock className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
@@ -178,16 +134,10 @@ export function AnalyticsPage() {
               <Skeleton className="h-8 w-24" />
             ) : (
               <>
-                <div className="flex items-baseline gap-2">
-                  <div className="text-2xl font-bold">{overview.avgSessionDuration}m</div>
-                  {overview.durationChange !== 0 && (
-                    <div className={`flex items-center text-xs font-medium ${overview.durationChange < 0 ? 'text-green-500' : 'text-red-500'}`}>
-                      <TrendingDown className="h-3 w-3 mr-0.5" />
-                      {Math.abs(overview.durationChange)}%
-                    </div>
-                  )}
+                <div className="text-2xl font-bold">
+                  {overviewData?.activeSessions.value || 0}
                 </div>
-                <p className="text-xs text-muted-foreground">Faster than last month</p>
+                <p className="text-xs text-muted-foreground">{overviewData?.activeSessions.description || 'Currently running'}</p>
               </>
             )}
           </CardContent>
@@ -196,9 +146,9 @@ export function AnalyticsPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Detection Rate
+              Completed Today
             </CardTitle>
-            <Brain className="h-4 w-4 text-muted-foreground" />
+            <CheckCircle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             {overviewLoading ? (
@@ -206,12 +156,17 @@ export function AnalyticsPage() {
             ) : (
               <>
                 <div className="flex items-baseline gap-2">
-                  <div className="text-2xl font-bold">{overview.detectionRate.toFixed(1)}%</div>
-                  <Badge variant="secondary" className="text-xs">
-                    Industry Leading
-                  </Badge>
+                  <div className="text-2xl font-bold">
+                    {overviewData?.completedToday.value || 0}
+                  </div>
+                  {overviewData?.completedToday.trend && (
+                    <div className={`flex items-center text-xs font-medium ${overviewData.completedToday.trend.isPositive ? 'text-green-500' : 'text-red-500'}`}>
+                      {overviewData.completedToday.trend.isPositive ? <TrendingUp className="h-3 w-3 mr-0.5" /> : <TrendingDown className="h-3 w-3 mr-0.5" />}
+                      {overviewData.completedToday.trend.value}%
+                    </div>
+                  )}
                 </div>
-                <p className="text-xs text-muted-foreground">AI detection accuracy</p>
+                <p className="text-xs text-muted-foreground">{overviewData?.completedToday.description || 'Finished interviews'}</p>
               </>
             )}
           </CardContent>
@@ -230,15 +185,17 @@ export function AnalyticsPage() {
             ) : (
               <>
                 <div className="flex items-baseline gap-2">
-                  <div className="text-2xl font-bold">{overview.securityAlerts}</div>
-                  {overview.alertsChange !== 0 && (
-                    <div className={`flex items-center text-xs font-medium ${overview.alertsChange > 0 ? 'text-red-500' : 'text-green-500'}`}>
-                      {overview.alertsChange > 0 ? <TrendingUp className="h-3 w-3 mr-0.5" /> : <TrendingDown className="h-3 w-3 mr-0.5" />}
-                      {Math.abs(overview.alertsChange)}%
+                  <div className="text-2xl font-bold">
+                    {overviewData?.highRiskAlerts.value || 0}
+                  </div>
+                  {overviewData?.highRiskAlerts.trend && (
+                    <div className={`flex items-center text-xs font-medium ${overviewData.highRiskAlerts.trend.isPositive ? 'text-red-500' : 'text-green-500'}`}>
+                      {!overviewData.highRiskAlerts.trend.isPositive ? <TrendingDown className="h-3 w-3 mr-0.5" /> : <TrendingUp className="h-3 w-3 mr-0.5" />}
+                      {overviewData.highRiskAlerts.trend.value}
                     </div>
                   )}
                 </div>
-                <p className="text-xs text-muted-foreground">This month</p>
+                <p className="text-xs text-muted-foreground">{overviewData?.highRiskAlerts.description || 'Requires attention'}</p>
               </>
             )}
           </CardContent>
@@ -268,7 +225,7 @@ export function AnalyticsPage() {
               <CardHeader>
                 <CardTitle>Detection Methods</CardTitle>
                 <CardDescription>
-                  Breakdown of alerts by detection method
+                  Breakdown of security alerts by detection method
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -278,7 +235,10 @@ export function AnalyticsPage() {
                   </div>
                 ) : detectionMethods.length === 0 ? (
                   <div className="h-[300px] flex items-center justify-center text-muted-foreground">
-                    No detection data available
+                    <div className="text-center">
+                      <p className="mb-2">No detection data yet</p>
+                      <p className="text-sm">Security events will be tracked as interviews are conducted</p>
+                    </div>
                   </div>
                 ) : (
                   <>
@@ -293,6 +253,7 @@ export function AnalyticsPage() {
                             outerRadius={100}
                             paddingAngle={2}
                             dataKey="value"
+                            nameKey="name"
                           >
                             {detectionMethods.map((entry, index) => (
                               <Cell key={`cell-${index}`} fill={entry.color} />
@@ -315,7 +276,7 @@ export function AnalyticsPage() {
                             className="w-3 h-3 rounded-full"
                             style={{ backgroundColor: item.color }}
                           />
-                          <span className="text-sm text-muted-foreground">{item.name}</span>
+                          <span className="text-sm text-muted-foreground">{item.name} ({item.value})</span>
                         </div>
                       ))}
                     </div>
@@ -324,75 +285,42 @@ export function AnalyticsPage() {
               </CardContent>
             </Card>
 
-            {/* Average Scores Over Time */}
+            {/* Detection Summary */}
             <Card>
               <CardHeader>
-                <CardTitle>Average Risk Scores</CardTitle>
+                <CardTitle>Detection Summary</CardTitle>
                 <CardDescription>
-                  Monthly average scores by detection type
+                  Overview of detected security events
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {riskScoresLoading ? (
-                  <div className="h-[300px] flex items-center justify-center">
-                    <Skeleton className="h-full w-full" />
+                {detectionLoading ? (
+                  <div className="space-y-4">
+                    {[1, 2, 3, 4].map((i) => (
+                      <Skeleton key={i} className="h-12 w-full" />
+                    ))}
                   </div>
-                ) : riskScores.length === 0 ? (
+                ) : detectionMethods.length === 0 ? (
                   <div className="h-[300px] flex items-center justify-center text-muted-foreground">
-                    No risk score data available
+                    <div className="text-center">
+                      <CheckCircle className="h-12 w-12 mx-auto mb-4 text-green-500 opacity-50" />
+                      <p>No security events detected</p>
+                    </div>
                   </div>
                 ) : (
-                  <div className="h-[300px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={riskScores}>
-                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                        <XAxis
-                          dataKey="month"
-                          tickLine={false}
-                          axisLine={false}
-                          tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
-                        />
-                        <YAxis
-                          tickLine={false}
-                          axisLine={false}
-                          tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
-                          tickFormatter={(value: number) => `${(value * 100).toFixed(0)}%`}
-                        />
-                        <Tooltip
-                          contentStyle={{
-                            backgroundColor: 'hsl(var(--card))',
-                            border: '1px solid hsl(var(--border))',
-                            borderRadius: '8px',
-                          }}
-                          formatter={(value: number) => `${(value * 100).toFixed(1)}%`}
-                        />
-                        <Legend />
-                        <Line
-                          type="monotone"
-                          dataKey="aiScore"
-                          name="AI Score"
-                          stroke="hsl(217.2, 91.2%, 59.8%)"
-                          strokeWidth={2}
-                          dot={{ fill: 'hsl(217.2, 91.2%, 59.8%)' }}
-                        />
-                        <Line
-                          type="monotone"
-                          dataKey="eyeScore"
-                          name="Eye Tracking"
-                          stroke="hsl(160, 84%, 39%)"
-                          strokeWidth={2}
-                          dot={{ fill: 'hsl(160, 84%, 39%)' }}
-                        />
-                        <Line
-                          type="monotone"
-                          dataKey="timingScore"
-                          name="Timing"
-                          stroke="hsl(38, 92%, 50%)"
-                          strokeWidth={2}
-                          dot={{ fill: 'hsl(38, 92%, 50%)' }}
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
+                  <div className="space-y-4">
+                    {detectionMethods.map((item, index) => (
+                      <div key={item.name} className="flex items-center justify-between p-3 rounded-lg border">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className="w-3 h-3 rounded-full"
+                            style={{ backgroundColor: item.color }}
+                          />
+                          <span className="font-medium">{item.name}</span>
+                        </div>
+                        <span className="text-lg font-bold">{item.value}</span>
+                      </div>
+                    ))}
                   </div>
                 )}
               </CardContent>
@@ -405,7 +333,7 @@ export function AnalyticsPage() {
             <CardHeader>
               <CardTitle>Weekly Trends</CardTitle>
               <CardDescription>
-                Session volume and alert trends over the past 4 weeks
+                Session volume and completion trends over the past 12 weeks
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -415,7 +343,10 @@ export function AnalyticsPage() {
                 </div>
               ) : weeklyTrends.length === 0 ? (
                 <div className="h-[400px] flex items-center justify-center text-muted-foreground">
-                  No trend data available
+                  <div className="text-center">
+                    <p className="mb-2">No trend data yet</p>
+                    <p className="text-sm">Weekly trends will appear as you conduct interviews</p>
+                  </div>
                 </div>
               ) : (
                 <div className="h-[400px]">
@@ -432,6 +363,7 @@ export function AnalyticsPage() {
                         tickLine={false}
                         axisLine={false}
                         tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
+                        allowDecimals={false}
                       />
                       <Tooltip
                         contentStyle={{
@@ -443,13 +375,19 @@ export function AnalyticsPage() {
                       <Legend />
                       <Bar
                         dataKey="sessions"
-                        name="Sessions"
+                        name="Total Sessions"
                         fill="hsl(217.2, 91.2%, 59.8%)"
                         radius={[4, 4, 0, 0]}
                       />
                       <Bar
-                        dataKey="alerts"
-                        name="Alerts"
+                        dataKey="completed"
+                        name="Completed"
+                        fill="hsl(160, 84%, 39%)"
+                        radius={[4, 4, 0, 0]}
+                      />
+                      <Bar
+                        dataKey="highRisk"
+                        name="High Risk"
                         fill="hsl(0, 84%, 55%)"
                         radius={[4, 4, 0, 0]}
                       />
@@ -466,7 +404,7 @@ export function AnalyticsPage() {
             <CardHeader>
               <CardTitle>Candidate Sources</CardTitle>
               <CardDescription>
-                Where your interview candidates are coming from
+                How candidates are being invited to interviews
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -476,7 +414,10 @@ export function AnalyticsPage() {
                 </div>
               ) : candidateSources.length === 0 ? (
                 <div className="h-[400px] flex items-center justify-center text-muted-foreground">
-                  No source data available
+                  <div className="text-center">
+                    <p className="mb-2">No source data yet</p>
+                    <p className="text-sm">Candidate source data will appear as you create sessions</p>
+                  </div>
                 </div>
               ) : (
                 <div className="h-[400px]">
@@ -492,6 +433,7 @@ export function AnalyticsPage() {
                         tickLine={false}
                         axisLine={false}
                         tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
+                        allowDecimals={false}
                       />
                       <YAxis
                         type="category"
@@ -499,7 +441,7 @@ export function AnalyticsPage() {
                         tickLine={false}
                         axisLine={false}
                         tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
-                        width={100}
+                        width={120}
                       />
                       <Tooltip
                         contentStyle={{

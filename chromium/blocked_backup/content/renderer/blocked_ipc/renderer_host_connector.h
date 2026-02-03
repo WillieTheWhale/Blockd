@@ -10,9 +10,9 @@
 #include <vector>
 
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/blocked/public/mojom/eye_tracking.mojom.h"
-#include "chrome/browser/blocked/public/mojom/session.mojom.h"
-#include "chrome/browser/blocked/public/mojom/video_capture.mojom.h"
+#include "content/common/blocked/mojom/eye_tracking.mojom.h"
+#include "content/common/blocked/mojom/session.mojom.h"
+#include "content/common/blocked/mojom/video_capture.mojom.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/receiver.h"

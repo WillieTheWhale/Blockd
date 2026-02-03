@@ -8,7 +8,7 @@ from typing import Optional, Dict, Any, List
 from sqlalchemy import create_engine, Column, String, Text, Integer, DECIMAL, TIMESTAMP, JSON, Index
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, insert
 from pgvector.sqlalchemy import Vector
 
 from .config import get_settings
@@ -202,7 +202,7 @@ class DatabaseManager:
         metadata: Optional[Dict[str, Any]] = None
     ) -> AIAnswerCache:
         """
-        Save AI answer to cache
+        Save AI answer to cache using atomic upsert
 
         Args:
             question_hash: Question hash
@@ -218,35 +218,41 @@ class DatabaseManager:
             Saved cache entry
         """
         try:
-            # Check if exists
-            existing = self.get_ai_answer_cache(question_hash, model_name)
+            # Use PostgreSQL ON CONFLICT DO UPDATE for atomic upsert
+            # This prevents race conditions from concurrent inserts
+            new_id = uuid.uuid4()
+            stmt = insert(AIAnswerCache).values(
+                id=new_id,
+                question_hash=question_hash,
+                question_text=question_text,
+                model_name=model_name,
+                answer_text=answer_text,
+                embedding=embedding,
+                perplexity_score=perplexity_score,
+                token_count=token_count,
+                metadata=metadata or {},
+                created_at=datetime.utcnow()
+            ).on_conflict_do_update(
+                index_elements=['question_hash', 'model_name'],
+                set_={
+                    'answer_text': answer_text,
+                    'embedding': embedding,
+                    'perplexity_score': perplexity_score,
+                    'token_count': token_count,
+                    'metadata': metadata or {}
+                }
+            ).returning(AIAnswerCache)
 
-            if existing:
-                # Update existing
-                existing.answer_text = answer_text
-                existing.embedding = embedding
-                existing.perplexity_score = perplexity_score
-                existing.token_count = token_count
-                if metadata:
-                    existing.metadata = metadata
-                self.session.commit()
-                return existing
-            else:
-                # Create new
-                cache_entry = AIAnswerCache(
-                    question_hash=question_hash,
-                    question_text=question_text,
-                    model_name=model_name,
-                    answer_text=answer_text,
-                    embedding=embedding,
-                    perplexity_score=perplexity_score,
-                    token_count=token_count,
-                    metadata=metadata or {}
-                )
-                self.session.add(cache_entry)
-                self.session.commit()
-                self.session.refresh(cache_entry)
-                return cache_entry
+            result = self.session.execute(stmt)
+            self.session.commit()
+
+            # Fetch the upserted row
+            cache_entry = self.session.query(AIAnswerCache).filter(
+                AIAnswerCache.question_hash == question_hash,
+                AIAnswerCache.model_name == model_name
+            ).first()
+
+            return cache_entry
         except Exception as e:
             self.session.rollback()
             raise

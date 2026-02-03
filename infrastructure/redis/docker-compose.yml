@@ -1,12 +1,19 @@
 version: '3.8'
 
+# IMPORTANT: Set REDIS_PASSWORD in your .env file before deploying
+# Example: REDIS_PASSWORD=your_secure_password_here
+
 services:
   # Redis Cluster - 6 Nodes (3 Primaries + 3 Replicas)
 
   redis-node-1:
     image: redis:8.4-alpine
     container_name: blockd-redis-node-1
-    command: redis-server /usr/local/etc/redis/redis.conf --cluster-announce-ip redis-node-1
+    command: >
+      redis-server /usr/local/etc/redis/redis.conf
+      --cluster-announce-ip redis-node-1
+      --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      --masterauth ${REDIS_PASSWORD}
     ports:
       - "6379:6379"
       - "16379:16379"
@@ -20,9 +27,10 @@ services:
       - REDIS_CLUSTER_ANNOUNCE_IP=redis-node-1
       - REDIS_CLUSTER_ANNOUNCE_PORT=6379
       - REDIS_CLUSTER_ANNOUNCE_BUS_PORT=16379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 3s
       retries: 3

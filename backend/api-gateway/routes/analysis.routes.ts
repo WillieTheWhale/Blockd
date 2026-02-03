@@ -18,7 +18,7 @@ import { sendSuccess, sendCreated } from '../lib/response';
 import { NotFoundError, ServiceUnavailableError } from '../lib/errors';
 import prisma from '../lib/prisma';
 import { getAiDetectionServiceClient } from '../lib/http-client';
-import { aiAnswerCache } from '../../shared/cache/caching-strategy';
+import { apiCache } from '../lib/cache';
 import { addSpanEvent, setSpanAttribute } from '../lib/tracing';
 import { withRetry, createLoggedRetry } from '../lib/db-retry';
 
@@ -35,7 +35,7 @@ export default async function analysisRoutes(fastify: FastifyInstance) {
       tags: ['Analysis'],
       summary: 'Analyze interview question',
       description: 'Generates AI answers and analysis for an interview question',
-      body: analyzeQuestionRequestSchema,
+      
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
@@ -95,7 +95,7 @@ export default async function analysisRoutes(fastify: FastifyInstance) {
 
       for (const model of requestedModels) {
         // Check cache first
-        const cached = await aiAnswerCache.get(questionText, model);
+        const cached = await apiCache.aiAnswer.get(questionText, model);
         if (cached) {
           if (request.span) {
             addSpanEvent(request.span, 'cache_hit', { model });
@@ -128,7 +128,7 @@ export default async function analysisRoutes(fastify: FastifyInstance) {
 
           if (response.statusCode === 200 && response.data) {
             // Cache the response
-            await aiAnswerCache.set(
+            await apiCache.aiAnswer.set(
               questionText,
               model,
               response.data.answer,
@@ -191,7 +191,7 @@ export default async function analysisRoutes(fastify: FastifyInstance) {
       tags: ['Analysis'],
       summary: 'Analyze interview answer',
       description: 'Analyzes an interview answer for AI detection',
-      body: analyzeAnswerRequestSchema,
+      
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {

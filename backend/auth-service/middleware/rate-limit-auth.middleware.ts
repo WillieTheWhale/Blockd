@@ -50,8 +50,12 @@ export async function checkAccountLock(
       return;
     }
 
-    // Don't fail on errors, just log
-    console.error('Account lock check failed:', error);
+    // Don't fail on errors, log without exposing sensitive data
+    // Use request.log if available (Fastify), otherwise silently continue
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    if (request.log) {
+      request.log.error({ error: errorMessage, service: 'account-lock-check' }, 'Account lock check failed');
+    }
   }
 }
 

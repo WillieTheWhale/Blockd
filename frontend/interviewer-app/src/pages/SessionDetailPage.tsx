@@ -188,6 +188,10 @@ export function SessionDetailPage() {
       document.body.appendChild(link)
       link.click()
       link.remove()
+      // Revoke blob URL to prevent memory leak
+      setTimeout(() => {
+        window.URL.revokeObjectURL(url)
+      }, 100)
       toast.success('Report downloaded successfully')
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to download report'

@@ -2,8 +2,8 @@ import { create } from 'zustand'
 import { devtools, persist } from 'zustand/middleware'
 import type { User, LoginCredentials, RegisterData, ProfileUpdateFormData } from '@/types'
 import { clearTokens, setTokens as setAuthTokens } from '@/lib/auth'
-import { STORAGE_KEYS } from '@/lib/constants'
-import { apiRequest } from '@/lib/api-client'
+import { STORAGE_KEYS, OAUTH_CONFIG } from '@/lib/constants'
+import { apiRequest, getErrorMessage } from '@/lib/api-client'
 import { validateOAuthCallback, clearOAuthState } from '@/lib/oauth'
 
 interface AuthState {
@@ -88,7 +88,7 @@ export const useAuthStore = create<AuthStore>()(
             set({ isLoading: false })
             return { success: true }
           } catch (error) {
-            const message = error instanceof Error ? error.message : 'Login failed'
+            const message = getErrorMessage(error)
             set({ isLoading: false, error: message })
             return { success: false }
           }
@@ -109,7 +109,7 @@ export const useAuthStore = create<AuthStore>()(
             set({ isLoading: false })
             return { success: true }
           } catch (error) {
-            const message = error instanceof Error ? error.message : 'Registration failed'
+            const message = getErrorMessage(error)
             set({ isLoading: false, error: message })
             return { success: false }
           }
@@ -122,7 +122,7 @@ export const useAuthStore = create<AuthStore>()(
             set({ user, isLoading: false })
             return { success: true }
           } catch (error) {
-            const message = error instanceof Error ? error.message : 'Profile update failed'
+            const message = getErrorMessage(error)
             set({ isLoading: false, error: message })
             return { success: false }
           }
@@ -138,7 +138,7 @@ export const useAuthStore = create<AuthStore>()(
             set({ isLoading: false })
             return { success: true }
           } catch (error) {
-            const message = error instanceof Error ? error.message : 'Password change failed'
+            const message = getErrorMessage(error)
             set({ isLoading: false, error: message })
             return { success: false }
           }
@@ -154,7 +154,7 @@ export const useAuthStore = create<AuthStore>()(
             set({ isLoading: false, mfaSetupData: response })
             return { success: true, qrCode: response.qrCode, secret: response.secret }
           } catch (error) {
-            const message = error instanceof Error ? error.message : 'MFA setup failed'
+            const message = getErrorMessage(error)
             set({ isLoading: false, error: message })
             return { success: false }
           }
@@ -169,7 +169,7 @@ export const useAuthStore = create<AuthStore>()(
             set({ isLoading: false, user: response.user, mfaSetupData: null })
             return { success: true }
           } catch (error) {
-            const message = error instanceof Error ? error.message : 'MFA verification failed'
+            const message = getErrorMessage(error)
             set({ isLoading: false, error: message })
             return { success: false }
           }
@@ -184,7 +184,7 @@ export const useAuthStore = create<AuthStore>()(
             set({ isLoading: false, user: response.user })
             return { success: true }
           } catch (error) {
-            const message = error instanceof Error ? error.message : 'MFA disable failed'
+            const message = getErrorMessage(error)
             set({ isLoading: false, error: message })
             return { success: false }
           }
@@ -197,7 +197,7 @@ export const useAuthStore = create<AuthStore>()(
             set({ isLoading: false })
             return { success: true }
           } catch (error) {
-            const message = error instanceof Error ? error.message : 'Password reset request failed'
+            const message = getErrorMessage(error)
             set({ isLoading: false, error: message })
             return { success: false }
           }
@@ -210,7 +210,7 @@ export const useAuthStore = create<AuthStore>()(
             set({ isLoading: false })
             return { success: true }
           } catch (error) {
-            const message = error instanceof Error ? error.message : 'Password reset failed'
+            const message = getErrorMessage(error)
             set({ isLoading: false, error: message })
             return { success: false }
           }
@@ -238,6 +238,7 @@ export const useAuthStore = create<AuthStore>()(
               code,
               codeVerifier: storedState.codeVerifier,
               provider: storedState.provider,
+              redirectUri: OAUTH_CONFIG.REDIRECT_URI,
             })
 
             const { user, accessToken, refreshToken } = response
@@ -256,7 +257,7 @@ export const useAuthStore = create<AuthStore>()(
               ? { success: true, redirectPath: storedState.redirectPath }
               : { success: true }
           } catch (error) {
-            const message = error instanceof Error ? error.message : 'OAuth callback failed'
+            const message = getErrorMessage(error)
             set({ isLoading: false, error: message })
             clearOAuthState()
             return { success: false, error: message }

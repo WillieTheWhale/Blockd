@@ -46,7 +46,7 @@ export default {
           4: 'hsl(var(--chart-4))',
           5: 'hsl(var(--chart-5))',
         },
-        // Blockd Brand Colors
+        // Blockd Brand Colors - Professional Blue Palette
         blockd: {
           // Primary Background
           'egg-white': '#F3F6FB',
@@ -54,10 +54,10 @@ export default {
           'black-blue': '#01101B',
           // Secondary Text
           'grey-blue': '#36454F',
-          // Interactive Elements
-          'darker-teal': '#687193',
-          // Highlights
-          'teal': '#9099BB',
+          // Interactive Elements (shifted to dark blue)
+          'dark-blue': '#1E3A5F',
+          // Highlights (bright blue)
+          'blue': '#3B82F6',
         },
         // Egg White scale (light backgrounds)
         'egg-white': {
@@ -79,19 +79,19 @@ export default {
           400: '#060C16',
           500: '#01101B',
         },
-        // Teal scale (accents)
-        'teal': {
-          DEFAULT: '#9099BB',
-          50: '#E8EAF2',
-          100: '#D1D5E5',
-          200: '#BAC0D8',
-          300: '#A3ABCB',
-          400: '#9099BB',
-          500: '#687193',
-          600: '#565E7A',
-          700: '#444B61',
-          800: '#323848',
-          900: '#20252F',
+        // Blue scale (primary accents - replacing teal)
+        'blockd-blue': {
+          DEFAULT: '#1E3A5F',
+          50: '#EFF6FF',
+          100: '#DBEAFE',
+          200: '#BFDBFE',
+          300: '#93C5FD',
+          400: '#60A5FA',
+          500: '#3B82F6',
+          600: '#2563EB',
+          700: '#1D4ED8',
+          800: '#1E3A5F',
+          900: '#16263D',
         },
       },
       borderRadius: {
@@ -128,8 +128,9 @@ export default {
         'gradient-conic': 'conic-gradient(from 180deg at 50% 50%, var(--tw-gradient-stops))',
       },
       boxShadow: {
-        glow: '0 0 20px -5px hsl(var(--primary) / 0.3)',
-        'glow-lg': '0 0 40px -10px hsl(var(--primary) / 0.4)',
+        glow: '0 0 20px -5px hsl(217 91% 60% / 0.3)',
+        'glow-lg': '0 0 40px -10px hsl(217 91% 60% / 0.4)',
+        'card': '0 1px 3px 0 rgb(0 0 0 / 0.08), 0 1px 2px -1px rgb(0 0 0 / 0.08)',
       },
     },
   },

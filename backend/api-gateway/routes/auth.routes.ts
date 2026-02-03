@@ -57,16 +57,21 @@ function maskEmail(email: string): string {
 
 export default async function authRoutes(fastify: FastifyInstance) {
   // Register endpoint
-  fastify.post<{ Body: RegisterRequest }>('/register', {
+  fastify.post<{ Body: RegisterRequest & { name?: string } }>('/register', {
     preHandler: [publicRateLimiter, validateBody(registerRequestSchema)],
     schema: {
       tags: ['Authentication'],
       summary: 'Register a new user',
       description: 'Creates a new user account',
-      body: registerRequestSchema,
     },
     handler: async (request, reply) => {
       const { email, password, firstName, lastName, role, organizationId } = request.body;
+      // Support both name (from frontend) and firstName/lastName
+      const body = request.body as { name?: string; organization?: string };
+      const name = body.name;
+      // organizationId must be a valid UUID - organization string from frontend is ignored for now
+      // TODO: Look up organization by name or create new one
+      const finalOrgId = organizationId || undefined;
 
       // Check if user already exists
       const existingUser = await prisma.user.findUnique({
@@ -91,15 +96,24 @@ export default async function authRoutes(fastify: FastifyInstance) {
       // Hash password using bcrypt
       const passwordHash = await hashPassword(password);
 
+      // Parse name into firstName/lastName if provided
+      let finalFirstName = firstName;
+      let finalLastName = lastName;
+      if (name && !firstName && !lastName) {
+        const nameParts = name.trim().split(' ');
+        finalFirstName = nameParts[0];
+        finalLastName = nameParts.slice(1).join(' ') || undefined;
+      }
+
       // Create user
       const user = await prisma.user.create({
         data: {
           email,
           passwordHash,
-          firstName,
-          lastName,
+          firstName: finalFirstName,
+          lastName: finalLastName,
           role: role as UserRole,
-          organizationId,
+          organizationId: finalOrgId,
         },
       });
 
@@ -111,18 +125,23 @@ export default async function authRoutes(fastify: FastifyInstance) {
         organizationId: user.organizationId || undefined,
       });
 
+      // Build user's full name
+      const fullName = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email;
+
+      // Return response in format expected by frontend (flat tokens)
       const response = {
         user: {
           id: user.id,
           email: user.email,
+          name: fullName,
           role: user.role,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          organizationId: user.organizationId,
-          mfaEnabled: user.mfaEnabled,
-          emailVerified: user.emailVerified,
+          avatar: null,
+          createdAt: user.createdAt.toISOString(),
+          updatedAt: user.updatedAt.toISOString(),
         },
-        tokens,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresIn: tokens.expiresIn,
       };
 
       return sendCreated(reply, response);
@@ -136,7 +155,6 @@ export default async function authRoutes(fastify: FastifyInstance) {
       tags: ['Authentication'],
       summary: 'Login user',
       description: 'Authenticates a user and returns JWT tokens',
-      body: loginRequestSchema,
     },
     handler: async (request, reply) => {
       const { email, password, mfaCode } = request.body;
@@ -239,18 +257,24 @@ export default async function authRoutes(fastify: FastifyInstance) {
       // Clear any login failure tracking on successful login
       await recordMfaSuccess(user.id);
 
+      // Build user's full name
+      const fullName = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email;
+
+      // Return response in format expected by frontend (flat tokens)
       const response = {
         user: {
           id: user.id,
           email: user.email,
+          name: fullName,
           role: user.role,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          organizationId: user.organizationId,
-          mfaEnabled: user.mfaEnabled,
-          emailVerified: user.emailVerified,
+          avatar: null,
+          createdAt: user.createdAt.toISOString(),
+          updatedAt: user.updatedAt.toISOString(),
         },
-        tokens,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresIn: tokens.expiresIn,
+        requiresMfa: false,
       };
 
       return sendSuccess(reply, response);
@@ -264,7 +288,6 @@ export default async function authRoutes(fastify: FastifyInstance) {
       tags: ['Authentication'],
       summary: 'Refresh access token',
       description: 'Generates a new access token using a refresh token',
-      body: refreshTokenRequestSchema,
     },
     handler: async (request, reply) => {
       const { refreshToken } = request.body;
@@ -292,7 +315,12 @@ export default async function authRoutes(fastify: FastifyInstance) {
       // Revoke old refresh token
       await revokeRefreshToken(user.id, refreshToken);
 
-      return sendSuccess(reply, { tokens });
+      // Return response in format expected by frontend
+      return sendSuccess(reply, {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresIn: tokens.expiresIn,
+      });
     },
   });
 
@@ -303,7 +331,6 @@ export default async function authRoutes(fastify: FastifyInstance) {
       tags: ['Authentication'],
       summary: 'Logout user',
       description: 'Revokes the refresh token',
-      body: logoutRequestSchema,
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
@@ -328,7 +355,6 @@ export default async function authRoutes(fastify: FastifyInstance) {
       tags: ['Authentication'],
       summary: 'Setup MFA',
       description: 'Enables or disables MFA for the user',
-      body: mfaSetupRequestSchema,
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
@@ -377,7 +403,6 @@ export default async function authRoutes(fastify: FastifyInstance) {
       tags: ['Authentication'],
       summary: 'Verify MFA code',
       description: 'Verifies a 2FA code during setup. Rate limited to 5 attempts per 15 minutes with progressive lockout.',
-      body: mfaVerifyRequestSchema,
     },
     handler: async (request, reply) => {
       const { code, secret } = request.body;
@@ -413,7 +438,6 @@ export default async function authRoutes(fastify: FastifyInstance) {
       tags: ['Authentication'],
       summary: 'Complete MFA setup',
       description: 'Verifies MFA code and enables MFA for the user account',
-      body: mfaVerifyRequestSchema,
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
@@ -457,4 +481,257 @@ export default async function authRoutes(fastify: FastifyInstance) {
       });
     },
   });
+
+  // OAuth callback endpoint - handles authorization code exchange
+  fastify.post<{ Body: OAuthCallbackBody }>('/oauth/callback', {
+    preHandler: [publicRateLimiter],
+    schema: {
+      tags: ['Authentication'],
+      summary: 'OAuth callback',
+      description: 'Exchange OAuth authorization code for tokens',
+    },
+    handler: async (request, reply) => {
+      const { code, codeVerifier, provider, redirectUri } = request.body;
+
+      if (!code || !codeVerifier || !provider) {
+        throw new BadRequestError('Missing required OAuth parameters');
+      }
+
+      if (provider !== 'google' && provider !== 'microsoft') {
+        throw new BadRequestError('Invalid OAuth provider');
+      }
+
+      try {
+        // Exchange code for tokens with the OAuth provider
+        const oauthUserInfo = await exchangeOAuthCode(provider, code, codeVerifier, redirectUri);
+
+        // Get or create user from OAuth info
+        let user = await prisma.user.findUnique({
+          where: { email: oauthUserInfo.email },
+        });
+
+        if (!user) {
+          // Create new user from OAuth info
+          user = await prisma.user.create({
+            data: {
+              email: oauthUserInfo.email,
+              firstName: oauthUserInfo.firstName,
+              lastName: oauthUserInfo.lastName,
+              role: 'interviewee' as UserRole,
+              emailVerified: true, // OAuth providers verify email
+              passwordHash: '', // OAuth users don't have password
+            },
+          });
+        } else if (!user.emailVerified) {
+          // Mark email as verified for existing users
+          await prisma.user.update({
+            where: { id: user.id },
+            data: { emailVerified: true },
+          });
+          user.emailVerified = true;
+        }
+
+        // Generate tokens
+        const tokens = await generateTokenPair({
+          userId: user.id,
+          email: user.email,
+          role: user.role,
+          organizationId: user.organizationId || undefined,
+        });
+
+        // Build user's full name
+        const fullName = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email;
+
+        // Return response in format expected by frontend
+        const response = {
+          user: {
+            id: user.id,
+            email: user.email,
+            name: fullName,
+            role: user.role,
+            avatar: null,
+            createdAt: user.createdAt.toISOString(),
+            updatedAt: user.updatedAt.toISOString(),
+          },
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+          expiresIn: tokens.expiresIn,
+        };
+
+        return sendSuccess(reply, response);
+      } catch (error) {
+        request.log.error({ error }, 'OAuth callback failed');
+        throw new BadRequestError('OAuth authentication failed. Please try again.');
+      }
+    },
+  });
+}
+
+// OAuth callback body type
+interface OAuthCallbackBody {
+  code: string;
+  codeVerifier: string;
+  provider: 'google' | 'microsoft';
+  redirectUri?: string;
+}
+
+// OAuth user info from provider
+interface OAuthUserInfo {
+  email: string;
+  firstName?: string;
+  lastName?: string;
+  picture?: string;
+}
+
+/**
+ * Exchange OAuth authorization code for user info
+ */
+async function exchangeOAuthCode(
+  provider: 'google' | 'microsoft',
+  code: string,
+  codeVerifier: string,
+  redirectUri?: string
+): Promise<OAuthUserInfo> {
+  if (provider === 'google') {
+    return exchangeGoogleCode(code, codeVerifier, redirectUri);
+  } else {
+    return exchangeMicrosoftCode(code, codeVerifier, redirectUri);
+  }
+}
+
+/**
+ * Exchange Google OAuth code for user info
+ */
+async function exchangeGoogleCode(
+  code: string,
+  codeVerifier: string,
+  redirectUri?: string
+): Promise<OAuthUserInfo> {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  const finalRedirectUri = redirectUri || process.env.GOOGLE_CALLBACK_URL || 'http://localhost:5174/auth/callback';
+
+  if (!clientId) {
+    throw new Error('GOOGLE_CLIENT_ID not configured');
+  }
+
+  // Exchange code for tokens
+  const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret || '',
+      code,
+      code_verifier: codeVerifier,
+      grant_type: 'authorization_code',
+      redirect_uri: finalRedirectUri,
+    }),
+  });
+
+  if (!tokenResponse.ok) {
+    const error = await tokenResponse.text();
+    console.error('Google token exchange failed:', error);
+    throw new Error('Failed to exchange Google authorization code');
+  }
+
+  const tokenData = await tokenResponse.json() as { access_token: string };
+
+  // Get user info
+  const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+    headers: {
+      Authorization: `Bearer ${tokenData.access_token}`,
+    },
+  });
+
+  if (!userInfoResponse.ok) {
+    throw new Error('Failed to fetch Google user info');
+  }
+
+  const userInfo = await userInfoResponse.json() as {
+    email: string;
+    given_name?: string;
+    family_name?: string;
+    picture?: string;
+  };
+
+  return {
+    email: userInfo.email,
+    firstName: userInfo.given_name,
+    lastName: userInfo.family_name,
+    picture: userInfo.picture,
+  };
+}
+
+/**
+ * Exchange Microsoft OAuth code for user info
+ */
+async function exchangeMicrosoftCode(
+  code: string,
+  codeVerifier: string,
+  redirectUri?: string
+): Promise<OAuthUserInfo> {
+  const clientId = process.env.MICROSOFT_CLIENT_ID;
+  const clientSecret = process.env.MICROSOFT_CLIENT_SECRET;
+  const finalRedirectUri = redirectUri || process.env.MICROSOFT_CALLBACK_URL || 'http://localhost:5174/auth/callback';
+
+  if (!clientId) {
+    throw new Error('MICROSOFT_CLIENT_ID not configured');
+  }
+
+  // Exchange code for tokens
+  const tokenParams = new URLSearchParams({
+    client_id: clientId,
+    code,
+    code_verifier: codeVerifier,
+    grant_type: 'authorization_code',
+    redirect_uri: finalRedirectUri,
+  });
+
+  // Microsoft requires client_secret for web apps if configured
+  if (clientSecret) {
+    tokenParams.append('client_secret', clientSecret);
+  }
+
+  const tokenResponse = await fetch('https://login.microsoftonline.com/common/oauth2/v2.0/token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: tokenParams,
+  });
+
+  if (!tokenResponse.ok) {
+    const error = await tokenResponse.text();
+    console.error('Microsoft token exchange failed:', error);
+    throw new Error('Failed to exchange Microsoft authorization code');
+  }
+
+  const tokenData = await tokenResponse.json() as { access_token: string };
+
+  // Get user info
+  const userInfoResponse = await fetch('https://graph.microsoft.com/v1.0/me', {
+    headers: {
+      Authorization: `Bearer ${tokenData.access_token}`,
+    },
+  });
+
+  if (!userInfoResponse.ok) {
+    throw new Error('Failed to fetch Microsoft user info');
+  }
+
+  const userInfo = await userInfoResponse.json() as {
+    mail?: string;
+    userPrincipalName: string;
+    givenName?: string;
+    surname?: string;
+  };
+
+  return {
+    email: userInfo.mail || userInfo.userPrincipalName,
+    firstName: userInfo.givenName,
+    lastName: userInfo.surname,
+  };
 }

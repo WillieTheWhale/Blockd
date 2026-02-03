@@ -4,19 +4,19 @@
   "values": [
     {
       "key": "baseUrl",
-      "value": "https://api.blockd.io/api",
+      "value": "https://api.blockd.site/api",
       "type": "default",
       "enabled": true
     },
     {
       "key": "wsUrl",
-      "value": "wss://ws.blockd.io",
+      "value": "wss://ws.blockd.site",
       "type": "default",
       "enabled": true
     },
     {
       "key": "frontendUrl",
-      "value": "https://blockd.io",
+      "value": "https://blockd.site",
       "type": "default",
       "enabled": true
     },

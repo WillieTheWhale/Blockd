@@ -400,7 +400,7 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
           session_id: { type: 'string', format: 'uuid' },
         },
       },
-      body: emailReportRecipientsSchema,
+      
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {

@@ -40,6 +40,7 @@ export function GazeHeatmap({
 }: GazeHeatmapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const heatmapInstanceRef = useRef<h337.Heatmap<'value', 'x', 'y'> | null>(null)
+  const mountedRef = useRef(true)
 
   const [isPlaying, setIsPlaying] = useState(!isRecorded)
   const [playbackIndex, setPlaybackIndex] = useState(0)
@@ -81,6 +82,7 @@ export function GazeHeatmap({
     return () => {
       // Cleanup
       heatmapInstanceRef.current = null
+      mountedRef.current = false
     }
   }, [])
 
@@ -201,19 +203,20 @@ export function GazeHeatmap({
    * Export heatmap as PNG
    */
   const handleExport = useCallback(() => {
-    if (!containerRef.current) return
+    if (!containerRef.current || !mountedRef.current) return
 
     const canvas = containerRef.current.querySelector('canvas')
     if (!canvas) return
 
     canvas.toBlob((blob) => {
-      if (!blob) return
+      if (!blob || !mountedRef.current) return
 
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
       a.download = `gaze-heatmap-${sessionId}-${Date.now()}.png`
       a.click()
+      // Revoke URL immediately after click - browser handles download asynchronously
       URL.revokeObjectURL(url)
     })
   }, [sessionId])

@@ -14,7 +14,7 @@ groups:
         annotations:
           summary: "High error rate detected in {{ $labels.service }}"
           description: "Service {{ $labels.service }} has error rate of {{ $value | humanizePercentage }} (threshold: 1%)"
-          runbook_url: "https://docs.blockd.io/runbooks/high-error-rate"
+          runbook_url: "https://docs.blockd.site/runbooks/high-error-rate"
 
       # High Latency Alert
       - alert: HighLatency
@@ -29,7 +29,7 @@ groups:
         annotations:
           summary: "High latency detected in {{ $labels.service }}"
           description: "Service {{ $labels.service }} p95 latency is {{ $value }}s (threshold: 500ms)"
-          runbook_url: "https://docs.blockd.io/runbooks/high-latency"
+          runbook_url: "https://docs.blockd.site/runbooks/high-latency"
 
       # Service Down Alert
       - alert: ServiceDown
@@ -41,7 +41,7 @@ groups:
         annotations:
           summary: "Service {{ $labels.job }} is down"
           description: "Service {{ $labels.job }} on {{ $labels.instance }} has been down for more than 2 minutes"
-          runbook_url: "https://docs.blockd.io/runbooks/service-down"
+          runbook_url: "https://docs.blockd.site/runbooks/service-down"
 
       # Database Connection Pool Exhausted
       - alert: DatabaseConnectionPoolExhausted
@@ -54,7 +54,7 @@ groups:
         annotations:
           summary: "Database connection pool near exhaustion"
           description: "Database connection pool is at {{ $value | humanizePercentage }} capacity (threshold: 90%)"
-          runbook_url: "https://docs.blockd.io/runbooks/database-connections"
+          runbook_url: "https://docs.blockd.site/runbooks/database-connections"
 
       # High Database Query Time
       - alert: HighDatabaseQueryTime
@@ -67,7 +67,7 @@ groups:
         annotations:
           summary: "High database query time detected"
           description: "Average query time is {{ $value }}s (threshold: 1s)"
-          runbook_url: "https://docs.blockd.io/runbooks/slow-queries"
+          runbook_url: "https://docs.blockd.site/runbooks/slow-queries"
 
       # Redis Memory High
       - alert: RedisMemoryHigh
@@ -80,7 +80,7 @@ groups:
         annotations:
           summary: "Redis memory usage is high"
           description: "Redis memory usage is at {{ $value | humanizePercentage }} (threshold: 80%)"
-          runbook_url: "https://docs.blockd.io/runbooks/redis-memory"
+          runbook_url: "https://docs.blockd.site/runbooks/redis-memory"
 
       # Redis Cache Hit Rate Low
       - alert: RedisCacheHitRateLow
@@ -94,7 +94,7 @@ groups:
         annotations:
           summary: "Redis cache hit rate is low"
           description: "Redis cache hit rate is {{ $value | humanizePercentage }} (threshold: 80%)"
-          runbook_url: "https://docs.blockd.io/runbooks/cache-performance"
+          runbook_url: "https://docs.blockd.site/runbooks/cache-performance"
 
       # Pod CPU Usage High
       - alert: PodCPUUsageHigh
@@ -108,7 +108,7 @@ groups:
         annotations:
           summary: "Pod {{ $labels.pod }} CPU usage is high"
           description: "Pod {{ $labels.pod }} CPU usage is at {{ $value | humanizePercentage }} (threshold: 90%)"
-          runbook_url: "https://docs.blockd.io/runbooks/pod-resources"
+          runbook_url: "https://docs.blockd.site/runbooks/pod-resources"
 
       # Pod Memory Usage High
       - alert: PodMemoryUsageHigh
@@ -122,7 +122,7 @@ groups:
         annotations:
           summary: "Pod {{ $labels.pod }} memory usage is high"
           description: "Pod {{ $labels.pod }} memory usage is at {{ $value | humanizePercentage }} (threshold: 90%)"
-          runbook_url: "https://docs.blockd.io/runbooks/pod-resources"
+          runbook_url: "https://docs.blockd.site/runbooks/pod-resources"
 
       # Pod Restart Frequency High
       - alert: PodRestartingFrequently
@@ -135,7 +135,7 @@ groups:
         annotations:
           summary: "Pod {{ $labels.pod }} is restarting frequently"
           description: "Pod {{ $labels.pod }} has restarted {{ $value }} times in the last 15 minutes"
-          runbook_url: "https://docs.blockd.io/runbooks/pod-restarts"
+          runbook_url: "https://docs.blockd.site/runbooks/pod-restarts"
 
       # Disk Space Low
       - alert: DiskSpaceLow
@@ -149,7 +149,7 @@ groups:
         annotations:
           summary: "Disk space is low on {{ $labels.instance }}"
           description: "Disk space on {{ $labels.instance }} is at {{ $value | humanizePercentage }} available (threshold: 20%)"
-          runbook_url: "https://docs.blockd.io/runbooks/disk-space"
+          runbook_url: "https://docs.blockd.site/runbooks/disk-space"
 
       # AI Detection Service Slow
       - alert: AIDetectionServiceSlow
@@ -164,7 +164,7 @@ groups:
         annotations:
           summary: "AI Detection service is slow"
           description: "AI Detection p95 analysis time is {{ $value }}s (threshold: 5s)"
-          runbook_url: "https://docs.blockd.io/runbooks/ai-detection-slow"
+          runbook_url: "https://docs.blockd.site/runbooks/ai-detection-slow"
 
       # WebSocket Connection Issues
       - alert: WebSocketConnectionIssues
@@ -177,7 +177,7 @@ groups:
         annotations:
           summary: "High WebSocket connection error rate"
           description: "WebSocket connection error rate is {{ $value }} errors/sec"
-          runbook_url: "https://docs.blockd.io/runbooks/websocket-errors"
+          runbook_url: "https://docs.blockd.site/runbooks/websocket-errors"
 
       # Video Service Upload Failures
       - alert: VideoUploadFailures
@@ -190,7 +190,7 @@ groups:
         annotations:
           summary: "High video upload failure rate"
           description: "Video upload failure rate is {{ $value }} failures/sec (threshold: 0.05/sec)"
-          runbook_url: "https://docs.blockd.io/runbooks/video-upload-failures"
+          runbook_url: "https://docs.blockd.site/runbooks/video-upload-failures"
 
       # RabbitMQ Queue Size High
       - alert: RabbitMQQueueSizeHigh
@@ -203,7 +203,7 @@ groups:
         annotations:
           summary: "RabbitMQ queue {{ $labels.queue }} size is high"
           description: "Queue {{ $labels.queue }} has {{ $value }} messages (threshold: 1000)"
-          runbook_url: "https://docs.blockd.io/runbooks/rabbitmq-queue-size"
+          runbook_url: "https://docs.blockd.site/runbooks/rabbitmq-queue-size"
 
       # SSL Certificate Expiring
       - alert: SSLCertificateExpiring
@@ -216,7 +216,7 @@ groups:
         annotations:
           summary: "SSL certificate expiring soon"
           description: "SSL certificate for {{ $labels.domain }} expires in {{ $value }} days"
-          runbook_url: "https://docs.blockd.io/runbooks/ssl-renewal"
+          runbook_url: "https://docs.blockd.site/runbooks/ssl-renewal"
 
       # ==========================================
       # PostgreSQL HA Alerts
@@ -233,7 +233,7 @@ groups:
         annotations:
           summary: "PostgreSQL replication lag detected on {{ $labels.instance }}"
           description: "Replica {{ $labels.instance }} is {{ $value }}s behind primary (threshold: 30s)"
-          runbook_url: "https://docs.blockd.io/runbooks/postgresql-replication-lag"
+          runbook_url: "https://docs.blockd.site/runbooks/postgresql-replication-lag"
 
       # PostgreSQL Replication Lag Critical
       - alert: PostgreSQLReplicationLagCritical
@@ -246,7 +246,7 @@ groups:
         annotations:
           summary: "Critical PostgreSQL replication lag on {{ $labels.instance }}"
           description: "Replica {{ $labels.instance }} is {{ $value }}s behind primary - data loss risk!"
-          runbook_url: "https://docs.blockd.io/runbooks/postgresql-replication-lag"
+          runbook_url: "https://docs.blockd.site/runbooks/postgresql-replication-lag"
 
       # PostgreSQL Replica Down
       - alert: PostgreSQLReplicaDown
@@ -259,7 +259,7 @@ groups:
         annotations:
           summary: "PostgreSQL replica is not streaming"
           description: "PostgreSQL instance {{ $labels.instance }} is not replicating from primary"
-          runbook_url: "https://docs.blockd.io/runbooks/postgresql-replica-down"
+          runbook_url: "https://docs.blockd.site/runbooks/postgresql-replica-down"
 
       # PostgreSQL No Primary
       - alert: PostgreSQLNoPrimary
@@ -272,7 +272,7 @@ groups:
         annotations:
           summary: "No PostgreSQL primary available"
           description: "Patroni cluster has no leader - database is unavailable for writes!"
-          runbook_url: "https://docs.blockd.io/runbooks/postgresql-no-primary"
+          runbook_url: "https://docs.blockd.site/runbooks/postgresql-no-primary"
 
       # PostgreSQL Too Many Primaries (Split Brain)
       - alert: PostgreSQLSplitBrain
@@ -285,7 +285,7 @@ groups:
         annotations:
           summary: "PostgreSQL split brain detected!"
           description: "Multiple PostgreSQL instances claim to be primary - immediate action required!"
-          runbook_url: "https://docs.blockd.io/runbooks/postgresql-split-brain"
+          runbook_url: "https://docs.blockd.site/runbooks/postgresql-split-brain"
 
       # etcd Cluster Unhealthy
       - alert: EtcdClusterUnhealthy
@@ -298,7 +298,7 @@ groups:
         annotations:
           summary: "etcd cluster has no leader"
           description: "etcd cluster is unhealthy - Patroni failover will not work!"
-          runbook_url: "https://docs.blockd.io/runbooks/etcd-unhealthy"
+          runbook_url: "https://docs.blockd.site/runbooks/etcd-unhealthy"
 
       # ==========================================
       # PgBouncer Alerts
@@ -315,7 +315,7 @@ groups:
         annotations:
           summary: "PgBouncer pool utilization high for {{ $labels.database }}"
           description: "PgBouncer pool {{ $labels.database }} is at {{ $value | humanizePercentage }} capacity"
-          runbook_url: "https://docs.blockd.io/runbooks/pgbouncer-pool-utilization"
+          runbook_url: "https://docs.blockd.site/runbooks/pgbouncer-pool-utilization"
 
       # PgBouncer Pool Exhausted
       - alert: PgBouncerPoolExhausted
@@ -328,7 +328,7 @@ groups:
         annotations:
           summary: "PgBouncer pool nearly exhausted for {{ $labels.database }}"
           description: "PgBouncer pool {{ $labels.database }} is at {{ $value | humanizePercentage }} - connections will be rejected!"
-          runbook_url: "https://docs.blockd.io/runbooks/pgbouncer-pool-exhausted"
+          runbook_url: "https://docs.blockd.site/runbooks/pgbouncer-pool-exhausted"
 
       # PgBouncer Client Wait Time
       - alert: PgBouncerClientWaitTimeHigh
@@ -341,7 +341,7 @@ groups:
         annotations:
           summary: "High client wait time in PgBouncer"
           description: "Clients are waiting {{ $value }}s for database connections (threshold: 5s)"
-          runbook_url: "https://docs.blockd.io/runbooks/pgbouncer-wait-time"
+          runbook_url: "https://docs.blockd.site/runbooks/pgbouncer-wait-time"
 
       # PgBouncer Down
       - alert: PgBouncerDown
@@ -354,7 +354,7 @@ groups:
         annotations:
           summary: "PgBouncer instance is down"
           description: "PgBouncer instance {{ $labels.instance }} is not responding"
-          runbook_url: "https://docs.blockd.io/runbooks/pgbouncer-down"
+          runbook_url: "https://docs.blockd.site/runbooks/pgbouncer-down"
 
       # ==========================================
       # Backup Alerts
@@ -371,7 +371,7 @@ groups:
         annotations:
           summary: "PostgreSQL backup job failed"
           description: "Backup job {{ $labels.job_name }} has failed - check logs for details"
-          runbook_url: "https://docs.blockd.io/runbooks/postgresql-backup-failed"
+          runbook_url: "https://docs.blockd.site/runbooks/postgresql-backup-failed"
 
       # PostgreSQL Backup Missing
       - alert: PostgreSQLBackupMissing
@@ -384,7 +384,7 @@ groups:
         annotations:
           summary: "PostgreSQL backup is overdue"
           description: "Last successful backup was {{ $value | humanizeDuration }} ago (expected: daily)"
-          runbook_url: "https://docs.blockd.io/runbooks/postgresql-backup-missing"
+          runbook_url: "https://docs.blockd.site/runbooks/postgresql-backup-missing"
 
       # WAL Archiving Failed
       - alert: PostgreSQLWALArchivingFailed
@@ -397,4 +397,4 @@ groups:
         annotations:
           summary: "PostgreSQL WAL archiving has failures"
           description: "{{ $value }} WAL files failed to archive - PITR recovery may be incomplete"
-          runbook_url: "https://docs.blockd.io/runbooks/postgresql-wal-archive-failed"
+          runbook_url: "https://docs.blockd.site/runbooks/postgresql-wal-archive-failed"

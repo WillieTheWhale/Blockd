@@ -5,6 +5,8 @@ Ensures models are loaded once and reused
 import logging
 from typing import Optional, Dict
 
+import torch
+
 from .embedding_model import EmbeddingModel, get_embedding_model
 from .perplexity_model import PerplexityModel, get_perplexity_model
 from .xgboost_classifier import XGBoostClassifier, get_xgboost_classifier
@@ -81,13 +83,47 @@ class ModelManager:
         }
 
     def unload_models(self):
-        """Unload all models (for cleanup)"""
+        """Unload all models with proper GPU memory cleanup"""
         logger.info("Unloading all models...")
-        self._embedding_model = None
-        self._perplexity_model = None
-        self._xgboost_classifier = None
+
+        # Clean up embedding model (if it has cleanup method)
+        if self._embedding_model is not None:
+            if hasattr(self._embedding_model, 'cleanup'):
+                try:
+                    self._embedding_model.cleanup()
+                except Exception as e:
+                    logger.error(f"Error cleaning up embedding model: {e}")
+            self._embedding_model = None
+
+        # Clean up perplexity model (has cleanup method for GPU memory)
+        if self._perplexity_model is not None:
+            if hasattr(self._perplexity_model, 'cleanup'):
+                try:
+                    self._perplexity_model.cleanup()
+                except Exception as e:
+                    logger.error(f"Error cleaning up perplexity model: {e}")
+            self._perplexity_model = None
+
+        # Clean up XGBoost classifier (if it has cleanup method)
+        if self._xgboost_classifier is not None:
+            if hasattr(self._xgboost_classifier, 'cleanup'):
+                try:
+                    self._xgboost_classifier.cleanup()
+                except Exception as e:
+                    logger.error(f"Error cleaning up XGBoost classifier: {e}")
+            self._xgboost_classifier = None
+
         self._models_loaded = False
-        logger.info("All models unloaded")
+
+        # Final CUDA cache clear to release any remaining GPU memory
+        if torch.cuda.is_available():
+            try:
+                torch.cuda.empty_cache()
+                logger.info("Final CUDA cache clear completed")
+            except Exception as e:
+                logger.error(f"Error clearing CUDA cache: {e}")
+
+        logger.info("All models unloaded with GPU memory cleanup")
 
 
 # Singleton instance

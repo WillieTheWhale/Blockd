@@ -24,6 +24,12 @@ export interface RateLimitResult {
 class RedisClient {
   private client: Redis | Cluster;
   private isCluster: boolean;
+  // Event handler references for proper cleanup
+  private connectHandler?: () => void;
+  private readyHandler?: () => void;
+  private errorHandler?: (error: Error) => void;
+  private closeHandler?: () => void;
+  private reconnectingHandler?: () => void;
 
   constructor() {
     this.isCluster = process.env.REDIS_CLUSTER_ENABLED === 'true';
@@ -94,27 +100,34 @@ class RedisClient {
 
   /**
    * Setup event handlers for Redis connection
+   * Stores handler references for proper cleanup
    */
   private setupEventHandlers(): void {
-    this.client.on('connect', () => {
+    this.connectHandler = () => {
       console.log('[Redis] Connected to Redis server');
-    });
+    };
 
-    this.client.on('ready', () => {
+    this.readyHandler = () => {
       console.log('[Redis] Redis client ready');
-    });
+    };
 
-    this.client.on('error', (error: Error) => {
+    this.errorHandler = (error: Error) => {
       console.error('[Redis] Redis client error:', error);
-    });
+    };
 
-    this.client.on('close', () => {
+    this.closeHandler = () => {
       console.log('[Redis] Redis connection closed');
-    });
+    };
 
-    this.client.on('reconnecting', () => {
+    this.reconnectingHandler = () => {
       console.log('[Redis] Reconnecting to Redis...');
-    });
+    };
+
+    this.client.on('connect', this.connectHandler);
+    this.client.on('ready', this.readyHandler);
+    this.client.on('error', this.errorHandler);
+    this.client.on('close', this.closeHandler);
+    this.client.on('reconnecting', this.reconnectingHandler);
   }
 
   /**
@@ -454,8 +467,30 @@ class RedisClient {
 
   /**
    * Close Redis connection
+   * Removes event listeners to prevent memory leaks
    */
   async disconnect(): Promise<void> {
+    // Remove event listeners before disconnecting
+    if (this.connectHandler) {
+      this.client.removeListener('connect', this.connectHandler);
+      this.connectHandler = undefined;
+    }
+    if (this.readyHandler) {
+      this.client.removeListener('ready', this.readyHandler);
+      this.readyHandler = undefined;
+    }
+    if (this.errorHandler) {
+      this.client.removeListener('error', this.errorHandler);
+      this.errorHandler = undefined;
+    }
+    if (this.closeHandler) {
+      this.client.removeListener('close', this.closeHandler);
+      this.closeHandler = undefined;
+    }
+    if (this.reconnectingHandler) {
+      this.client.removeListener('reconnecting', this.reconnectingHandler);
+      this.reconnectingHandler = undefined;
+    }
     await this.client.quit();
   }
 

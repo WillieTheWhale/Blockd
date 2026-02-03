@@ -28,7 +28,7 @@ spec:
           annotations:
             summary: "Celery worker deployment {{ $labels.deployment }} has no available replicas"
             description: "All pods for {{ $labels.deployment }} are down. Message processing is halted for this queue type."
-            runbook_url: "https://docs.blockd.com/runbooks/celery-worker-down"
+            runbook_url: "https://docs.blockd.site/runbooks/celery-worker-down"
 
         - alert: CeleryWorkerDegraded
           expr: |
@@ -97,7 +97,7 @@ spec:
           annotations:
             summary: "RabbitMQ queue {{ $labels.queue }} has critical message depth"
             description: "Queue {{ $labels.queue }} has {{ $value }} messages pending. Workers may be unable to keep up with load."
-            runbook_url: "https://docs.blockd.com/runbooks/rabbitmq-queue-critical"
+            runbook_url: "https://docs.blockd.site/runbooks/rabbitmq-queue-critical"
 
         # Security queue special monitoring (lower threshold)
         - alert: SecurityQueueBacklog
@@ -113,7 +113,7 @@ spec:
           annotations:
             summary: "Security queue {{ $labels.queue }} has backlog"
             description: "Security queue {{ $labels.queue }} has {{ $value }} messages. Security events may be delayed."
-            runbook_url: "https://docs.blockd.com/runbooks/security-queue-backlog"
+            runbook_url: "https://docs.blockd.site/runbooks/security-queue-backlog"
 
         # Queue consumers check
         - alert: RabbitMQQueueNoConsumers
@@ -129,7 +129,7 @@ spec:
           annotations:
             summary: "RabbitMQ queue {{ $labels.queue }} has no consumers"
             description: "Queue {{ $labels.queue }} has no consumers connected. Messages will accumulate indefinitely."
-            runbook_url: "https://docs.blockd.com/runbooks/rabbitmq-no-consumers"
+            runbook_url: "https://docs.blockd.site/runbooks/rabbitmq-no-consumers"
 
     - name: celery-task-metrics
       interval: 30s
@@ -164,7 +164,7 @@ spec:
           annotations:
             summary: "Celery task {{ $labels.task }} has critical failure rate"
             description: "Task {{ $labels.task }} has a failure rate of {{ $value | humanizePercentage }}. Investigate immediately."
-            runbook_url: "https://docs.blockd.com/runbooks/celery-task-failures"
+            runbook_url: "https://docs.blockd.site/runbooks/celery-task-failures"
 
         # Task latency
         - alert: CeleryTaskLatencyHigh
@@ -263,7 +263,7 @@ spec:
           annotations:
             summary: "Celery worker pod {{ $labels.pod }} at OOM risk"
             description: "Pod {{ $labels.pod }} is using {{ $value | humanizePercentage }} of memory limit. Imminent OOM kill."
-            runbook_url: "https://docs.blockd.com/runbooks/celery-oom-risk"
+            runbook_url: "https://docs.blockd.site/runbooks/celery-oom-risk"
 
     - name: celery-flower-health
       interval: 30s

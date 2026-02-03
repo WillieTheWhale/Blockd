@@ -10,11 +10,11 @@ grafana:
       kubernetes.io/ingress.class: nginx
       cert-manager.io/cluster-issuer: letsencrypt-prod
     hosts:
-      - grafana-${environment}.blockd.io
+      - grafana-${environment}.blockd.site
     tls:
       - secretName: grafana-tls
         hosts:
-          - grafana-${environment}.blockd.io
+          - grafana-${environment}.blockd.site
 
 prometheus:
   prometheusSpec:

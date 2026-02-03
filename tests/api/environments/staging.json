@@ -4,19 +4,19 @@
   "values": [
     {
       "key": "baseUrl",
-      "value": "https://api-staging.blockd.io/api",
+      "value": "https://api-staging.blockd.site/api",
       "type": "default",
       "enabled": true
     },
     {
       "key": "wsUrl",
-      "value": "wss://ws-staging.blockd.io",
+      "value": "wss://ws-staging.blockd.site",
       "type": "default",
       "enabled": true
     },
     {
       "key": "frontendUrl",
-      "value": "https://staging.blockd.io",
+      "value": "https://staging.blockd.site",
       "type": "default",
       "enabled": true
     },

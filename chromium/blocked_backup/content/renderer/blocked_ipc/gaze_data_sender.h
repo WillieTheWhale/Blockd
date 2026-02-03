@@ -10,7 +10,7 @@
 
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
-#include "chrome/browser/blocked/public/mojom/eye_tracking.mojom.h"
+#include "content/common/blocked/mojom/eye_tracking.mojom.h"
 #include "mojo/public/cpp/bindings/remote.h"
 
 namespace content {

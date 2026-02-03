@@ -2,7 +2,7 @@
 # Override values.yaml for staging deployments
 
 global:
-  imageRegistry: "registry.staging.blockd.com"
+  imageRegistry: "registry.staging.blockd.site"
   imagePullSecrets:
     - name: registry-credentials
 
@@ -90,13 +90,13 @@ rabbitmq:
 # Staging ingress
 ingress:
   hosts:
-    - host: staging.blockd.com
+    - host: staging.blockd.site
       paths:
         - path: /
           pathType: Prefix
           service: frontend
           port: 80
-    - host: api.staging.blockd.com
+    - host: api.staging.blockd.site
       paths:
         - path: /
           pathType: Prefix
@@ -105,8 +105,8 @@ ingress:
   tls:
     - secretName: blockd-staging-tls-cert
       hosts:
-        - staging.blockd.com
-        - api.staging.blockd.com
+        - staging.blockd.site
+        - api.staging.blockd.site
 
 # ConfigMap for staging
 configMap:

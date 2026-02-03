@@ -4,7 +4,7 @@
 !define PRODUCT_NAME "Blockd Browser"
 !define PRODUCT_VERSION "1.0.0"
 !define PRODUCT_PUBLISHER "Blockd Inc."
-!define PRODUCT_WEB_SITE "https://blockd.com"
+!define PRODUCT_WEB_SITE "https://blockd.site"
 !define PRODUCT_DIR_REGKEY "Software\Microsoft\Windows\CurrentVersion\App Paths\blocked.exe"
 !define PRODUCT_UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}"
 !define PRODUCT_UNINST_ROOT_KEY "HKLM"

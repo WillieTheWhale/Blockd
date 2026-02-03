@@ -326,15 +326,38 @@ export function withSessionStateValidation(
   return sessionStateMiddleware[action];
 }
 
-// Periodic cache cleanup
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, value] of sessionCache.entries()) {
-    if (now - value.fetchedAt > CACHE_TTL_MS * 2) {
-      sessionCache.delete(key);
-    }
+// Periodic cache cleanup with proper lifecycle management
+let cacheCleanupIntervalId: NodeJS.Timeout | null = null;
+
+/**
+ * Start the periodic cache cleanup
+ */
+export function startCacheCleanup(): void {
+  if (cacheCleanupIntervalId) {
+    clearInterval(cacheCleanupIntervalId);
   }
-}, CACHE_TTL_MS * 2);
+  cacheCleanupIntervalId = setInterval(() => {
+    const now = Date.now();
+    for (const [key, value] of sessionCache.entries()) {
+      if (now - value.fetchedAt > CACHE_TTL_MS * 2) {
+        sessionCache.delete(key);
+      }
+    }
+  }, CACHE_TTL_MS * 2);
+}
+
+/**
+ * Stop the periodic cache cleanup (call during graceful shutdown)
+ */
+export function stopCacheCleanup(): void {
+  if (cacheCleanupIntervalId) {
+    clearInterval(cacheCleanupIntervalId);
+    cacheCleanupIntervalId = null;
+  }
+}
+
+// Auto-start cleanup on module load
+startCacheCleanup();
 
 export {
   SessionStatus,
@@ -342,4 +365,6 @@ export {
   STATE_DEPENDENT_ACTIONS,
   getSession,
   invalidateSessionCache,
+  startCacheCleanup,
+  stopCacheCleanup,
 };

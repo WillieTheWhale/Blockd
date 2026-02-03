@@ -1,4 +1,4 @@
-// Copyright 2025 The Blocked Authors. All rights reserved.
+// Copyright 2025 The Blockd Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -42,16 +42,29 @@ class MacSecurityMonitor : public BlockedSecurityService::PlatformMonitor {
 
   bool clipboard_monitoring_active_ = false;
 
-  // Known suspicious processes
+  // Known suspicious processes (AI assistants and cheating tools)
   std::vector<std::string> suspicious_processes_ = {
+    // Screen recording software
     "obs",
     "quicktime player",
     "screen recording",
     "camtasia",
+    // Remote desktop software
     "teamviewer",
     "anydesk",
+    // AI assistants
     "chatgpt",
-    "claude"
+    "claude",
+    // Cluely interview cheating tool (https://cluely.com)
+    // macOS process name from: log show --predicate 'process == "Cluely"'
+    "cluely",
+    // Interview Coder (original name / open-source variant)
+    "interview coder",
+    "interview-coder",
+    "interviewcoder",
+    // Free/open-source Cluely variants
+    "free-cluely",
+    "freecluely"
   };
 };
 

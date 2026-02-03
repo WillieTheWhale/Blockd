@@ -1,0 +1,39 @@
+# Copyright 2025 The Blockd Authors. All rights reserved.
+# Feature flags for Blockd browser modules
+
+declare_args() {
+  # Enable security monitoring (process detection, VM detection, screen recording)
+  blocked_enable_security_monitoring = true
+
+  # Enable eye tracking via MediaPipe
+  blocked_enable_eye_tracking = true
+
+  # Enable system telemetry collection (CPU, memory, focus state)
+  blocked_enable_telemetry = true
+
+  # Enable meeting platform detection (Google Meet, Zoom, MS Teams)
+  blocked_enable_meeting_detection = true
+
+  # Enable video capture from user's camera
+  blocked_enable_video_capture = true
+
+  # Enable media streaming to backend
+  blocked_enable_media_streaming = true
+
+  # Backend WebSocket URL for Blockd services
+  # Empty string disables backend connection
+  blocked_backend_url = ""
+
+  # Default homepage for Blockd browser
+  # This is where interviewees land after login
+  blocked_default_homepage = "https://blockd.site/session"
+
+  # Login URL for Blockd services
+  blocked_login_url = "https://blockd.site/login"
+
+  # Terms of Service URL
+  blocked_terms_url = "https://blockd.site/terms"
+
+  # Meeting platform URL patterns (comma-separated)
+  blocked_meeting_patterns = "meet.google.com,*.zoom.us,zoom.us,teams.microsoft.com,teams.live.com"
+}

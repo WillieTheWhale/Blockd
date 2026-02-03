@@ -7,4 +7,4 @@ solutions = [
     "custom_vars": {},
   },
 ]
-target_os = ["mac"]
+target_os = ["win"]

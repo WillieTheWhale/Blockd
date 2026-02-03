@@ -107,8 +107,8 @@ ORDER BY table_name;
 
 echo ""
 echo -e "${YELLOW}Test Login Credentials:${NC}"
-echo "  Admin: admin@blockd.com / Blockd2025!"
-echo "  Interviewer 1: interviewer1@blockd.com / Blockd2025!"
+echo "  Admin: admin@blockd.site / Blockd2025!"
+echo "  Interviewer 1: interviewer1@blockd.site / Blockd2025!"
 echo "  Interviewer 2: interviewer2@techstartup.com / Blockd2025!"
 echo "  Interviewee 1: interviewee1@example.com / Blockd2025!"
 echo ""

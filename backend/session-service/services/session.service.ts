@@ -127,22 +127,71 @@ export class SessionService {
 
   /**
    * Get session by ID
+   * Optimized query using select to fetch only required fields
+   * and single-query approach to avoid N+1 issues
    */
   async getSessionById(sessionId: string): Promise<SessionDetailResponse> {
     const session = await prisma.interviewSession.findUnique({
       where: { id: sessionId },
       include: {
-        interviewer: true,
-        interviewee: true,
-        organization: true,
+        interviewer: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            role: true,
+          },
+        },
+        interviewee: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            role: true,
+          },
+        },
+        organization: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
         questions: {
           orderBy: { questionOrder: 'asc' },
-          include: {
-            answerAnalysis: true,
+          select: {
+            id: true,
+            questionText: true,
+            questionOrder: true,
+            expectedDuration: true,
+            difficulty: true,
+            askedAt: true,
+            answerAnalysis: {
+              select: {
+                id: true,
+                answerText: true,
+                riskScore: true,
+                isAiGenerated: true,
+                confidenceScore: true,
+                analyzedAt: true,
+              },
+              take: 1, // Only get the latest analysis
+              orderBy: { analyzedAt: 'desc' },
+            },
           },
         },
         securityEvents: {
           orderBy: { timestamp: 'desc' },
+          select: {
+            id: true,
+            eventType: true,
+            severity: true,
+            description: true,
+            metadata: true,
+            timestamp: true,
+          },
+          take: 100, // Limit security events to prevent large payloads
         },
       },
     });
@@ -156,22 +205,70 @@ export class SessionService {
 
   /**
    * Get session by token
+   * Optimized query using select to fetch only required fields
    */
   async getSessionByToken(token: string): Promise<SessionDetailResponse> {
     const session = await prisma.interviewSession.findUnique({
       where: { sessionToken: token },
       include: {
-        interviewer: true,
-        interviewee: true,
-        organization: true,
+        interviewer: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            role: true,
+          },
+        },
+        interviewee: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            role: true,
+          },
+        },
+        organization: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
         questions: {
           orderBy: { questionOrder: 'asc' },
-          include: {
-            answerAnalysis: true,
+          select: {
+            id: true,
+            questionText: true,
+            questionOrder: true,
+            expectedDuration: true,
+            difficulty: true,
+            askedAt: true,
+            answerAnalysis: {
+              select: {
+                id: true,
+                answerText: true,
+                riskScore: true,
+                isAiGenerated: true,
+                confidenceScore: true,
+                analyzedAt: true,
+              },
+              take: 1,
+              orderBy: { analyzedAt: 'desc' },
+            },
           },
         },
         securityEvents: {
           orderBy: { timestamp: 'desc' },
+          select: {
+            id: true,
+            eventType: true,
+            severity: true,
+            description: true,
+            metadata: true,
+            timestamp: true,
+          },
+          take: 100,
         },
       },
     });
@@ -185,12 +282,13 @@ export class SessionService {
 
   /**
    * List sessions with pagination and filters
+   * Optimized with selective field loading and parallel count query
    */
   async listSessions(
     query: SessionListQuery
   ): Promise<PaginatedResponse<SessionDetailResponse>> {
     const page = query.page || 1;
-    const limit = query.limit || 20;
+    const limit = Math.min(query.limit || 20, 50); // Cap at 50 to prevent large queries
     const skip = (page - 1) * limit;
 
     // Build where clause
@@ -207,30 +305,82 @@ export class SessionService {
       if (query.end_date) where.scheduledStart.lte = new Date(query.end_date);
     }
 
-    // Get total count
-    const total = await prisma.interviewSession.count({ where });
-
-    // Get sessions
-    const sessions = await prisma.interviewSession.findMany({
-      where,
-      skip,
-      take: limit,
-      orderBy: { createdAt: 'desc' },
-      include: {
-        interviewer: true,
-        interviewee: true,
-        organization: true,
-        questions: {
-          orderBy: { questionOrder: 'asc' },
-          include: {
-            answerAnalysis: true,
+    // Run count and data queries in parallel for better performance
+    const [total, sessions] = await Promise.all([
+      prisma.interviewSession.count({ where }),
+      prisma.interviewSession.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          interviewer: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+              role: true,
+            },
+          },
+          interviewee: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+              role: true,
+            },
+          },
+          organization: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          questions: {
+            orderBy: { questionOrder: 'asc' },
+            select: {
+              id: true,
+              questionText: true,
+              questionOrder: true,
+              expectedDuration: true,
+              difficulty: true,
+              askedAt: true,
+              answerAnalysis: {
+                select: {
+                  id: true,
+                  answerText: true,
+                  riskScore: true,
+                  isAiGenerated: true,
+                  confidenceScore: true,
+                  analyzedAt: true,
+                },
+                take: 1,
+                orderBy: { analyzedAt: 'desc' },
+              },
+            },
+          },
+          securityEvents: {
+            orderBy: { timestamp: 'desc' },
+            select: {
+              id: true,
+              eventType: true,
+              severity: true,
+              description: true,
+              metadata: true,
+              timestamp: true,
+            },
+            take: 20, // Limit security events in list view
+          },
+          _count: {
+            select: {
+              securityEvents: true, // Include total count for UI
+            },
           },
         },
-        securityEvents: {
-          orderBy: { timestamp: 'desc' },
-        },
-      },
-    });
+      }),
+    ]);
 
     return {
       data: sessions.map((s) => this.formatSessionDetail(s)),

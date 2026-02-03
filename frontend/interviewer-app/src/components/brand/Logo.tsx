@@ -1,5 +1,48 @@
 import { cn } from '@/lib/utils'
 
+// Import official Blockd logos at different sizes
+import logo16 from '@/assets/logos/product_logo_16.png'
+import logo24 from '@/assets/logos/product_logo_24.png'
+import logo32 from '@/assets/logos/product_logo_32.png'
+import logo48 from '@/assets/logos/product_logo_48.png'
+import logo64 from '@/assets/logos/product_logo_64.png'
+import logo128 from '@/assets/logos/product_logo_128.png'
+import logo256 from '@/assets/logos/product_logo_256.png'
+
+// Map sizes to appropriate logo files
+const logoSrcMap = {
+  xs: logo24,
+  sm: logo32,
+  md: logo48,
+  lg: logo64,
+  xl: logo128,
+}
+
+// Pixel sizes for each variant
+const pixelSizeMap = {
+  xs: 20,
+  sm: 24,
+  md: 32,
+  lg: 40,
+  xl: 48,
+}
+
+const textSizeMap = {
+  xs: 'text-sm',
+  sm: 'text-base',
+  md: 'text-xl',
+  lg: 'text-2xl',
+  xl: 'text-3xl',
+}
+
+const gapMap = {
+  xs: 'gap-1.5',
+  sm: 'gap-2',
+  md: 'gap-2.5',
+  lg: 'gap-3',
+  xl: 'gap-3',
+}
+
 interface LogoProps {
   /** Size variant for the logo */
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl'
@@ -7,25 +50,14 @@ interface LogoProps {
   showText?: boolean
   /** Additional CSS classes */
   className?: string
-  /** Icon color class (defaults to current text color) */
-  iconClassName?: string
-  /** Text color class (defaults to current text color) */
+  /** Text color class */
   textClassName?: string
-}
-
-const sizeConfig = {
-  xs: { icon: 'h-5 w-5', text: 'text-sm', gap: 'gap-1.5' },
-  sm: { icon: 'h-6 w-6', text: 'text-base', gap: 'gap-2' },
-  md: { icon: 'h-8 w-8', text: 'text-xl', gap: 'gap-2.5' },
-  lg: { icon: 'h-10 w-10', text: 'text-2xl', gap: 'gap-3' },
-  xl: { icon: 'h-12 w-12', text: 'text-3xl', gap: 'gap-3' },
 }
 
 /**
  * Blockd Logo Component
  *
- * A reusable logo component featuring the stylized "B" with keyhole icon
- * and optional "Blockd" text.
+ * Uses the official Blockd PNG logo from the Chromium browser branding.
  *
  * @example
  * // Icon only (small)
@@ -33,24 +65,27 @@ const sizeConfig = {
  *
  * // Icon with text (medium)
  * <Logo size="md" showText />
- *
- * // Custom colors
- * <Logo size="lg" showText iconClassName="text-primary" textClassName="text-foreground" />
  */
 export function Logo({
   size = 'md',
   showText = false,
   className,
-  iconClassName,
   textClassName,
 }: LogoProps) {
-  const config = sizeConfig[size]
+  const logoSrc = logoSrcMap[size]
+  const pixelSize = pixelSizeMap[size]
 
   return (
-    <div className={cn('flex items-center', config.gap, className)}>
-      <LogoIcon className={cn(config.icon, iconClassName)} />
+    <div className={cn('flex items-center', gapMap[size], className)}>
+      <img
+        src={logoSrc}
+        alt="Blockd"
+        width={pixelSize}
+        height={pixelSize}
+        className="object-contain"
+      />
       {showText && (
-        <span className={cn('font-bold', config.text, textClassName)}>
+        <span className={cn('font-bold', textSizeMap[size], textClassName)}>
           Blockd
         </span>
       )}
@@ -59,105 +94,110 @@ export function Logo({
 }
 
 interface LogoIconProps {
+  /** Size in pixels */
+  size?: number
+  /** Additional CSS classes */
   className?: string
 }
 
 /**
  * Blockd Logo Icon
  *
- * The standalone "B" with keyhole icon SVG.
- * Uses currentColor so it inherits text color from parent.
+ * The official Blockd logo as a PNG image.
+ * Uses the appropriate resolution based on size.
  */
-export function LogoIcon({ className }: LogoIconProps) {
+export function LogoIcon({ size = 32, className }: LogoIconProps) {
+  // Select appropriate resolution based on size
+  let logoSrc = logo32
+  if (size <= 16) logoSrc = logo16
+  else if (size <= 24) logoSrc = logo24
+  else if (size <= 32) logoSrc = logo32
+  else if (size <= 48) logoSrc = logo48
+  else if (size <= 64) logoSrc = logo64
+  else if (size <= 128) logoSrc = logo128
+  else logoSrc = logo256
+
   return (
-    <svg
-      viewBox="0 0 64 80"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      className={className}
-      aria-label="Blockd logo"
-    >
-      {/* Stylized B shape */}
-      <path
-        fillRule="evenodd"
-        clipRule="evenodd"
-        d="M0 0 L0 80 L40 80 C55 80 64 70 64 56 C64 47 59 40 52 36 C58 32 62 25 62 17 C62 7 53 0 40 0 L0 0 Z
-        M14 14 L38 14 C45 14 48 18 48 24 C48 30 45 34 38 34 L14 34 L14 14 Z
-        M14 48 L38 48 C48 48 50 53 50 60 C50 67 48 72 38 72 L14 72 L14 48 Z"
-        fill="currentColor"
-      />
-      {/* Keyhole */}
-      <ellipse cx="32" cy="52" rx="7" ry="8" className="fill-white" />
-      <path d="M28 52 L28 68 L36 68 L36 52 Z" className="fill-white" />
-    </svg>
+    <img
+      src={logoSrc}
+      alt="Blockd"
+      width={size}
+      height={size}
+      className={cn('object-contain', className)}
+    />
   )
 }
 
 interface LogoWithBackgroundProps extends LogoProps {
-  /** Background style */
+  /** Background style - note: PNG logo already has its own background */
   variant?: 'primary' | 'muted' | 'none'
 }
 
 /**
- * Logo with background wrapper
+ * Logo with optional wrapper
  *
- * The logo icon wrapped in a rounded background container,
- * matching the existing UI pattern used in layouts.
+ * The official Blockd PNG logo. The 'variant' prop is kept for API compatibility
+ * but the PNG logo already includes its own rounded background.
  */
 export function LogoWithBackground({
   size = 'md',
   showText = false,
-  variant = 'primary',
   className,
   textClassName,
 }: LogoWithBackgroundProps) {
-  const config = sizeConfig[size]
-
-  const bgSizeMap = {
-    xs: 'h-6 w-6',
-    sm: 'h-7 w-7',
-    md: 'h-8 w-8',
-    lg: 'h-10 w-10',
-    xl: 'h-12 w-12',
-  }
-
-  const iconSizeMap = {
-    xs: 'h-3.5 w-3.5',
-    sm: 'h-4 w-4',
-    md: 'h-5 w-5',
-    lg: 'h-6 w-6',
-    xl: 'h-7 w-7',
-  }
-
-  const bgVariants = {
-    primary: 'bg-primary',
-    muted: 'bg-muted',
-    none: '',
-  }
-
-  const iconVariants = {
-    primary: 'text-primary-foreground',
-    muted: 'text-foreground',
-    none: 'text-current',
-  }
+  const logoSrc = logoSrcMap[size]
+  const pixelSize = pixelSizeMap[size]
 
   return (
-    <div className={cn('flex items-center', config.gap, className)}>
-      <div
-        className={cn(
-          'flex items-center justify-center rounded-lg',
-          bgSizeMap[size],
-          bgVariants[variant]
-        )}
-      >
-        <LogoIcon className={cn(iconSizeMap[size], iconVariants[variant])} />
-      </div>
+    <div className={cn('flex items-center', gapMap[size], className)}>
+      <img
+        src={logoSrc}
+        alt="Blockd"
+        width={pixelSize}
+        height={pixelSize}
+        className="object-contain"
+      />
       {showText && (
-        <span className={cn('font-bold', config.text, textClassName)}>
+        <span className={cn('font-bold', textSizeMap[size], textClassName)}>
           Blockd
         </span>
       )}
     </div>
+  )
+}
+
+/**
+ * Large Logo Image
+ *
+ * For cases where you need a specific pixel size.
+ */
+interface LogoImageProps {
+  /** Height in pixels */
+  height?: number
+  /** Additional CSS classes */
+  className?: string
+  /** Alt text */
+  alt?: string
+}
+
+export function LogoImage({ height = 40, className, alt = 'Blockd' }: LogoImageProps) {
+  // Select appropriate resolution
+  let logoSrc = logo64
+  if (height <= 24) logoSrc = logo24
+  else if (height <= 32) logoSrc = logo32
+  else if (height <= 48) logoSrc = logo48
+  else if (height <= 64) logoSrc = logo64
+  else if (height <= 128) logoSrc = logo128
+  else logoSrc = logo256
+
+  return (
+    <img
+      src={logoSrc}
+      alt={alt}
+      height={height}
+      className={cn('object-contain', className)}
+      style={{ height: `${height}px`, width: 'auto' }}
+    />
   )
 }
 

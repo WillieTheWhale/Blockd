@@ -11,7 +11,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/sequence_checker.h"
 #include "base/time/time.h"
-#include "chrome/browser/blocked/public/mojom/video_capture.mojom.h"
+#include "content/common/blocked/mojom/video_capture.mojom.h"
 
 namespace content {
 

@@ -21,7 +21,7 @@ stringData:
     global:
       # Default SMTP configuration
       smtp_smarthost: 'smtp.sendgrid.net:587'
-      smtp_from: 'alerts@blockd.com'
+      smtp_from: 'alerts@blockd.site'
       smtp_auth_username: 'apikey'
       # smtp_auth_password: Set via external secret
       smtp_require_tls: true
@@ -248,7 +248,7 @@ stringData:
       # Email receiver (for compliance/audit trail)
       - name: 'email-ops'
         email_configs:
-          - to: 'ops-alerts@blockd.com'
+          - to: 'ops-alerts@blockd.site'
             send_resolved: true
             headers:
               Subject: '[{{ .Status | toUpper }}{{ if eq .Status "firing" }} x{{ .Alerts.Firing | len }}{{ end }}] {{ .GroupLabels.alertname }}'

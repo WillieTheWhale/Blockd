@@ -4,7 +4,7 @@
  */
 
 import jwt from 'jsonwebtoken';
-import { getRedisClient } from '../../shared/cache/redis-client';
+import { getRedisClient } from './redis-client';
 import { UnauthorizedError } from './errors';
 
 export interface JwtPayload {
@@ -28,42 +28,67 @@ const REFRESH_TOKEN_EXPIRY = '7d'; // 7 days
 const REFRESH_TOKEN_TTL = 7 * 24 * 60 * 60; // 7 days in seconds
 
 // Get keys from environment
-const getPrivateKey = (): string => {
-  const key = process.env.JWT_PRIVATE_KEY;
-  if (!key) {
-    throw new Error('JWT_PRIVATE_KEY environment variable is not set');
+// Supports both asymmetric (RS256 with JWT_PRIVATE_KEY/JWT_PUBLIC_KEY) and symmetric (HS256 with JWT_SECRET)
+const getSigningKey = (): { key: string; algorithm: 'RS256' | 'HS256' } => {
+  // Try asymmetric keys first (RS256)
+  const privateKey = process.env.JWT_PRIVATE_KEY;
+  if (privateKey) {
+    return {
+      key: privateKey.replace(/\\n/g, '\n'),
+      algorithm: 'RS256',
+    };
   }
-  // Replace \n placeholders with actual newlines
-  return key.replace(/\\n/g, '\n');
+
+  // Fall back to symmetric secret (HS256)
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error('Either JWT_PRIVATE_KEY or JWT_SECRET environment variable must be set');
+  }
+  return {
+    key: secret,
+    algorithm: 'HS256',
+  };
 };
 
-const getPublicKey = (): string => {
-  const key = process.env.JWT_PUBLIC_KEY;
-  if (!key) {
-    throw new Error('JWT_PUBLIC_KEY environment variable is not set');
+const getVerifyKey = (): { key: string; algorithm: 'RS256' | 'HS256' } => {
+  // Try asymmetric keys first (RS256)
+  const publicKey = process.env.JWT_PUBLIC_KEY;
+  if (publicKey) {
+    return {
+      key: publicKey.replace(/\\n/g, '\n'),
+      algorithm: 'RS256',
+    };
   }
-  // Replace \n placeholders with actual newlines
-  return key.replace(/\\n/g, '\n');
+
+  // Fall back to symmetric secret (HS256)
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error('Either JWT_PUBLIC_KEY or JWT_SECRET environment variable must be set');
+  }
+  return {
+    key: secret,
+    algorithm: 'HS256',
+  };
 };
 
 /**
  * Generate access and refresh token pair
  */
 export async function generateTokenPair(payload: Omit<JwtPayload, 'iat' | 'exp'>): Promise<TokenPair> {
-  const privateKey = getPrivateKey();
+  const { key: signingKey, algorithm } = getSigningKey();
   const redis = getRedisClient();
 
   // Generate access token (short-lived)
-  const accessToken = jwt.sign(payload, privateKey, {
-    algorithm: 'RS256',
+  const accessToken = jwt.sign(payload, signingKey, {
+    algorithm,
     expiresIn: ACCESS_TOKEN_EXPIRY,
     issuer: 'blockd-api-gateway',
     audience: 'blockd-platform',
   });
 
   // Generate refresh token (long-lived)
-  const refreshToken = jwt.sign(payload, privateKey, {
-    algorithm: 'RS256',
+  const refreshToken = jwt.sign(payload, signingKey, {
+    algorithm,
     expiresIn: REFRESH_TOKEN_EXPIRY,
     issuer: 'blockd-api-gateway',
     audience: 'blockd-platform',
@@ -88,9 +113,9 @@ export async function generateTokenPair(payload: Omit<JwtPayload, 'iat' | 'exp'>
  */
 export function verifyAccessToken(token: string): JwtPayload {
   try {
-    const publicKey = getPublicKey();
-    const decoded = jwt.verify(token, publicKey, {
-      algorithms: ['RS256'],
+    const { key: verifyKey, algorithm } = getVerifyKey();
+    const decoded = jwt.verify(token, verifyKey, {
+      algorithms: [algorithm],
       issuer: 'blockd-api-gateway',
       audience: 'blockd-platform',
     }) as JwtPayload;
@@ -112,9 +137,9 @@ export function verifyAccessToken(token: string): JwtPayload {
  */
 export async function verifyRefreshToken(token: string): Promise<JwtPayload> {
   try {
-    const publicKey = getPublicKey();
-    const decoded = jwt.verify(token, publicKey, {
-      algorithms: ['RS256'],
+    const { key: verifyKey, algorithm } = getVerifyKey();
+    const decoded = jwt.verify(token, verifyKey, {
+      algorithms: [algorithm],
       issuer: 'blockd-api-gateway',
       audience: 'blockd-platform',
     }) as JwtPayload;

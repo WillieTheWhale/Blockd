@@ -100,14 +100,14 @@ export function MainLayout() {
 
           {/* Search Bar */}
           <div className="hidden md:flex flex-1 max-w-md">
-            <div className="relative w-full">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <div className="relative w-full group">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground transition-colors duration-200 group-focus-within:text-primary" />
               <input
                 type="search"
                 placeholder="Search sessions, candidates..."
-                className="h-9 w-full rounded-md border border-input bg-muted/50 pl-9 pr-4 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background"
+                className="h-9 w-full rounded-md border border-input bg-muted/50 pl-9 pr-4 text-sm placeholder:text-muted-foreground transition-all duration-200 ease-out focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background focus:border-ring hover:border-muted-foreground/50 focus:bg-background"
               />
-              <kbd className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 hidden h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium opacity-100 sm:flex">
+              <kbd className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 hidden h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium opacity-100 sm:flex transition-opacity duration-200 group-focus-within:opacity-0">
                 <span className="text-xs">⌘</span>K
               </kbd>
             </div>
@@ -221,18 +221,24 @@ export function MainLayout() {
                   </p>
                 )}
               </div>
-              {mainNavItems.map((item) => (
+              {mainNavItems.map((item, index) => (
                 <Link key={item.href} to={item.href}>
                   <Button
                     variant={isActive(item.href) ? 'secondary' : 'ghost'}
                     className={cn(
-                      'w-full justify-start transition-colors',
-                      isActive(item.href) && 'bg-primary/10 text-primary hover:bg-primary/20',
+                      'w-full justify-start transition-all duration-200 ease-out group',
+                      isActive(item.href) && 'bg-primary/10 text-primary hover:bg-primary/20 shadow-sm',
+                      !isActive(item.href) && 'hover:translate-x-0.5',
                       sidebarCollapsed ? 'px-2' : 'px-3'
                     )}
+                    style={{ animationDelay: `${index * 50}ms` }}
                   >
                     <item.icon
-                      className={cn('h-5 w-5', sidebarCollapsed ? 'mx-auto' : 'mr-3')}
+                      className={cn(
+                        'h-5 w-5 transition-transform duration-200',
+                        sidebarCollapsed ? 'mx-auto' : 'mr-3',
+                        !isActive(item.href) && 'group-hover:scale-110'
+                      )}
                     />
                     {!sidebarCollapsed && <span>{item.label}</span>}
                     {!sidebarCollapsed && item.badge && (
@@ -252,18 +258,24 @@ export function MainLayout() {
                   </p>
                 )}
               </div>
-              {secondaryNavItems.map((item) => (
+              {secondaryNavItems.map((item, index) => (
                 <Link key={item.href} to={item.href}>
                   <Button
                     variant={isActive(item.href) ? 'secondary' : 'ghost'}
                     className={cn(
-                      'w-full justify-start transition-colors',
-                      isActive(item.href) && 'bg-primary/10 text-primary hover:bg-primary/20',
+                      'w-full justify-start transition-all duration-200 ease-out group',
+                      isActive(item.href) && 'bg-primary/10 text-primary hover:bg-primary/20 shadow-sm',
+                      !isActive(item.href) && 'hover:translate-x-0.5',
                       sidebarCollapsed ? 'px-2' : 'px-3'
                     )}
+                    style={{ animationDelay: `${(index + mainNavItems.length) * 50}ms` }}
                   >
                     <item.icon
-                      className={cn('h-5 w-5', sidebarCollapsed ? 'mx-auto' : 'mr-3')}
+                      className={cn(
+                        'h-5 w-5 transition-transform duration-200',
+                        sidebarCollapsed ? 'mx-auto' : 'mr-3',
+                        !isActive(item.href) && 'group-hover:scale-110'
+                      )}
                     />
                     {!sidebarCollapsed && <span>{item.label}</span>}
                   </Button>
@@ -294,7 +306,7 @@ export function MainLayout() {
         {/* Mobile Overlay */}
         {sidebarOpen && (
           <div
-            className="fixed inset-0 z-20 bg-black/50 md:hidden"
+            className="fixed inset-0 z-20 bg-black/50 md:hidden animate-fade-in"
             onClick={toggleSidebar}
           />
         )}
@@ -302,11 +314,11 @@ export function MainLayout() {
         {/* Main Content */}
         <main
           className={cn(
-            'flex-1 transition-all duration-300',
+            'flex-1 transition-all duration-300 ease-out',
             sidebarCollapsed ? 'md:ml-16' : 'md:ml-64'
           )}
         >
-          <div className="container py-6 px-4 md:px-6 lg:px-8 max-w-7xl">
+          <div className="container py-6 px-4 md:px-6 lg:px-8 max-w-7xl animate-fade-in">
             <Outlet />
           </div>
         </main>

@@ -1,6 +1,6 @@
-// Copyright 2025 The Blocked Authors. All rights reserved.
+// Copyright 2025 The Blockd Authors. All rights reserved.
 //
-// Protocol Buffer definitions for Blocked Browser <-> Backend communication
+// Protocol Buffer definitions for Blockd Browser <-> Backend communication
 
 syntax = "proto3";
 

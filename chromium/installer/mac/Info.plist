@@ -84,7 +84,7 @@
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
 	<key>SUFeedURL</key>
-	<string>https://update.blockd.com/macos/appcast.xml</string>
+	<string>https://update.blockd.site/macos/appcast.xml</string>
 	<key>SUAllowsAutomaticUpdates</key>
 	<true/>
 	<key>SUScheduledCheckInterval</key>

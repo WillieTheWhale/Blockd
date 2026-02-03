@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: staging
-      url: https://staging.blockd.io
+      url: https://staging.blockd.site
 
     steps:
       - name: Checkout code
@@ -104,7 +104,7 @@ jobs:
           echo "Waiting for ingress to be ready..."
           sleep 30
 
-          STAGING_URL="https://staging.blockd.io"
+          STAGING_URL="https://staging.blockd.site"
 
           # Test API Gateway health
           echo "Testing API Gateway..."
@@ -139,7 +139,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": ":rocket: *Staging Deployment Successful*\n*Branch:* ${{ github.ref_name }}\n*Commit:* ${{ github.sha }}\n*Author:* ${{ github.actor }}\n*URL:* https://staging.blockd.io"
+                    "text": ":rocket: *Staging Deployment Successful*\n*Branch:* ${{ github.ref_name }}\n*Commit:* ${{ github.sha }}\n*Author:* ${{ github.actor }}\n*URL:* https://staging.blockd.site"
                   }
                 }
               ]

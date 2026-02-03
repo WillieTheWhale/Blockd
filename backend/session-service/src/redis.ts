@@ -3,7 +3,12 @@ import { config } from './config';
 import { CacheError } from '../lib/errors';
 
 // Redis client singleton
-let redisClient: Redis;
+let redisClient: Redis | null = null;
+
+// Store event handlers for proper cleanup
+let redisErrorHandler: ((error: Error) => void) | null = null;
+let redisConnectHandler: (() => void) | null = null;
+let beforeExitHandler: (() => Promise<void>) | null = null;
 
 export function getRedisClient(): Redis {
   if (!redisClient) {
@@ -20,18 +25,23 @@ export function getRedisClient(): Redis {
       maxRetriesPerRequest: 3,
     });
 
-    redisClient.on('error', (error) => {
+    // Store handlers for cleanup
+    redisErrorHandler = (error) => {
       console.error('Redis error:', error);
-    });
+    };
 
-    redisClient.on('connect', () => {
+    redisConnectHandler = () => {
       console.log('Redis connected');
-    });
+    };
+
+    redisClient.on('error', redisErrorHandler);
+    redisClient.on('connect', redisConnectHandler);
 
     // Handle graceful shutdown
-    process.on('beforeExit', async () => {
-      await redisClient.quit();
-    });
+    beforeExitHandler = async () => {
+      await disconnectRedis();
+    };
+    process.on('beforeExit', beforeExitHandler);
   }
 
   return redisClient;
@@ -39,7 +49,22 @@ export function getRedisClient(): Redis {
 
 export async function disconnectRedis(): Promise<void> {
   if (redisClient) {
+    // Remove event listeners to prevent memory leaks
+    if (redisErrorHandler) {
+      redisClient.removeListener('error', redisErrorHandler);
+      redisErrorHandler = null;
+    }
+    if (redisConnectHandler) {
+      redisClient.removeListener('connect', redisConnectHandler);
+      redisConnectHandler = null;
+    }
+    // Remove process listener
+    if (beforeExitHandler) {
+      process.removeListener('beforeExit', beforeExitHandler);
+      beforeExitHandler = null;
+    }
     await redisClient.quit();
+    redisClient = null;
   }
 }
 

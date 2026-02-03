@@ -1,8 +1,10 @@
-# Blocked Browser - Chromium Build System
+# Blockd Browser - Chromium Build System
 
 ## Overview
 
-This directory contains the build system and source modifications for the **Blocked Interview Browser**, a custom Chromium fork with embedded security monitoring, eye tracking, and anti-cheating capabilities.
+This directory contains the build system and source modifications for the **Blockd Interview Browser**, a custom Chromium fork with embedded security monitoring, eye tracking, and anti-cheating capabilities.
+
+**IMPORTANT:** Always use "Blockd" (not "Blocked") in all user-facing text and branding.
 
 **Base Version:** Chromium 142.0.7444.175 (stable branch)
 
@@ -57,7 +59,36 @@ This directory contains the build system and source modifications for the **Bloc
 
 ## Quick Start
 
-### 1. Initial Setup
+### Using Python Build Script (Recommended)
+
+The simplest way to build the Blockd browser with proper branding:
+
+```bash
+cd Blockd/chromium
+
+# Generate icons from source logo
+python build_blockd.py --icons-only
+
+# Build for Windows (default)
+python build_blockd.py --platform windows --release
+
+# Build for macOS
+python build_blockd.py --platform macos --release
+
+# Build for Linux
+python build_blockd.py --platform linux --release
+
+# Clean build
+python build_blockd.py --clean --platform windows
+```
+
+The build script automatically:
+- Generates all required icon sizes from the Blockd logo
+- Sets up proper branding configuration
+- Configures the build with Blockd feature flags
+- Builds the browser with correct product naming
+
+### 1. Initial Setup (Manual)
 
 ```bash
 # Clone the repository (if not already cloned)
@@ -80,7 +111,7 @@ cd Blockd/chromium
 ### 3. Build
 
 ```bash
-# Build the Blocked Browser (takes 4-8 hours on first build)
+# Build the Blockd Browser (takes 4-8 hours on first build)
 ./build.sh
 ```
 
@@ -90,7 +121,7 @@ cd Blockd/chromium
 
 ```bash
 # Run the built browser
-./out/Blocked/chrome
+./out/Blockd/chrome
 ```
 
 ## Build Configuration
@@ -137,7 +168,7 @@ symbol_level = 1                    # Minimal symbols
 blocked_enable_security_monitoring = true
 blocked_enable_eye_tracking = true
 blocked_enable_telemetry = true
-blocked_backend_url = "wss://api.blockd.com"
+blocked_backend_url = "wss://api.blockd.site"
 
 # Codecs
 proprietary_codecs = true           # H.264 support
@@ -183,7 +214,59 @@ enable_nacl = false                 # No NaCl support
         └── blocked_unittests      # Unit tests
 ```
 
-## Blocked Browser Features
+## Branding
+
+**CRITICAL:** The browser must be branded as "Blockd" (not "Blocked" or "Chromium").
+
+### Logo Assets
+
+The official Blockd logo features:
+- **Stylized "B" with keyhole** design representing security
+- **Modern rounded corners** (22% radius, iOS/macOS style)
+- **Transparent corners** for proper display on any background
+
+Source logo location:
+- `../Blockd_Landing/New_Logos_Colors/BLOCKD_Primary_logo.png`
+
+### Icon Generation
+
+Generate all required icon sizes using:
+```bash
+# From the blocked branding directory
+cd src/chrome/app/theme/blocked
+python fix_logos.py
+```
+
+This creates:
+- `product_logo_16.png` through `product_logo_1024.png` (all sizes with rounded corners)
+- `blockd.ico` (Windows multi-resolution icon)
+- Linux icons in `linux/` directory
+- Copies to `default_100_percent/` and `default_200_percent/`
+
+To preview all icons:
+```bash
+# Open the logo preview page
+start src/chrome/app/theme/blocked/logo_preview.html
+```
+
+### Branding Configuration
+
+The branding is configured in:
+- `src/chrome/app/theme/blocked/BRANDING` - Product names
+- `src/build/config/chrome_build.gni` - Sets `branding_path_component = "blocked"`
+- `args.gn` - Build flags including `chrome_product_short_name = "Blockd"`
+
+### Branding Checklist
+
+Before releasing, verify:
+- [ ] Window title shows "Blockd" not "Chromium"
+- [ ] About dialog shows "Blockd Interview Browser"
+- [ ] Taskbar/dock icon is the Blockd "B" logo with rounded corners
+- [ ] Installer shows "Blockd" branding
+- [ ] All user-facing text uses "Blockd" (not "Blocked")
+- [ ] Icons have rounded corners (22% radius)
+
+## Blockd Browser Features
 
 ### Security Monitoring
 - **Process Detection:** Detects screen recording software (OBS, Camtasia, etc.)
@@ -220,14 +303,14 @@ enable_nacl = false                 # No NaCl support
 
 1. **Edit Source Files:** Modify files in `src/chrome/browser/blocked/`
 2. **Rebuild:** Run `./build.sh` (incremental build)
-3. **Test:** Run `./out/Blocked/chrome --enable-logging --v=1`
+3. **Test:** Run `./out/Blockd/chrome --enable-logging --v=1`
 4. **Debug:** Use `gdb` (Linux), `lldb` (macOS), or Visual Studio (Windows)
 
 ### Adding New Files
 
 1. Edit the appropriate `BUILD.gn` file
 2. Add your source files
-3. Run `gn gen out/Blocked` to regenerate build files
+3. Run `gn gen out/Blockd` to regenerate build files
 4. Build with `ninja`
 
 Example:
@@ -247,13 +330,13 @@ source_set("blocked_security") {
 
 ```bash
 # Unit tests
-./out/Blocked/blocked_unittests
+./out/Blockd/blocked_unittests
 
 # Specific test suite
-./out/Blocked/blocked_unittests --gtest_filter=BlockedSecurityServiceTest.*
+./out/Blockd/blocked_unittests --gtest_filter=BlockedSecurityServiceTest.*
 
 # Integration tests
-./out/Blocked/blocked_integration_tests
+./out/Blockd/blocked_integration_tests
 ```
 
 ### Code Style
@@ -271,7 +354,7 @@ Follow the [Chromium C++ Style Guide](https://chromium.googlesource.com/chromium
 
 #### Enable Verbose Logging
 ```bash
-./out/Blocked/chrome --enable-logging --v=1 --vmodule=blocked_security*=2
+./out/Blockd/chrome --enable-logging --v=1 --vmodule=blocked_security*=2
 ```
 
 #### Log Files
@@ -474,7 +557,7 @@ Chromium builds require 100+ GB. Free up space or use a larger disk.
 ### Linker Errors
 Increase system memory or reduce parallelism:
 ```bash
-ninja -C out/Blocked -j 4 chrome
+ninja -C out/Blockd -j 4 chrome
 ```
 
 ### "depot_tools not found"
@@ -556,14 +639,14 @@ git format-patch HEAD~1 -o ../patches/
 - **Build Instructions:** https://chromium.googlesource.com/chromium/src/+/main/docs/
 - **Style Guide:** https://chromium.googlesource.com/chromium/src/+/main/styleguide/c++/c++.md
 
-### Blocked Browser
+### Blockd Browser
 - **Backend API:** https://github.com/WillieTheWhale/Blockd/tree/main/backend
 - **Frontend:** https://github.com/WillieTheWhale/Blockd/tree/main/frontend
 - **Documentation:** https://github.com/WillieTheWhale/Blockd/tree/main/docs
 
 ## License
 
-Blocked Browser is based on Chromium and inherits its open-source license (BSD-style). Custom Blocked modules are proprietary.
+Blockd Browser is based on Chromium and inherits its open-source license (BSD-style). Custom Blocked modules are proprietary.
 
 **Chromium License:** [BSD 3-Clause License](https://chromium.googlesource.com/chromium/src/+/main/LICENSE)
 
@@ -575,6 +658,27 @@ For build issues or questions:
 
 ---
 
-**Last Updated:** 2025-11-24
+## Documentation
+
+Comprehensive documentation is available in the `docs/` directory:
+
+| Document | Description |
+|----------|-------------|
+| [SYSTEM_DESIGN.md](docs/SYSTEM_DESIGN.md) | Complete system architecture and module reference |
+| [blockd-browser-architecture.md](docs/blockd-browser-architecture.md) | Browser process architecture |
+| [chromium-branding-guide.md](docs/chromium-branding-guide.md) | Branding customization guide |
+| [chromium-fork-development.md](docs/chromium-fork-development.md) | Fork development and maintenance |
+| [distribution/](docs/distribution/) | Platform-specific build guides |
+
+### Quick Links
+
+- **System Architecture:** See `docs/SYSTEM_DESIGN.md`
+- **Branding/Icons:** See `blocked_backup/chrome/app/theme/blocked/README.md`
+- **Meeting Detection:** See `blocked_backup/chrome/browser/blocked/blocked_meeting/`
+- **Security Monitoring:** See `blocked_backup/chrome/browser/blocked/blocked_security/`
+
+---
+
+**Last Updated:** January 2026
 **Chromium Version:** 142.0.7444.175
-**Agent:** Agent 16 (Chromium Build System & Browser Process Developer)
+**Maintained by:** Blockd Engineering Team

@@ -122,12 +122,39 @@ class AsyncRedisClient:
             logger.error(f"Error setting key {key}: {e}")
             raise
 
-    async def close(self) -> None:
-        """Close Redis connection and reset state"""
+    async def close(self, timeout: float = 5.0) -> None:
+        """
+        Close Redis connection and reset state with timeout protection.
+
+        Args:
+            timeout: Maximum time in seconds to wait for connection pool disconnect.
+                    Defaults to 5 seconds to prevent hanging during shutdown.
+        """
         async with self._init_lock:
             if self.client:
-                await self.client.close()
-                self.client = None
+                try:
+                    await self.client.close()
+                    # Wait for connection pool to fully disconnect with timeout
+                    # This prevents hanging if Redis server is unresponsive
+                    try:
+                        await asyncio.wait_for(
+                            self.client.connection_pool.disconnect(),
+                            timeout=timeout
+                        )
+                    except asyncio.TimeoutError:
+                        logger.warning(
+                            f"Redis connection pool disconnect timed out after {timeout}s. "
+                            "Forcing cleanup to prevent memory leak."
+                        )
+                        # Force cleanup of connection pool resources
+                        try:
+                            self.client.connection_pool.reset()
+                        except Exception as reset_error:
+                            logger.error(f"Error resetting connection pool: {reset_error}")
+                except Exception as e:
+                    logger.error(f"Error during Redis connection close: {e}")
+                finally:
+                    self.client = None
             self._initialized = False
             logger.info("Redis connection closed")
 

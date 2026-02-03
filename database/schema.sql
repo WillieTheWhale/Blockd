@@ -503,7 +503,7 @@ ON CONFLICT DO NOTHING;
 INSERT INTO users (id, email, password_hash, role, organization_id, first_name, last_name, email_verified)
 VALUES (
     '00000000-0000-0000-0000-000000000001',
-    'admin@blockd.dev',
+    'admin@blockd.site',
     '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.q5q5q5q5q5q5q5q', -- bcrypt hash for Admin123!
     'admin',
     '00000000-0000-0000-0000-000000000001',

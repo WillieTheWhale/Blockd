@@ -10,6 +10,7 @@ import lifecycleController from '../controllers/session-lifecycle.controller';
 import questionController from '../controllers/question.controller';
 import securityEventController from '../controllers/security-event.controller';
 import reportController from '../controllers/report.controller';
+import verificationController from '../controllers/verification.controller';
 
 /**
  * Build Fastify Application
@@ -87,6 +88,13 @@ export async function buildApp(): Promise<FastifyInstance> {
   // Report routes
   app.post('/sessions/:id/report', reportController.generateReport.bind(reportController));
   app.get('/sessions/:id/report/export', reportController.exportReport.bind(reportController));
+
+  // Verification routes (for Blockd browser verification)
+  app.post('/sessions/:id/verify/heartbeat', verificationController.heartbeat.bind(verificationController));
+  app.post('/sessions/:id/verify/browser', verificationController.verifyBrowser.bind(verificationController));
+  app.get('/sessions/:id/verify/status', verificationController.checkStatus.bind(verificationController));
+  app.post('/sessions/:id/verify/meeting-detected', verificationController.meetingDetected.bind(verificationController));
+  app.post('/sessions/:id/verify/meeting-ended', verificationController.meetingEnded.bind(verificationController));
 
   // Error handler
   app.setErrorHandler((error, request, reply) => {

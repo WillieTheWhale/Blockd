@@ -253,10 +253,17 @@ async function refreshAccessToken(): Promise<string | null> {
     }
 
     const response = await axios.post(`${API_URL}/api/v1/auth/refresh`, {
-      refreshToken,
+      refresh_token: refreshToken,
     })
 
-    const { accessToken, refreshToken: newRefreshToken } = response.data
+    // Handle both wrapped { success, data } and unwrapped response formats
+    const responseData = response.data
+    const tokenData =
+      responseData && typeof responseData === 'object' && 'data' in responseData
+        ? responseData.data
+        : responseData
+
+    const { accessToken, refreshToken: newRefreshToken } = tokenData
     setTokens({ accessToken, refreshToken: newRefreshToken })
 
     apiLogger.debug('Token refreshed successfully')
@@ -272,7 +279,20 @@ async function refreshAccessToken(): Promise<string | null> {
 }
 
 /**
+ * API response wrapper format from backend
+ */
+interface ApiResponse<T> {
+  success: boolean
+  data: T
+  meta?: {
+    timestamp?: string
+    requestId?: string
+  }
+}
+
+/**
  * Generic API request function
+ * Handles both wrapped ({ success, data }) and unwrapped response formats
  */
 export async function apiRequest<T>(
   method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH',
@@ -280,13 +300,26 @@ export async function apiRequest<T>(
   data?: unknown,
   config?: Record<string, unknown>
 ): Promise<T> {
-  const response = await apiClient.request<T>({
+  const response = await apiClient.request<T | ApiResponse<T>>({
     method,
     url,
     data,
     ...config,
   })
-  return response.data
+
+  // Check if response is wrapped in { success, data } format
+  const responseData = response.data
+  if (
+    responseData &&
+    typeof responseData === 'object' &&
+    'success' in responseData &&
+    'data' in responseData
+  ) {
+    return (responseData as ApiResponse<T>).data
+  }
+
+  // Return raw response if not wrapped
+  return responseData as T
 }
 
 /**

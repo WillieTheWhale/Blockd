@@ -1,0 +1,81 @@
+# Development overrides for docker-compose
+# This file is automatically merged with docker-compose.yml
+
+services:
+  api-gateway:
+    build:
+      context: ./backend/api-gateway
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./backend/api-gateway:/app
+      - /app/node_modules
+      - ./backend/shared:/shared
+    environment:
+      - NODE_ENV=development
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+
+  auth-service:
+    build:
+      context: ./backend/auth-service
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./backend/auth-service:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+
+  session-service:
+    build:
+      context: ./backend/session-service
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./backend/session-service:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+
+  ai-detection:
+    build:
+      context: ./backend/ai-detection
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./backend/ai-detection:/app
+
+  eye-tracking:
+    build:
+      context: ./backend/eye-tracking
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./backend/eye-tracking:/app
+
+  response-timing:
+    build:
+      context: ./backend/response-timing
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./backend/response-timing:/app
+
+  video-service:
+    build:
+      context: ./backend/video-service
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./backend/video-service:/app
+
+  frontend:
+    build:
+      context: ./frontend/interviewer-app
+      dockerfile: Dockerfile.dev
+    ports:
+      - "5174:3000"
+    volumes:
+      - ./frontend/interviewer-app:/app
+      - /app/node_modules

@@ -41,7 +41,7 @@ spec:
           annotations:
             summary: "Database connection pool usage above 70%"
             description: "PostgreSQL connection pool is at {{ $value | humanizePercentage }} capacity. Consider scaling up connections or optimizing queries."
-            runbook_url: "https://docs.blockd.io/runbooks/database-pool-high-usage"
+            runbook_url: "https://docs.blockd.site/runbooks/database-pool-high-usage"
 
         # Pool nearly exhausted
         - alert: DatabasePoolCriticalUsage
@@ -56,7 +56,7 @@ spec:
           annotations:
             summary: "Database connection pool usage above 85%"
             description: "PostgreSQL connection pool is at {{ $value | humanizePercentage }} capacity. Immediate action required to prevent connection exhaustion."
-            runbook_url: "https://docs.blockd.io/runbooks/database-pool-critical"
+            runbook_url: "https://docs.blockd.site/runbooks/database-pool-critical"
 
         # Pool exhausted
         - alert: DatabasePoolExhausted
@@ -71,7 +71,7 @@ spec:
           annotations:
             summary: "Database connection pool exhausted"
             description: "PostgreSQL connection pool is at {{ $value | humanizePercentage }} capacity. New connections will be rejected."
-            runbook_url: "https://docs.blockd.io/runbooks/database-pool-exhausted"
+            runbook_url: "https://docs.blockd.site/runbooks/database-pool-exhausted"
 
         ##
         # Per-Service Connection Alerts
@@ -87,7 +87,7 @@ spec:
           annotations:
             summary: "Service {{ $labels.application_name }} using high connections"
             description: "Service {{ $labels.application_name }} is using {{ $value }} active connections. May indicate connection leak or high load."
-            runbook_url: "https://docs.blockd.io/runbooks/service-connections-high"
+            runbook_url: "https://docs.blockd.site/runbooks/service-connections-high"
 
         # Connection leak detection
         - alert: ServiceConnectionLeak
@@ -99,7 +99,7 @@ spec:
           annotations:
             summary: "Possible connection leak in {{ $labels.application_name }}"
             description: "Connection count for {{ $labels.application_name }} has been steadily increasing. Investigate for connection leaks."
-            runbook_url: "https://docs.blockd.io/runbooks/connection-leak"
+            runbook_url: "https://docs.blockd.site/runbooks/connection-leak"
 
         ##
         # Idle Connection Alerts
@@ -115,7 +115,7 @@ spec:
           annotations:
             summary: "High number of idle database connections"
             description: "{{ $value }} idle connections detected. Consider reducing connection limits or implementing connection timeouts."
-            runbook_url: "https://docs.blockd.io/runbooks/idle-connections-high"
+            runbook_url: "https://docs.blockd.site/runbooks/idle-connections-high"
 
         # Idle in transaction (potentially blocking)
         - alert: DatabaseIdleInTransaction
@@ -127,7 +127,7 @@ spec:
           annotations:
             summary: "Connections idle in transaction"
             description: "{{ $value }} connections are idle in transaction state, which can block other operations and cause deadlocks."
-            runbook_url: "https://docs.blockd.io/runbooks/idle-in-transaction"
+            runbook_url: "https://docs.blockd.site/runbooks/idle-in-transaction"
 
         # Long idle in transaction
         - alert: DatabaseLongIdleInTransaction
@@ -139,7 +139,7 @@ spec:
           annotations:
             summary: "Long-running idle transaction detected"
             description: "Transaction has been idle for {{ $value | humanizeDuration }}. This blocks database resources and should be investigated immediately."
-            runbook_url: "https://docs.blockd.io/runbooks/long-idle-transaction"
+            runbook_url: "https://docs.blockd.site/runbooks/long-idle-transaction"
 
         ##
         # Query Performance Alerts
@@ -155,7 +155,7 @@ spec:
           annotations:
             summary: "Database queries running slowly"
             description: "Average query execution time is {{ $value | humanizeDuration }}. Investigate query performance and consider adding indexes."
-            runbook_url: "https://docs.blockd.io/runbooks/slow-queries"
+            runbook_url: "https://docs.blockd.site/runbooks/slow-queries"
 
         # Long-running queries
         - alert: DatabaseLongRunningQuery
@@ -167,7 +167,7 @@ spec:
           annotations:
             summary: "Long-running database query detected"
             description: "Query has been running for {{ $value | humanizeDuration }}. May indicate missing indexes or inefficient query."
-            runbook_url: "https://docs.blockd.io/runbooks/long-running-query"
+            runbook_url: "https://docs.blockd.site/runbooks/long-running-query"
 
         # Very long-running queries (potential runaway)
         - alert: DatabaseRunawayQuery
@@ -179,7 +179,7 @@ spec:
           annotations:
             summary: "Potential runaway query detected"
             description: "Query has been running for {{ $value | humanizeDuration }}. Consider terminating the query to free resources."
-            runbook_url: "https://docs.blockd.io/runbooks/runaway-query"
+            runbook_url: "https://docs.blockd.site/runbooks/runaway-query"
 
         ##
         # Connection Wait Alerts
@@ -195,7 +195,7 @@ spec:
           annotations:
             summary: "Queries waiting for database connections"
             description: "Queries are waiting for database connections. Consider increasing pool size or optimizing connection usage."
-            runbook_url: "https://docs.blockd.io/runbooks/connection-wait"
+            runbook_url: "https://docs.blockd.site/runbooks/connection-wait"
 
         ##
         # Pool Timeout Alerts
@@ -211,7 +211,7 @@ spec:
           annotations:
             summary: "Prisma connection pool timeout"
             description: "Prisma client experienced {{ $value }} pool timeouts in the last 5 minutes. Increase pool size or investigate slow queries."
-            runbook_url: "https://docs.blockd.io/runbooks/prisma-pool-timeout"
+            runbook_url: "https://docs.blockd.site/runbooks/prisma-pool-timeout"
 
         ##
         # Replication Alerts
@@ -227,7 +227,7 @@ spec:
           annotations:
             summary: "Database replication lag detected"
             description: "Replication lag is {{ $value | humanizeDuration }}. Read replicas may be serving stale data."
-            runbook_url: "https://docs.blockd.io/runbooks/replication-lag"
+            runbook_url: "https://docs.blockd.site/runbooks/replication-lag"
 
         # Critical replication lag
         - alert: DatabaseReplicationLagCritical
@@ -239,7 +239,7 @@ spec:
           annotations:
             summary: "Critical database replication lag"
             description: "Replication lag is {{ $value | humanizeDuration }}. Consider pausing read traffic to replicas."
-            runbook_url: "https://docs.blockd.io/runbooks/replication-lag-critical"
+            runbook_url: "https://docs.blockd.site/runbooks/replication-lag-critical"
 
         # Replica disconnected
         - alert: DatabaseReplicaDisconnected
@@ -251,7 +251,7 @@ spec:
           annotations:
             summary: "Database replica disconnected"
             description: "Read replica {{ $labels.instance }} is disconnected. Read capacity is reduced."
-            runbook_url: "https://docs.blockd.io/runbooks/replica-disconnected"
+            runbook_url: "https://docs.blockd.site/runbooks/replica-disconnected"
 
         ##
         # Deadlock Detection
@@ -266,7 +266,7 @@ spec:
           annotations:
             summary: "Database deadlock detected"
             description: "{{ $value }} deadlock(s) detected in database {{ $labels.datname }}. Review transaction ordering and locking strategies."
-            runbook_url: "https://docs.blockd.io/runbooks/deadlock-detected"
+            runbook_url: "https://docs.blockd.site/runbooks/deadlock-detected"
 
         - alert: DatabaseDeadlocksFrequent
           expr: |
@@ -277,7 +277,7 @@ spec:
           annotations:
             summary: "Frequent database deadlocks"
             description: "{{ $value }} deadlocks in the last hour. Immediate investigation required to prevent application failures."
-            runbook_url: "https://docs.blockd.io/runbooks/deadlocks-frequent"
+            runbook_url: "https://docs.blockd.site/runbooks/deadlocks-frequent"
 
     - name: database-capacity-planning
       interval: 1m

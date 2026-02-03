@@ -1,11 +1,11 @@
 {{- $services := dict
   "auth-service" (dict "enabled" .Values.authService.enabled "port" 3001 "replicas" .Values.authService.replicas "resources" .Values.authService.resources "image" .Values.images.authService "autoscaling" .Values.authService.autoscaling)
   "session-service" (dict "enabled" .Values.sessionService.enabled "port" 3002 "replicas" .Values.sessionService.replicas "resources" .Values.sessionService.resources "image" .Values.images.sessionService "autoscaling" .Values.sessionService.autoscaling)
-  "websocket-service" (dict "enabled" .Values.websocketService.enabled "port" 3004 "replicas" .Values.websocketService.replicas "resources" .Values.websocketService.resources "image" .Values.images.websocketService "autoscaling" .Values.websocketService.autoscaling)
-  "ai-detection" (dict "enabled" .Values.aiDetection.enabled "port" 5000 "replicas" .Values.aiDetection.replicas "resources" .Values.aiDetection.resources "image" .Values.images.aiDetection "autoscaling" .Values.aiDetection.autoscaling)
-  "eye-tracking" (dict "enabled" .Values.eyeTracking.enabled "port" 5001 "replicas" .Values.eyeTracking.replicas "resources" .Values.eyeTracking.resources "image" .Values.images.eyeTracking "autoscaling" .Values.eyeTracking.autoscaling)
-  "response-timing" (dict "enabled" .Values.responseTiming.enabled "port" 5002 "replicas" .Values.responseTiming.replicas "resources" .Values.responseTiming.resources "image" .Values.images.responseTiming "autoscaling" .Values.responseTiming.autoscaling)
-  "video-service" (dict "enabled" .Values.videoService.enabled "port" 3003 "replicas" .Values.videoService.replicas "resources" .Values.videoService.resources "image" .Values.images.videoService "autoscaling" .Values.videoService.autoscaling)
+  "websocket-service" (dict "enabled" .Values.websocketService.enabled "port" 3003 "replicas" .Values.websocketService.replicas "resources" .Values.websocketService.resources "image" .Values.images.websocketService "autoscaling" .Values.websocketService.autoscaling)
+  "ai-detection" (dict "enabled" .Values.aiDetection.enabled "port" 8000 "replicas" .Values.aiDetection.replicas "resources" .Values.aiDetection.resources "image" .Values.images.aiDetection "autoscaling" .Values.aiDetection.autoscaling)
+  "eye-tracking" (dict "enabled" .Values.eyeTracking.enabled "port" 8001 "replicas" .Values.eyeTracking.replicas "resources" .Values.eyeTracking.resources "image" .Values.images.eyeTracking "autoscaling" .Values.eyeTracking.autoscaling)
+  "response-timing" (dict "enabled" .Values.responseTiming.enabled "port" 8002 "replicas" .Values.responseTiming.replicas "resources" .Values.responseTiming.resources "image" .Values.images.responseTiming "autoscaling" .Values.responseTiming.autoscaling)
+  "video-service" (dict "enabled" .Values.videoService.enabled "port" 8003 "replicas" .Values.videoService.replicas "resources" .Values.videoService.resources "image" .Values.images.videoService "autoscaling" .Values.videoService.autoscaling)
   "frontend" (dict "enabled" .Values.frontend.enabled "port" 80 "replicas" .Values.frontend.replicas "resources" .Values.frontend.resources "image" .Values.images.frontend "autoscaling" .Values.frontend.autoscaling)
 }}
 {{- range $name, $config := $services }}

@@ -17,6 +17,7 @@ from src.config import settings
 from api.webrtc import router as webrtc_router
 from api.recording import router as recording_router
 from api.stream import router as stream_router
+from api.meeting_stream import router as meeting_stream_router
 from services.recording import RecordingManager
 from services.storage import S3StorageService
 from lib.message_queue import MessageQueueClient
@@ -109,6 +110,7 @@ app.add_middleware(
 app.include_router(webrtc_router, prefix=settings.API_PREFIX, tags=["WebRTC"])
 app.include_router(recording_router, prefix=settings.API_PREFIX, tags=["Recording"])
 app.include_router(stream_router, prefix=settings.API_PREFIX, tags=["Stream"])
+app.include_router(meeting_stream_router, prefix=settings.API_PREFIX, tags=["Meeting Stream"])
 
 
 @app.get("/")

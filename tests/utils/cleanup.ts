@@ -108,7 +108,7 @@ async function cleanupTestData() {
       where: {
         OR: [
           { id: { startsWith: 'usr_test_' } },
-          { email: { contains: '@test.blockd.io' } },
+          { email: { contains: '@test.blockd.site' } },
           { email: { contains: 'test@blockd.test' } },
         ],
       },

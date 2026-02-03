@@ -13,7 +13,7 @@ import uvicorn
 from src.config import get_settings
 from src.middleware import SessionRateLimitMiddleware
 from models.model_manager import initialize_models, get_model_manager
-from api import health, question, answer, cache
+from api import health, question, answer, cache, mode_collapse
 from lib.errors import AIDetectionError
 
 # Configure logging
@@ -155,6 +155,7 @@ app.include_router(health.router, prefix="/api/v1", tags=["Health"])
 app.include_router(question.router, prefix="/api/v1/analysis", tags=["Question Analysis"])
 app.include_router(answer.router, prefix="/api/v1/analysis", tags=["Answer Analysis"])
 app.include_router(cache.router, prefix="/api/v1", tags=["Cache Management"])
+app.include_router(mode_collapse.router, prefix="/api/v1/mode-collapse", tags=["Mode Collapse Detection"])
 
 
 # Root endpoint

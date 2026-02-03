@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Blocked Browser - Chromium Build Environment Setup Script
+# Blockd Browser - Chromium Build Environment Setup Script
 # This script sets up the complete Chromium build environment
 
 set -e  # Exit on error
@@ -223,7 +223,7 @@ create_build_dirs() {
 }
 
 install_blocked_modules() {
-    info "Installing Blocked browser modules..."
+    info "Installing Blockd browser modules..."
 
     # Create Blocked module directories
     BLOCKED_BASE="$CHROMIUM_DIR/chrome/browser/blocked"
@@ -293,7 +293,7 @@ print_next_steps() {
 }
 
 main() {
-    info "Blocked Browser - Chromium Build Environment Setup"
+    info "Blockd Browser - Chromium Build Environment Setup"
     info "=================================================="
     echo ""
 

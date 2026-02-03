@@ -3,7 +3,7 @@
  * Protects against XSS, injection, and prototype pollution attacks
  */
 
-import * as DOMPurify from 'isomorphic-dompurify';
+import DOMPurify from 'isomorphic-dompurify';
 
 /**
  * Sanitize HTML content - strips all tags by default

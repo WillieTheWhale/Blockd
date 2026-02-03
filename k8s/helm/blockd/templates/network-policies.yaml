@@ -1,0 +1,490 @@
+# Kubernetes Network Policies for Blockd Platform
+# These policies implement the principle of least privilege for network access
+# ensuring services can only communicate with their required dependencies.
+
+{{- if .Values.networkPolicies.enabled }}
+
+---
+# Default deny all ingress traffic
+# All pods must have explicit ingress rules
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "blockd.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+
+---
+# PostgreSQL - Only allow connections from backend services
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-network-policy
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "blockd.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres
+  policyTypes:
+  - Ingress
+  ingress:
+  # Allow from API Gateway
+  - from:
+    - podSelector:
+        matchLabels:
+          app: api-gateway
+    ports:
+    - protocol: TCP
+      port: 5432
+  # Allow from Auth Service
+  - from:
+    - podSelector:
+        matchLabels:
+          app: auth-service
+    ports:
+    - protocol: TCP
+      port: 5432
+  # Allow from Session Service
+  - from:
+    - podSelector:
+        matchLabels:
+          app: session-service
+    ports:
+    - protocol: TCP
+      port: 5432
+  # Allow from AI Detection Service
+  - from:
+    - podSelector:
+        matchLabels:
+          app: ai-detection
+    ports:
+    - protocol: TCP
+      port: 5432
+  # Allow from Eye Tracking Service
+  - from:
+    - podSelector:
+        matchLabels:
+          app: eye-tracking
+    ports:
+    - protocol: TCP
+      port: 5432
+  # Allow from Response Timing Service
+  - from:
+    - podSelector:
+        matchLabels:
+          app: response-timing
+    ports:
+    - protocol: TCP
+      port: 5432
+  # Allow from Video Service
+  - from:
+    - podSelector:
+        matchLabels:
+          app: video-service
+    ports:
+    - protocol: TCP
+      port: 5432
+  # Allow from PgBouncer (connection pooler)
+  - from:
+    - podSelector:
+        matchLabels:
+          app: pgbouncer
+    ports:
+    - protocol: TCP
+      port: 5432
+
+---
+# PgBouncer - Allow connections from all backend services
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: pgbouncer-network-policy
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "blockd.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: pgbouncer
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow from all backend services
+  - from:
+    - podSelector:
+        matchLabels:
+          tier: backend
+    ports:
+    - protocol: TCP
+      port: 5432
+  egress:
+  # Allow to PostgreSQL
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgres
+    ports:
+    - protocol: TCP
+      port: 5432
+
+---
+# Redis - Only allow from services that need caching
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis-network-policy
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "blockd.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: redis
+  policyTypes:
+  - Ingress
+  ingress:
+  # Allow from API Gateway (rate limiting, caching)
+  - from:
+    - podSelector:
+        matchLabels:
+          app: api-gateway
+    ports:
+    - protocol: TCP
+      port: 6379
+  # Allow from Auth Service (session storage)
+  - from:
+    - podSelector:
+        matchLabels:
+          app: auth-service
+    ports:
+    - protocol: TCP
+      port: 6379
+  # Allow from Session Service (session caching)
+  - from:
+    - podSelector:
+        matchLabels:
+          app: session-service
+    ports:
+    - protocol: TCP
+      port: 6379
+  # Allow from AI Detection Service (answer caching)
+  - from:
+    - podSelector:
+        matchLabels:
+          app: ai-detection
+    ports:
+    - protocol: TCP
+      port: 6379
+  # Allow from WebSocket Service (pub/sub)
+  - from:
+    - podSelector:
+        matchLabels:
+          app: websocket-service
+    ports:
+    - protocol: TCP
+      port: 6379
+  # Allow from Celery workers
+  - from:
+    - podSelector:
+        matchLabels:
+          app: celery-worker
+    ports:
+    - protocol: TCP
+      port: 6379
+
+---
+# RabbitMQ - Only allow from services that need message queue
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: rabbitmq-network-policy
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "blockd.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: rabbitmq
+  policyTypes:
+  - Ingress
+  ingress:
+  # AMQP port from backend services
+  - from:
+    - podSelector:
+        matchLabels:
+          tier: backend
+    ports:
+    - protocol: TCP
+      port: 5672
+  # Management UI (restrict to admin namespace in production)
+  - from:
+    - podSelector:
+        matchLabels:
+          app: api-gateway
+    ports:
+    - protocol: TCP
+      port: 15672
+
+---
+# API Gateway - Allow from ingress controller and frontend
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-gateway-network-policy
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "blockd.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: api-gateway
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow from ingress controller
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 3000
+  # Allow from frontend pods
+  - from:
+    - podSelector:
+        matchLabels:
+          app: frontend
+    ports:
+    - protocol: TCP
+      port: 3000
+  egress:
+  # Allow to all backend services
+  - to:
+    - podSelector:
+        matchLabels:
+          tier: backend
+  # Allow to Redis
+  - to:
+    - podSelector:
+        matchLabels:
+          app: redis
+    ports:
+    - protocol: TCP
+      port: 6379
+  # Allow to PostgreSQL (via PgBouncer)
+  - to:
+    - podSelector:
+        matchLabels:
+          app: pgbouncer
+    ports:
+    - protocol: TCP
+      port: 5432
+  # Allow DNS
+  - to:
+    - namespaceSelector: {}
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: UDP
+      port: 53
+
+---
+# Frontend - Only allow from ingress controller
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: frontend-network-policy
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "blockd.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow from ingress controller only
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 80
+  egress:
+  # Allow to API Gateway only
+  - to:
+    - podSelector:
+        matchLabels:
+          app: api-gateway
+    ports:
+    - protocol: TCP
+      port: 3000
+  # Allow DNS
+  - to:
+    - namespaceSelector: {}
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: UDP
+      port: 53
+
+---
+# AI Detection Service - Allow from API Gateway, allow external LLM APIs
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ai-detection-network-policy
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "blockd.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: ai-detection
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow from API Gateway
+  - from:
+    - podSelector:
+        matchLabels:
+          app: api-gateway
+    ports:
+    - protocol: TCP
+      port: 8000
+  # Allow from Celery workers
+  - from:
+    - podSelector:
+        matchLabels:
+          app: celery-worker
+    ports:
+    - protocol: TCP
+      port: 8000
+  egress:
+  # Allow to Redis
+  - to:
+    - podSelector:
+        matchLabels:
+          app: redis
+    ports:
+    - protocol: TCP
+      port: 6379
+  # Allow to PostgreSQL (via PgBouncer)
+  - to:
+    - podSelector:
+        matchLabels:
+          app: pgbouncer
+    ports:
+    - protocol: TCP
+      port: 5432
+  # Allow to RabbitMQ
+  - to:
+    - podSelector:
+        matchLabels:
+          app: rabbitmq
+    ports:
+    - protocol: TCP
+      port: 5672
+  # Allow external HTTPS for LLM APIs (OpenAI, Anthropic, Google)
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+    ports:
+    - protocol: TCP
+      port: 443
+  # Allow DNS
+  - to:
+    - namespaceSelector: {}
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: UDP
+      port: 53
+
+---
+# Backend Services (generic policy for auth, session, eye-tracking, etc.)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-services-network-policy
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "blockd.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      tier: backend
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow from API Gateway
+  - from:
+    - podSelector:
+        matchLabels:
+          app: api-gateway
+  # Allow inter-service communication
+  - from:
+    - podSelector:
+        matchLabels:
+          tier: backend
+  egress:
+  # Allow to infrastructure services
+  - to:
+    - podSelector:
+        matchLabels:
+          app: redis
+    ports:
+    - protocol: TCP
+      port: 6379
+  - to:
+    - podSelector:
+        matchLabels:
+          app: pgbouncer
+    ports:
+    - protocol: TCP
+      port: 5432
+  - to:
+    - podSelector:
+        matchLabels:
+          app: rabbitmq
+    ports:
+    - protocol: TCP
+      port: 5672
+  # Allow DNS
+  - to:
+    - namespaceSelector: {}
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: UDP
+      port: 53
+
+{{- end }}

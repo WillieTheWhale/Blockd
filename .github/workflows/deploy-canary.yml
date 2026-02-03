@@ -86,7 +86,7 @@ jobs:
     if: always() && (needs.approval.result == 'success' || needs.approval.result == 'skipped')
     environment:
       name: production-canary
-      url: https://canary.blockd.io
+      url: https://canary.blockd.site
 
     outputs:
       canary_deployment: ${{ steps.deploy.outputs.deployment_name }}
@@ -162,7 +162,7 @@ jobs:
               nginx.ingress.kubernetes.io/canary-weight: "10"
           spec:
             rules:
-              - host: blockd.io
+              - host: blockd.site
                 http:
                   paths:
                     - path: /

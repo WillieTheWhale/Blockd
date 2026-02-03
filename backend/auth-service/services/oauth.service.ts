@@ -159,8 +159,7 @@ export async function getOrCreateOAuthUser(oauthInfo: OAuthUserInfo): Promise<Us
   }
 
   // Create new user with OAuth info
-  // Generate a random password (won't be used since OAuth login)
-  const randomPassword = generateSecureString(32);
+  // OAuth users don't have a password - they authenticate via their OAuth provider
 
   // Handle both formats - new format uses givenName/familyName, old uses given_name/family_name
   let firstName: string | undefined;
@@ -176,7 +175,7 @@ export async function getOrCreateOAuthUser(oauthInfo: OAuthUserInfo): Promise<Us
 
   user = await createUser({
     email: oauthInfo.email,
-    password_hash: randomPassword, // Will be hashed by createUser
+    password_hash: undefined, // OAuth users have no password
     role: 'interviewee', // Default role for OAuth users
     first_name: firstName,
     last_name: lastName

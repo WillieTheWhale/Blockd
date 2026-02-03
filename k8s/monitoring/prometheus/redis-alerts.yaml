@@ -25,7 +25,7 @@ spec:
           annotations:
             summary: "Redis cluster state is not OK"
             description: "Redis cluster on {{ $labels.instance }} is reporting cluster_state != ok. Slots may be failing over or unassigned."
-            runbook_url: "https://docs.blockd.com/runbooks/redis-cluster-not-ok"
+            runbook_url: "https://docs.blockd.site/runbooks/redis-cluster-not-ok"
 
         # Cluster slot coverage incomplete
         - alert: RedisClusterSlotsNotCovered
@@ -38,7 +38,7 @@ spec:
           annotations:
             summary: "Redis cluster has uncovered slots"
             description: "Redis cluster has only {{ $value }} of 16384 slots covered. Some data may be inaccessible."
-            runbook_url: "https://docs.blockd.com/runbooks/redis-slots-uncovered"
+            runbook_url: "https://docs.blockd.site/runbooks/redis-slots-uncovered"
 
         # Cluster node down
         - alert: RedisClusterNodeDown
@@ -101,7 +101,7 @@ spec:
           annotations:
             summary: "Redis memory usage is critical on {{ $labels.instance }}"
             description: "Redis is using {{ $value | humanizePercentage }} of max memory. OOM or heavy eviction imminent."
-            runbook_url: "https://docs.blockd.com/runbooks/redis-memory-critical"
+            runbook_url: "https://docs.blockd.site/runbooks/redis-memory-critical"
 
         # Fragmentation ratio high
         - alert: RedisMemoryFragmentationHigh
@@ -331,4 +331,4 @@ spec:
           annotations:
             summary: "Redis cluster has had multiple failovers"
             description: "Redis cluster has had {{ $value }} failovers in the last hour. Cluster may be unstable."
-            runbook_url: "https://docs.blockd.com/runbooks/redis-unstable"
+            runbook_url: "https://docs.blockd.site/runbooks/redis-unstable"

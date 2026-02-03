@@ -149,7 +149,7 @@ jobs:
     needs: [approval, run-migrations]
     environment:
       name: production
-      url: https://blockd.io
+      url: https://blockd.site
 
     outputs:
       green_version: ${{ steps.version.outputs.green_version }}
@@ -339,7 +339,7 @@ jobs:
       - name: Run post-switch smoke tests
         run: |
           echo "Running comprehensive smoke tests after traffic switch..."
-          PROD_URL="https://blockd.io"
+          PROD_URL="https://blockd.site"
           FAILED=0
 
           # Test all critical endpoints
@@ -522,7 +522,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": ":rocket: *Production Deployment Successful*\n*Version:* ${{ needs.deploy-green.outputs.green_version }}\n*Branch:* ${{ github.ref_name }}\n*Commit:* ${{ github.sha }}\n*Author:* ${{ github.actor }}\n*URL:* https://blockd.io"
+                    "text": ":rocket: *Production Deployment Successful*\n*Version:* ${{ needs.deploy-green.outputs.green_version }}\n*Branch:* ${{ github.ref_name }}\n*Commit:* ${{ github.sha }}\n*Author:* ${{ github.actor }}\n*URL:* https://blockd.site"
                   }
                 }
               ]

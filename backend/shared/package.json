@@ -1,0 +1,10 @@
+{
+  "name": "@blockd/shared",
+  "version": "1.0.0",
+  "description": "Shared utilities for Blockd backend services",
+  "type": "module",
+  "dependencies": {
+    "prom-client": "^15.1.0",
+    "ioredis": "^5.4.2"
+  }
+}

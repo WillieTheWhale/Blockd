@@ -5,7 +5,7 @@
 
 import * as os from 'os';
 import prisma from './prisma';
-import { getRedisClient } from '../../shared/cache/redis-client';
+import { getRedisClient } from './redis-client';
 import { getAllCircuitBreakerStats, CircuitState } from './circuit-breaker';
 import {
   getAuthServiceClient,
@@ -59,12 +59,13 @@ const DEPENDENCY_TIMEOUT = 3000; // 3 seconds per dependency
  */
 async function checkDatabase(): Promise<DependencyHealth> {
   const startTime = Date.now();
+  let timeoutId: NodeJS.Timeout;
   try {
     await Promise.race([
       prisma.$queryRaw`SELECT 1`,
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Timeout')), DEPENDENCY_TIMEOUT)
-      ),
+      new Promise((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error('Timeout')), DEPENDENCY_TIMEOUT);
+      }),
     ]);
     return {
       name: 'postgresql',
@@ -80,6 +81,8 @@ async function checkDatabase(): Promise<DependencyHealth> {
       responseTimeMs: Date.now() - startTime,
       message: error instanceof Error ? error.message : 'Unknown error',
     };
+  } finally {
+    clearTimeout(timeoutId!);
   }
 }
 
@@ -88,13 +91,14 @@ async function checkDatabase(): Promise<DependencyHealth> {
  */
 async function checkRedis(): Promise<DependencyHealth> {
   const startTime = Date.now();
+  let timeoutId: NodeJS.Timeout;
   try {
     const redis = getRedisClient();
     await Promise.race([
       redis.ping(),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Timeout')), DEPENDENCY_TIMEOUT)
-      ),
+      new Promise((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error('Timeout')), DEPENDENCY_TIMEOUT);
+      }),
     ]);
     return {
       name: 'redis',
@@ -110,6 +114,8 @@ async function checkRedis(): Promise<DependencyHealth> {
       responseTimeMs: Date.now() - startTime,
       message: error instanceof Error ? error.message : 'Unknown error',
     };
+  } finally {
+    clearTimeout(timeoutId!);
   }
 }
 
@@ -118,13 +124,14 @@ async function checkRedis(): Promise<DependencyHealth> {
  */
 async function checkAuthService(): Promise<DependencyHealth> {
   const startTime = Date.now();
+  let timeoutId: NodeJS.Timeout;
   try {
     const client = getAuthServiceClient();
     const response = await Promise.race([
       client.get('/health'),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Timeout')), DEPENDENCY_TIMEOUT)
-      ),
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error('Timeout')), DEPENDENCY_TIMEOUT);
+      }),
     ]);
 
     const isHealthy = response.statusCode >= 200 && response.statusCode < 300;
@@ -143,6 +150,8 @@ async function checkAuthService(): Promise<DependencyHealth> {
       responseTimeMs: Date.now() - startTime,
       message: error instanceof Error ? error.message : 'Unknown error',
     };
+  } finally {
+    clearTimeout(timeoutId!);
   }
 }
 
@@ -151,13 +160,14 @@ async function checkAuthService(): Promise<DependencyHealth> {
  */
 async function checkSessionService(): Promise<DependencyHealth> {
   const startTime = Date.now();
+  let timeoutId: NodeJS.Timeout;
   try {
     const client = getSessionServiceClient();
     const response = await Promise.race([
       client.get('/health'),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Timeout')), DEPENDENCY_TIMEOUT)
-      ),
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error('Timeout')), DEPENDENCY_TIMEOUT);
+      }),
     ]);
 
     const isHealthy = response.statusCode >= 200 && response.statusCode < 300;
@@ -175,6 +185,8 @@ async function checkSessionService(): Promise<DependencyHealth> {
       responseTimeMs: Date.now() - startTime,
       message: error instanceof Error ? error.message : 'Unknown error',
     };
+  } finally {
+    clearTimeout(timeoutId!);
   }
 }
 
@@ -183,13 +195,14 @@ async function checkSessionService(): Promise<DependencyHealth> {
  */
 async function checkAiDetectionService(): Promise<DependencyHealth> {
   const startTime = Date.now();
+  let timeoutId: NodeJS.Timeout;
   try {
     const client = getAiDetectionServiceClient();
     const response = await Promise.race([
       client.get('/health'),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Timeout')), DEPENDENCY_TIMEOUT)
-      ),
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error('Timeout')), DEPENDENCY_TIMEOUT);
+      }),
     ]);
 
     const isHealthy = response.statusCode >= 200 && response.statusCode < 300;
@@ -207,6 +220,8 @@ async function checkAiDetectionService(): Promise<DependencyHealth> {
       responseTimeMs: Date.now() - startTime,
       message: error instanceof Error ? error.message : 'Unknown error',
     };
+  } finally {
+    clearTimeout(timeoutId!);
   }
 }
 
@@ -215,13 +230,14 @@ async function checkAiDetectionService(): Promise<DependencyHealth> {
  */
 async function checkEyeTrackingService(): Promise<DependencyHealth> {
   const startTime = Date.now();
+  let timeoutId: NodeJS.Timeout;
   try {
     const client = getEyeTrackingServiceClient();
     const response = await Promise.race([
       client.get('/health'),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Timeout')), DEPENDENCY_TIMEOUT)
-      ),
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error('Timeout')), DEPENDENCY_TIMEOUT);
+      }),
     ]);
 
     const isHealthy = response.statusCode >= 200 && response.statusCode < 300;
@@ -239,6 +255,8 @@ async function checkEyeTrackingService(): Promise<DependencyHealth> {
       responseTimeMs: Date.now() - startTime,
       message: error instanceof Error ? error.message : 'Unknown error',
     };
+  } finally {
+    clearTimeout(timeoutId!);
   }
 }
 

@@ -48,6 +48,10 @@ resource "aws_s3_bucket_lifecycle_configuration" "videos" {
     id     = "delete-old-videos"
     status = "Enabled"
 
+    filter {
+      prefix = ""
+    }
+
     expiration {
       days = 90
     }
@@ -60,6 +64,10 @@ resource "aws_s3_bucket_lifecycle_configuration" "videos" {
   rule {
     id     = "transition-to-glacier"
     status = "Enabled"
+
+    filter {
+      prefix = ""
+    }
 
     transition {
       days          = 30
@@ -75,7 +83,7 @@ resource "aws_s3_bucket_cors_configuration" "videos" {
   cors_rule {
     allowed_headers = ["*"]
     allowed_methods = ["GET", "PUT", "POST", "DELETE", "HEAD"]
-    allowed_origins = var.environment == "production" ? ["https://blockd.io", "https://www.blockd.io"] : ["https://staging.blockd.io", "http://localhost:3000"]
+    allowed_origins = var.environment == "production" ? ["https://blockd.site", "https://www.blockd.site", "https://app.blockd.site"] : ["https://staging.blockd.site", "http://localhost:3000"]
     expose_headers  = ["ETag"]
     max_age_seconds = 3000
   }
@@ -121,6 +129,10 @@ resource "aws_s3_bucket_lifecycle_configuration" "backups" {
   rule {
     id     = "delete-old-backups"
     status = "Enabled"
+
+    filter {
+      prefix = ""
+    }
 
     expiration {
       days = 30

@@ -1,4 +1,4 @@
-// Copyright 2025 The Blocked Authors. All rights reserved.
+// Copyright 2025 The Blockd Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -176,7 +176,7 @@ int BlockedTelemetryService::GetActiveProcessCount() {
 }
 
 bool BlockedTelemetryService::IsWindowFocused() {
-  // Check if any Blocked browser window has focus.
+  // Check if any Blockd browser window has focus.
   const BrowserList* browser_list = BrowserList::GetInstance();
   if (!browser_list) {
     return false;

@@ -166,6 +166,7 @@ model InterviewSession {
   actualEnd              DateTime?         @map("actual_end") @db.Timestamptz(6)
   durationMinutes        Int?              @map("duration_minutes")
   riskScore              Decimal?          @map("risk_score") @db.Decimal(5, 4)
+  meetingLink            String?           @map("meeting_link") @db.VarChar(500)
   videoUrl               String?           @map("video_url")
   recordingUrl           String?           @map("recording_url")
   metadata               Json              @default("{}")

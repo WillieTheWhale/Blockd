@@ -1,4 +1,4 @@
-// Copyright 2025 The Blocked Authors. All rights reserved.
+// Copyright 2025 The Blockd Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -64,8 +64,9 @@ class WindowsSecurityMonitor
   // Handle clipboard change notification
   void OnClipboardChange();
 
-  // Known suspicious processes
+  // Known suspicious processes (AI assistants and cheating tools)
   std::vector<std::string> suspicious_processes_ = {
+    // Screen recording software
     "obs64.exe",
     "obs32.exe",
     "obs.exe",
@@ -74,11 +75,23 @@ class WindowsSecurityMonitor
     "bandicam.exe",
     "fraps.exe",
     "xsplit.broadcaster.exe",
+    // Remote desktop software
     "teamviewer.exe",
     "anydesk.exe",
     "chrome-remote-desktop-host.exe",
+    // AI assistants
     "chatgpt.exe",
-    "claude.exe"
+    "claude.exe",
+    // Cluely interview cheating tool (https://cluely.com)
+    "cluely.exe",
+    "cluely",
+    // Interview Coder (original name / open-source variant)
+    "interview coder.exe",
+    "interview-coder.exe",
+    "interviewcoder.exe",
+    // Free/open-source Cluely variants
+    "free-cluely.exe",
+    "freecluely.exe"
   };
 
   // Known VM processes

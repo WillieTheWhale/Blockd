@@ -12,7 +12,7 @@ import {
   TokenExpiredError,
   InvalidTokenError,
   isTokenRevoked,
-} from '@blockd/shared/auth';
+} from '../lib/auth';
 import { WebSocketError } from '../lib/errors';
 
 /**
@@ -159,12 +159,16 @@ export function requireRole(...allowedRoles: string[]) {
 /**
  * Session authorization middleware
  * Ensures user has access to the specified session
+ *
+ * Security: Validates that non-admin users are either the interviewer
+ * or interviewee of the session to prevent unauthorized access.
  */
 export function requireSessionAccess() {
   return async (socket: Socket, next: (err?: Error) => void) => {
     const sessionId = getSessionId(socket);
     const userId = getUserId(socket);
     const role = getUserRole(socket);
+    const organizationId = getOrganizationId(socket);
 
     if (!sessionId) {
       return next(new WebSocketError('Session ID required'));
@@ -175,8 +179,48 @@ export function requireSessionAccess() {
       return next();
     }
 
-    // For other roles, session access validation should be done
-    // by the session service when they join the session room
-    next();
+    // Import prisma client for session lookup
+    // Note: In production, consider using a dedicated session service client
+    // to avoid direct database access from WebSocket middleware
+    try {
+      const { PrismaClient } = await import('@prisma/client');
+      const prisma = new PrismaClient();
+
+      const session = await prisma.interviewSession.findUnique({
+        where: { id: sessionId },
+        select: {
+          interviewerId: true,
+          intervieweeId: true,
+          organizationId: true,
+          status: true,
+        },
+      });
+
+      await prisma.$disconnect();
+
+      if (!session) {
+        return next(new WebSocketError('Session not found'));
+      }
+
+      // Verify user is either interviewer or interviewee
+      if (session.interviewerId !== userId && session.intervieweeId !== userId) {
+        return next(new WebSocketError('Access denied: You are not a participant of this session'));
+      }
+
+      // Optionally: Verify user belongs to the same organization
+      if (organizationId && session.organizationId !== organizationId) {
+        return next(new WebSocketError('Access denied: Organization mismatch'));
+      }
+
+      // Optionally: Check session status
+      if (session.status === 'cancelled') {
+        return next(new WebSocketError('Session has been cancelled'));
+      }
+
+      next();
+    } catch (error) {
+      console.error('Session access validation error:', error);
+      return next(new WebSocketError('Failed to validate session access'));
+    }
   };
 }

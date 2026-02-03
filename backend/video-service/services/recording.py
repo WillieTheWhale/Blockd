@@ -5,6 +5,7 @@ Handles video recording, lifecycle management, and cleanup
 
 import asyncio
 import os
+import sys
 import logging
 from datetime import datetime, timedelta
 from typing import Dict, Optional, List
@@ -13,6 +14,9 @@ import subprocess
 import signal
 
 from src.config import settings
+
+# Platform-specific subprocess flags
+IS_WINDOWS = sys.platform == 'win32'
 from services.storage import S3StorageService
 from services.encoding import EncodingService
 from lib.message_queue import MessageQueueClient
@@ -83,14 +87,27 @@ class VideoRecorder:
         logger.info(f"Starting recording for session {self.session_id}")
         logger.debug(f"FFmpeg command: {' '.join(cmd)}")
 
+        process = None
         try:
-            self.process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                preexec_fn=os.setsid  # Create new process group for cleanup
-            )
+            # Platform-specific subprocess creation for proper process group management
+            if IS_WINDOWS:
+                # Windows: Use CREATE_NEW_PROCESS_GROUP for clean termination
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
+                )
+            else:
+                # Unix: Use setsid to create new process group
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    preexec_fn=os.setsid
+                )
 
+            self.process = process
             self.is_recording = True
             self.started_at = datetime.utcnow()
 
@@ -100,6 +117,15 @@ class VideoRecorder:
             logger.info(f"Recording started for session {self.session_id} (PID: {self.process.pid})")
 
         except Exception as e:
+            # Clean up process if it was created but setup failed
+            if process is not None:
+                try:
+                    process.kill()
+                    process.wait(timeout=5)
+                except Exception as cleanup_error:
+                    logger.error(f"Failed to cleanup process after start failure: {cleanup_error}")
+            self.process = None
+            self.is_recording = False
             logger.error(f"Failed to start recording for session {self.session_id}: {e}")
             raise RecordingError(f"Failed to start recording: {e}")
 
@@ -151,8 +177,17 @@ class VideoRecorder:
 
         try:
             if self.process:
-                # Send SIGTERM for graceful shutdown
-                self.process.send_signal(signal.SIGTERM)
+                # Platform-specific graceful shutdown
+                if IS_WINDOWS:
+                    # Windows: Send CTRL_BREAK_EVENT to process group
+                    try:
+                        self.process.send_signal(signal.CTRL_BREAK_EVENT)
+                    except Exception:
+                        # Fallback to terminate if CTRL_BREAK fails
+                        self.process.terminate()
+                else:
+                    # Unix: Send SIGTERM for graceful shutdown
+                    self.process.send_signal(signal.SIGTERM)
 
                 # Wait up to 5 seconds
                 try:
@@ -160,7 +195,10 @@ class VideoRecorder:
                 except subprocess.TimeoutExpired:
                     # Force kill if not responding
                     logger.warning(f"Force killing recording process for session {self.session_id}")
-                    os.killpg(os.getpgid(self.process.pid), signal.SIGKILL)
+                    if IS_WINDOWS:
+                        self.process.kill()
+                    else:
+                        os.killpg(os.getpgid(self.process.pid), signal.SIGKILL)
                     self.process.wait()
 
             self.is_recording = False
@@ -205,6 +243,15 @@ class RecordingManager:
         self.total_recordings_started = 0
         self.total_recordings_completed = 0
         self.total_recordings_failed = 0
+
+    async def __aenter__(self):
+        """Async context manager entry"""
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit with cleanup"""
+        await self.shutdown()
+        return False
 
     async def start_session_recording(
         self,
@@ -415,6 +462,35 @@ class RecordingManager:
 
             except Exception as e:
                 logger.error(f"Error in cleanup loop: {e}")
+
+    async def shutdown(self):
+        """Graceful shutdown of recording manager and cleanup resources"""
+        logger.info("Shutting down RecordingManager")
+
+        try:
+            # Stop all active recordings
+            await self.stop_all_recordings()
+        except Exception as e:
+            logger.error(f"Error stopping recordings during shutdown: {e}")
+
+        try:
+            # Shutdown encoding service executor
+            if self.encoding_service:
+                self.encoding_service.shutdown()
+                logger.info("Encoding service shutdown complete")
+        except Exception as e:
+            logger.error(f"Error shutting down encoding service: {e}")
+
+        try:
+            # Close message queue connection
+            if self.mq_client:
+                await self.mq_client.close()
+                self.mq_client = None
+                logger.info("Message queue connection closed")
+        except Exception as e:
+            logger.error(f"Error closing message queue connection: {e}")
+
+        logger.info("RecordingManager shutdown complete")
 
     async def _publish_event(self, event_type: str, data: Dict):
         """Publish event to message queue"""

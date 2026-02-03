@@ -33,12 +33,25 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - blockd.example.com
-        - api.blockd.example.com
+        - blockd.site
+        - api.blockd.site
+        - www.blockd.site
       secretName: blockd-tls-cert
   rules:
     # Frontend application
-    - host: blockd.example.com
+    - host: blockd.site
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80
+
+    # www redirect
+    - host: www.blockd.site
       http:
         paths:
           - path: /
@@ -50,7 +63,7 @@ spec:
                   number: 80
 
     # API Gateway
-    - host: api.blockd.example.com
+    - host: api.blockd.site
       http:
         paths:
           - path: /

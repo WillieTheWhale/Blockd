@@ -26,9 +26,23 @@ const MAX_MISSED_PONGS = 3;
 const LATENCY_WARNING_THRESHOLD = 500; // ms
 
 /**
+ * Module-level tracking for handler state
+ */
+let isHandlerSetup = false;
+let monitorInterval: NodeJS.Timeout | null = null;
+
+/**
  * Setup heartbeat handler
  */
 export function setupHeartbeatHandler(io: Server, pingInterval: number = 25000): void {
+  // Prevent duplicate setup
+  if (isHandlerSetup) {
+    logger.warn('Heartbeat handler already setup, skipping duplicate initialization');
+    return;
+  }
+
+  isHandlerSetup = true;
+
   io.on('connection', (socket: AuthenticatedSocket) => {
     const userId = socket.data.user.user_id;
     const socketId = socket.id;
@@ -70,16 +84,34 @@ export function setupHeartbeatHandler(io: Server, pingInterval: number = 25000):
   });
 
   // Monitor for stale connections
-  const monitorInterval = setInterval(() => {
+  monitorInterval = setInterval(() => {
     monitorConnections(io);
   }, pingInterval);
 
-  // Cleanup on server shutdown
-  process.on('SIGTERM', () => {
-    clearInterval(monitorInterval);
-  });
+  // Cleanup on server shutdown (SIGTERM and SIGINT)
+  const shutdownHandler = () => {
+    shutdownHeartbeatHandler();
+  };
+
+  process.on('SIGTERM', shutdownHandler);
+  process.on('SIGINT', shutdownHandler);
 
   logger.info('Heartbeat handler configured', { pingInterval });
+}
+
+/**
+ * Shutdown heartbeat handler and cleanup all intervals
+ */
+export function shutdownHeartbeatHandler(): void {
+  if (monitorInterval !== null) {
+    clearInterval(monitorInterval);
+    monitorInterval = null;
+  }
+
+  isHandlerSetup = false;
+  heartbeatStates.clear();
+
+  logger.info('Heartbeat handler shutdown complete');
 }
 
 /**

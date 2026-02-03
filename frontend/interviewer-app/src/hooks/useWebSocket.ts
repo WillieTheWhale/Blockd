@@ -109,6 +109,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   const isFlushingRef = useRef(false)
   const mountedRef = useRef(true)
   const activeSubscriptionsRef = useRef<ActiveSubscription[]>([])
+  const audioRef = useRef<HTMLAudioElement | null>(null)
 
   // Get stable references to store functions
   const setConnectionStatus = useRealtimeStore((state) => state.setConnectionStatus)
@@ -122,14 +123,21 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
 
   /**
    * Play notification sound for critical events
+   * Reuses audio element to prevent memory leaks
    */
   const playNotificationSound = useCallback(() => {
     if (!soundEnabled) return
 
     try {
-      const audio = new Audio('/sounds/notification.mp3')
-      audio.volume = 0.5
-      audio.play().catch((error: Error) => {
+      // Reuse existing audio element or create one
+      if (!audioRef.current) {
+        audioRef.current = new Audio('/sounds/notification.mp3')
+        audioRef.current.volume = 0.5
+      }
+
+      // Reset audio to beginning if it's still playing
+      audioRef.current.currentTime = 0
+      audioRef.current.play().catch((error: Error) => {
         wsLogger.debug('Audio playback failed (expected if no user interaction)', { error: error.message })
       })
     } catch (error) {
@@ -458,6 +466,13 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     return () => {
       mountedRef.current = false
       disconnect()
+
+      // Cleanup audio element to prevent memory leak
+      if (audioRef.current) {
+        audioRef.current.pause()
+        audioRef.current.src = ''
+        audioRef.current = null
+      }
     }
   }, [autoConnect, connect, disconnect])
 

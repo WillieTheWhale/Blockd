@@ -182,7 +182,7 @@ export const config: Config = {
   },
 
   cors: {
-    origin: parseCorsOrigins(getEnv('CORS_ORIGINS', 'http://localhost:3000')),
+    origin: parseCorsOrigins(getEnv('CORS_ORIGINS', 'http://localhost:3000,http://localhost:5173,http://localhost:5174')),
     credentials: getEnvBoolean('CORS_CREDENTIALS', true),
     allowNoOrigin: getEnvBoolean('CORS_ALLOW_NO_ORIGIN', false),
   },
@@ -260,11 +260,12 @@ export function validateConfig(): ValidationResult {
   // ============================================================================
 
   // Validate JWT keys (critical for auth)
-  if (!config.jwt.publicKey) {
-    errors.push('JWT_PUBLIC_KEY is required for authentication');
-  }
-  if (!config.jwt.privateKey) {
-    errors.push('JWT_PRIVATE_KEY is required for token signing');
+  // Support both asymmetric (RS256) and symmetric (HS256) JWT signing
+  const hasAsymmetricKeys = !!config.jwt.publicKey && !!config.jwt.privateKey;
+  const hasSymmetricKey = !!process.env.JWT_SECRET;
+
+  if (!hasAsymmetricKeys && !hasSymmetricKey) {
+    errors.push('Either JWT_PUBLIC_KEY/JWT_PRIVATE_KEY or JWT_SECRET is required for authentication');
   }
 
   // Validate database URL

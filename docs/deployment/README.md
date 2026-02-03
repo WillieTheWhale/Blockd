@@ -278,7 +278,7 @@ kubectl get ingress -n production
 
 ```bash
 # API Gateway
-curl -f https://blockd.io/api/health
+curl -f https://blockd.site/api/health
 
 # Auth Service
 curl -f https://blockd.io/api/auth/health

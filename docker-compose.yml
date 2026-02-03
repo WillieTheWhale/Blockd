@@ -5,7 +5,7 @@
 services:
   # Database Services
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: blockd-postgres
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-blockd}
@@ -99,11 +99,23 @@ services:
       NODE_ENV: ${NODE_ENV:-development}
       PORT: 3000
       DATABASE_URL: postgresql://${POSTGRES_USER:-blockd_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-blockd}
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-blockd_mq}:${RABBITMQ_PASSWORD}@rabbitmq:5672/${RABBITMQ_VHOST:-blockd}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       AUTH_SERVICE_URL: http://auth-service:3001
       SESSION_SERVICE_URL: http://session-service:3002
+      # CORS Configuration
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:3004,http://localhost:5173,http://localhost:5174}
+      CORS_ALLOW_NO_ORIGIN: ${CORS_ALLOW_NO_ORIGIN:-true}
+      # OAuth Configuration
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_CALLBACK_URL: ${GOOGLE_CALLBACK_URL:-http://localhost:5174/auth/callback}
+      MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
+      MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET:-}
+      MICROSOFT_CALLBACK_URL: ${MICROSOFT_CALLBACK_URL:-http://localhost:5174/auth/callback}
     ports:
       - "3000:3000"
     depends_on:
@@ -120,22 +132,40 @@ services:
       - /app/node_modules
     command: npm run dev
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
 
   # Auth Service (Node.js)
   auth-service:
     build:
-      context: ./backend
-      dockerfile: auth-service/Dockerfile
+      context: ./backend/auth-service
+      dockerfile: Dockerfile.dev
     container_name: blockd-auth-service
     environment:
       NODE_ENV: ${NODE_ENV:-development}
       PORT: 3001
       DATABASE_URL: postgresql://${POSTGRES_USER:-blockd_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-blockd}
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       JWT_EXPIRY: ${JWT_EXPIRY:-1h}
       REFRESH_TOKEN_EXPIRY: ${REFRESH_TOKEN_EXPIRY:-7d}
       MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY:-}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5174}
+      # OAuth Configuration
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_CALLBACK_URL: ${GOOGLE_CALLBACK_URL:-http://localhost:5174/auth/callback}
+      MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
+      MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET:-}
+      MICROSOFT_CALLBACK_URL: ${MICROSOFT_CALLBACK_URL:-http://localhost:5174/auth/callback}
     ports:
       - "3001:3001"
     depends_on:
@@ -146,22 +176,36 @@ services:
     networks:
       - blockd-network
     volumes:
-      - ./backend/auth-service:/app
-      - /app/node_modules
+      - ./backend/auth-service/src:/app/src
+      - ./backend/auth-service/controllers:/app/controllers
+      - ./backend/auth-service/services:/app/services
+      - ./backend/auth-service/middleware:/app/middleware
+      - ./backend/auth-service/lib:/app/lib
+      - ./backend/auth-service/types:/app/types
     command: npm run dev
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
 
   # Session Service (Node.js)
   session-service:
     build:
-      context: ./backend
-      dockerfile: session-service/Dockerfile
+      context: ./backend/session-service
+      dockerfile: Dockerfile.dev
     container_name: blockd-session-service
     environment:
       NODE_ENV: ${NODE_ENV:-development}
       PORT: 3002
       DATABASE_URL: postgresql://${POSTGRES_USER:-blockd_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-blockd}
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-blockd_mq}:${RABBITMQ_PASSWORD}@rabbitmq:5672/${RABBITMQ_VHOST:-blockd}
     ports:
       - "3002:3002"
@@ -175,10 +219,19 @@ services:
     networks:
       - blockd-network
     volumes:
-      - ./backend/session-service:/app
-      - /app/node_modules
+      - ./backend/session-service/src:/app/src
+      - ./backend/session-service/lib:/app/lib
+      - ./backend/shared:/shared
     command: npm run dev
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
 
   # AI Detection Service (Python)
   ai-detection:
@@ -208,6 +261,14 @@ services:
       - ./backend/ai-detection:/app
       - ai_models:/app/models
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '0.5'
+          memory: 2G
 
   # Eye Tracking Service (Python)
   eye-tracking:
@@ -232,6 +293,14 @@ services:
       - ./backend/eye-tracking:/app
       - eye_tracking_models:/app/models
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
 
   # Response Timing Service (Python)
   response-timing:
@@ -256,6 +325,14 @@ services:
     volumes:
       - ./backend/response-timing:/app
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
 
   # Video Service (Python with FFmpeg)
   video-service:
@@ -288,6 +365,14 @@ services:
       - ./backend/video-service:/app
       - video_recordings:/app/recordings
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '0.5'
+          memory: 2G
 
   # Frontend Interviewer App
   frontend:
@@ -296,7 +381,8 @@ services:
       dockerfile: Dockerfile
     container_name: blockd-frontend
     environment:
-      VITE_API_URL: ${VITE_API_URL:-http://localhost:3000/api/v1}
+      # Note: Do NOT include /api/v1 - the frontend code already adds it to endpoint paths
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
       VITE_WS_URL: ${VITE_WS_URL:-ws://localhost:3000}
     ports:
       - "5173:80"
@@ -305,6 +391,14 @@ services:
     networks:
       - blockd-network
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
 
 networks:
   blockd-network:
