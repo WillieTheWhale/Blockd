@@ -275,13 +275,19 @@ class RecordingManager:
         if session_id in self.active_recordings:
             raise RecordingAlreadyStartedError(f"Recording already started for session {session_id}")
 
+        # Validate session_id is a valid UUID to prevent path traversal attacks
+        try:
+            UUID(session_id)
+        except ValueError:
+            raise RecordingError(f"Invalid session_id format: must be a valid UUID")
+
         # Check concurrent limit
         if len(self.active_recordings) >= settings.MAX_CONCURRENT_STREAMS:
             raise RecordingError(
                 f"Maximum concurrent streams reached ({settings.MAX_CONCURRENT_STREAMS})"
             )
 
-        # Create output path
+        # Create output path (session_id validated as UUID above, safe for file paths)
         output_dir = os.path.join(settings.RECORDING_PATH, session_id)
         output_file = os.path.join(output_dir, f"{session_id}.mp4")
 

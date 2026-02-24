@@ -121,12 +121,24 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   const soundEnabled = useRealtimeStore((state) => state.soundEnabled)
   const connectionStatus = useRealtimeStore((state) => state.connectionStatus)
 
+  // Use refs for store functions to prevent useCallback dependency changes
+  const addSecurityEventRef = useRef(addSecurityEvent)
+  const addGazeDataRef = useRef(addGazeData)
+  const addChatMessageRef = useRef(addChatMessage)
+  addSecurityEventRef.current = addSecurityEvent
+  addGazeDataRef.current = addGazeData
+  addChatMessageRef.current = addChatMessage
+
   /**
    * Play notification sound for critical events
    * Reuses audio element to prevent memory leaks
+   * Uses ref to access soundEnabled to avoid recreating callback on state change
    */
+  const soundEnabledRef = useRef(soundEnabled)
+  soundEnabledRef.current = soundEnabled
+
   const playNotificationSound = useCallback(() => {
-    if (!soundEnabled) return
+    if (!soundEnabledRef.current) return
 
     try {
       // Reuse existing audio element or create one
@@ -143,11 +155,12 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     } catch (error) {
       wsLogger.debug('Audio notification unavailable', { error: error instanceof Error ? error.message : 'Unknown' })
     }
-  }, [soundEnabled])
+  }, []) // Empty deps - uses ref for soundEnabled
 
   /**
    * Flush queued messages after reconnection
    * Uses mutex flag to prevent race conditions during flush
+   * Empty deps - uses only refs
    */
   const flushMessageQueue = useCallback((socket: Socket) => {
     // Prevent concurrent flushes
@@ -178,10 +191,11 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     }
 
     isFlushingRef.current = false
-  }, [])
+  }, []) // Empty deps - uses only refs
 
   /**
    * Reattach all active subscriptions after reconnection
+   * Empty deps - uses only refs
    */
   const reattachSubscriptions = useCallback((socket: Socket) => {
     const subscriptions = activeSubscriptionsRef.current
@@ -192,7 +206,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     for (const sub of subscriptions) {
       socket.on(sub.event, sub.wrappedHandler)
     }
-  }, [])
+  }, []) // Empty deps - uses only refs
 
   /**
    * Handle reconnection with exponential backoff
@@ -395,6 +409,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   /**
    * Subscribe to WebSocket event
    * Tracks subscriptions for automatic reattachment on reconnection
+   * Uses refs for store functions to prevent unnecessary recreations
    */
   const subscribe = useCallback(
     <T = unknown>(event: WebSocketEventType, handler: WebSocketEventHandler<T>) => {
@@ -407,19 +422,19 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
         // Call user handler
         handler(data)
 
-        // Update store based on event type
+        // Update store based on event type (using refs to avoid stale closures)
         switch (event) {
           case 'security:alert':
-            addSecurityEvent(data as SecurityEvent)
+            addSecurityEventRef.current(data as SecurityEvent)
             if ((data as SecurityEvent).severity === 'critical') {
               playNotificationSound()
             }
             break
           case 'gaze:update':
-            addGazeData(data as GazeData)
+            addGazeDataRef.current(data as GazeData)
             break
           case 'chat:message':
-            addChatMessage(data as ChatMessage)
+            addChatMessageRef.current(data as ChatMessage)
             break
         }
       }
@@ -448,11 +463,11 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
         )
       }
     },
-    [addSecurityEvent, addGazeData, addChatMessage, playNotificationSound]
+    [playNotificationSound] // Only depends on playNotificationSound which has empty deps
   )
 
   /**
-   * Auto-connect on mount
+   * Auto-connect on mount and handle network online events
    * Note: We intentionally use stable refs and only depend on autoConnect
    * to prevent reconnection loops when callbacks change
    */
@@ -463,8 +478,22 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       connect()
     }
 
+    // Handle network online event for automatic reconnection
+    const handleOnline = () => {
+      wsLogger.info('Network came online, attempting reconnection')
+      if (mountedRef.current && !socketRef.current?.connected && !isConnectingRef.current) {
+        // Reset reconnect attempts to allow fresh reconnection
+        reconnectAttemptsRef.current = 0
+        connect()
+      }
+    }
+
+    // Add event listener for network online events
+    window.addEventListener('online', handleOnline)
+
     return () => {
       mountedRef.current = false
+      window.removeEventListener('online', handleOnline)
       disconnect()
 
       // Cleanup audio element to prevent memory leak

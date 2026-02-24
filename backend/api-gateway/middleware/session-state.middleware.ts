@@ -365,6 +365,4 @@ export {
   STATE_DEPENDENT_ACTIONS,
   getSession,
   invalidateSessionCache,
-  startCacheCleanup,
-  stopCacheCleanup,
 };

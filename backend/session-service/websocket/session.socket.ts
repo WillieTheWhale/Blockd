@@ -11,19 +11,103 @@ import {
   BroadcastOptions,
 } from '../types/websocket.types';
 import { SessionParticipant } from '../types/session.types';
+import { CacheService } from '../src/redis';
 
 /**
  * Session Socket Handler
  * Manages WebSocket events for session rooms
+ * Uses Redis for distributed session room tracking with TTL-based cleanup
  */
+
+// Redis key prefix for session rooms
+const SESSION_ROOMS_KEY_PREFIX = 'session_rooms:';
+// TTL for session room data (24 hours)
+const SESSION_ROOM_TTL_SECONDS = 86400;
 
 export class SessionSocketHandler {
   private io: Server;
-  private sessionRooms: Map<string, Set<string>>;
+  private sessionRooms: Map<string, Set<string>>; // Local cache for fast lookups
+  private cache: CacheService;
+  private cleanupInterval: NodeJS.Timeout | null = null;
+  private socketHandlers: Map<string, Map<string, (...args: any[]) => void>>; // Track handlers per socket
 
   constructor(io: Server) {
     this.io = io;
-    this.sessionRooms = new Map();
+    this.sessionRooms = new Map(); // Local cache, backed by Redis
+    this.cache = new CacheService();
+    this.socketHandlers = new Map(); // Track event handlers for cleanup
+
+    // Start periodic cleanup of stale local cache entries
+    this.startCleanupInterval();
+  }
+
+  /**
+   * Start periodic cleanup of stale session room entries
+   */
+  private startCleanupInterval(): void {
+    // Cleanup every 5 minutes
+    this.cleanupInterval = setInterval(() => {
+      this.cleanupStaleSessions();
+    }, 5 * 60 * 1000);
+  }
+
+  /**
+   * Stop cleanup interval (for graceful shutdown)
+   */
+  public stopCleanupInterval(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+    }
+  }
+
+  /**
+   * Cleanup stale sessions from local cache
+   * Sessions with no connected sockets are removed
+   */
+  private async cleanupStaleSessions(): Promise<void> {
+    for (const [sessionId, sockets] of this.sessionRooms.entries()) {
+      if (sockets.size === 0) {
+        this.sessionRooms.delete(sessionId);
+        // Also cleanup from Redis
+        await this.cache.delete(`${SESSION_ROOMS_KEY_PREFIX}${sessionId}`);
+        console.log(`Cleaned up stale session room: ${sessionId}`);
+      }
+    }
+  }
+
+  /**
+   * Add socket to session room (both local cache and Redis)
+   */
+  private async addSocketToRoom(sessionId: string, socketId: string): Promise<void> {
+    // Update local cache
+    if (!this.sessionRooms.has(sessionId)) {
+      this.sessionRooms.set(sessionId, new Set());
+    }
+    this.sessionRooms.get(sessionId)!.add(socketId);
+
+    // Update Redis with TTL
+    await this.cache.sadd(`${SESSION_ROOMS_KEY_PREFIX}${sessionId}`, socketId);
+    await this.cache.expire(`${SESSION_ROOMS_KEY_PREFIX}${sessionId}`, SESSION_ROOM_TTL_SECONDS);
+  }
+
+  /**
+   * Remove socket from session room (both local cache and Redis)
+   */
+  private async removeSocketFromRoom(sessionId: string, socketId: string): Promise<void> {
+    // Update local cache
+    if (this.sessionRooms.has(sessionId)) {
+      this.sessionRooms.get(sessionId)!.delete(socketId);
+
+      if (this.sessionRooms.get(sessionId)!.size === 0) {
+        this.sessionRooms.delete(sessionId);
+        // Cleanup Redis when session is empty
+        await this.cache.delete(`${SESSION_ROOMS_KEY_PREFIX}${sessionId}`);
+      } else {
+        // Remove from Redis set
+        await this.cache.srem(`${SESSION_ROOMS_KEY_PREFIX}${sessionId}`, socketId);
+      }
+    }
   }
 
   /**
@@ -33,21 +117,48 @@ export class SessionSocketHandler {
     this.io.on('connection', (socket: Socket) => {
       console.log(`Socket connected: ${socket.id}`);
 
-      // Register event handlers
-      this.onJoin(socket);
-      this.onLeave(socket);
-      this.onPing(socket);
-      this.onSubmitAnswer(socket);
-      this.onDisconnect(socket);
-      this.onError(socket);
+      // Initialize handler tracking for this socket
+      this.socketHandlers.set(socket.id, new Map());
+
+      // Register event handlers with tracking
+      this.registerHandler(socket, CLIENT_EVENTS.JOIN, this.createJoinHandler(socket));
+      this.registerHandler(socket, CLIENT_EVENTS.LEAVE, this.createLeaveHandler(socket));
+      this.registerHandler(socket, CLIENT_EVENTS.PING, this.createPingHandler(socket));
+      this.registerHandler(socket, CLIENT_EVENTS.SUBMIT_ANSWER, this.createSubmitAnswerHandler(socket));
+      this.registerHandler(socket, 'disconnect', this.createDisconnectHandler(socket));
+      this.registerHandler(socket, 'error', this.createErrorHandler(socket));
     });
   }
 
   /**
-   * Handle join session
+   * Register an event handler with tracking for cleanup
    */
-  private onJoin(socket: Socket) {
-    socket.on(CLIENT_EVENTS.JOIN, async (payload: JoinSessionPayload) => {
+  private registerHandler(socket: Socket, event: string, handler: (...args: any[]) => void): void {
+    const handlers = this.socketHandlers.get(socket.id);
+    if (handlers) {
+      handlers.set(event, handler);
+    }
+    socket.on(event, handler);
+  }
+
+  /**
+   * Remove all tracked handlers for a socket
+   */
+  private cleanupSocketHandlers(socket: Socket): void {
+    const handlers = this.socketHandlers.get(socket.id);
+    if (handlers) {
+      handlers.forEach((handler, event) => {
+        socket.off(event, handler);
+      });
+      this.socketHandlers.delete(socket.id);
+    }
+  }
+
+  /**
+   * Create join session handler
+   */
+  private createJoinHandler(socket: Socket) {
+    return async (payload: JoinSessionPayload) => {
       try {
         const userId = getUserId(socket);
         const { session_id } = payload;
@@ -55,11 +166,8 @@ export class SessionSocketHandler {
         // Join socket.io room
         await socket.join(session_id);
 
-        // Track in session rooms
-        if (!this.sessionRooms.has(session_id)) {
-          this.sessionRooms.set(session_id, new Set());
-        }
-        this.sessionRooms.get(session_id)!.add(socket.id);
+        // Track in session rooms (Redis-backed with TTL)
+        await this.addSocketToRoom(session_id, socket.id);
 
         // Add participant to cache
         const participant: SessionParticipant = {
@@ -99,14 +207,14 @@ export class SessionSocketHandler {
           message: error instanceof Error ? error.message : 'Failed to join session',
         });
       }
-    });
+    };
   }
 
   /**
-   * Handle leave session
+   * Create leave session handler
    */
-  private onLeave(socket: Socket) {
-    socket.on(CLIENT_EVENTS.LEAVE, async (payload: LeaveSessionPayload) => {
+  private createLeaveHandler(socket: Socket) {
+    return async (payload: LeaveSessionPayload) => {
       try {
         const userId = getUserId(socket);
         const { session_id } = payload;
@@ -119,25 +227,25 @@ export class SessionSocketHandler {
           message: error instanceof Error ? error.message : 'Failed to leave session',
         });
       }
-    });
+    };
   }
 
   /**
-   * Handle ping (heartbeat)
+   * Create ping (heartbeat) handler
    */
-  private onPing(socket: Socket) {
-    socket.on(CLIENT_EVENTS.PING, () => {
+  private createPingHandler(socket: Socket) {
+    return () => {
       socket.emit(SERVER_EVENTS.PONG, {
         timestamp: new Date().toISOString(),
       });
-    });
+    };
   }
 
   /**
-   * Handle submit answer
+   * Create submit answer handler
    */
-  private onSubmitAnswer(socket: Socket) {
-    socket.on(CLIENT_EVENTS.SUBMIT_ANSWER, async (payload: SubmitAnswerPayload) => {
+  private createSubmitAnswerHandler(socket: Socket) {
+    return async (payload: SubmitAnswerPayload) => {
       try {
         const userId = getUserId(socket);
         const { session_id, question_id, answer_text } = payload;
@@ -166,14 +274,14 @@ export class SessionSocketHandler {
           message: error instanceof Error ? error.message : 'Failed to submit answer',
         });
       }
-    });
+    };
   }
 
   /**
-   * Handle disconnect
+   * Create disconnect handler
    */
-  private onDisconnect(socket: Socket) {
-    socket.on('disconnect', async () => {
+  private createDisconnectHandler(socket: Socket) {
+    return async () => {
       try {
         const userId = getUserId(socket);
         const sessionId = getSessionId(socket);
@@ -182,24 +290,27 @@ export class SessionSocketHandler {
           await this.handleLeave(socket, sessionId, userId);
         }
 
+        // Clean up all tracked handlers for this socket
+        this.cleanupSocketHandlers(socket);
+
         console.log(`Socket disconnected: ${socket.id}`);
       } catch (error) {
         console.error('Error handling disconnect:', error);
       }
-    });
+    };
   }
 
   /**
-   * Handle errors
+   * Create error handler
    */
-  private onError(socket: Socket) {
-    socket.on('error', (error: Error) => {
+  private createErrorHandler(socket: Socket) {
+    return (error: Error) => {
       console.error(`Socket error (${socket.id}):`, error);
       socket.emit(SERVER_EVENTS.ERROR, {
         error_code: 'SOCKET_ERROR',
         message: error.message,
       });
-    });
+    };
   }
 
   /**
@@ -209,14 +320,8 @@ export class SessionSocketHandler {
     // Leave socket.io room
     await socket.leave(sessionId);
 
-    // Remove from session rooms
-    if (this.sessionRooms.has(sessionId)) {
-      this.sessionRooms.get(sessionId)!.delete(socket.id);
-
-      if (this.sessionRooms.get(sessionId)!.size === 0) {
-        this.sessionRooms.delete(sessionId);
-      }
-    }
+    // Remove from session rooms (Redis-backed with TTL)
+    await this.removeSocketFromRoom(sessionId, socket.id);
 
     // Mark participant as disconnected
     await participantService.markParticipantDisconnected(sessionId, userId);

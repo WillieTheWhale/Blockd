@@ -378,6 +378,110 @@ class CacheService:
             logger.error(f"Error deleting cache: {e}")
             raise CacheError(str(e), "delete_cache")
 
+    async def get_embedding(self, cache_key: str) -> Optional[List[float]]:
+        """
+        Get cached embedding for a text.
+
+        Uses Redis-based caching to avoid redundant embedding computations
+        for the same text content.
+
+        Storage Format Tradeoff:
+        ------------------------
+        Embeddings are stored as JSON rather than binary format (e.g., MessagePack, pickle).
+
+        Pros of JSON storage:
+        - Human-readable for debugging and inspection
+        - Language-agnostic - can be read by any client
+        - No deserialization security risks (unlike pickle)
+        - Redis decode_responses=True works seamlessly
+        - Simpler implementation with fewer dependencies
+
+        Cons of JSON storage:
+        - ~2-3x larger than binary formats for float arrays
+        - Slightly slower serialization/deserialization
+        - For 768-dim embeddings: ~15KB JSON vs ~6KB binary
+
+        Why JSON is acceptable here:
+        - Embedding cache is read-heavy with long TTLs (7 days default)
+        - Network latency dominates over serialization overhead
+        - Memory cost is acceptable for the debugging benefits
+        - Cache entries are invalidated by content hash, not inspected frequently
+
+        Consider binary storage (msgpack/protobuf) if:
+        - Embedding dimensions exceed 1024
+        - Cache throughput exceeds 10,000 reads/second
+        - Redis memory becomes a bottleneck
+
+        Args:
+            cache_key: The embedding cache key (generated from text hash)
+
+        Returns:
+            Embedding vector as list of floats, or None if not cached
+        """
+        try:
+            full_key = f"{self.cache_prefix}:{cache_key}"
+            cached_data = await self.redis_client.get(
+                full_key,
+                CacheOptions(prefix=None)
+            )
+
+            if cached_data is not None:
+                logger.debug(f"Embedding cache hit for key: {cache_key}")
+                # Handle both list and dict formats for backward compatibility
+                if isinstance(cached_data, dict):
+                    return cached_data.get("embedding")
+                return cached_data
+
+            logger.debug(f"Embedding cache miss for key: {cache_key}")
+            return None
+
+        except Exception as e:
+            logger.warning(f"Error getting cached embedding: {e}")
+            # Return None on cache errors to allow fallback to computation
+            return None
+
+    async def save_embedding(
+        self,
+        cache_key: str,
+        embedding: List[float],
+        ttl: Optional[int] = None
+    ) -> None:
+        """
+        Save embedding to Redis cache.
+
+        Note: Embeddings are stored as JSON for simplicity and debuggability.
+        See get_embedding() docstring for detailed tradeoff analysis.
+
+        Args:
+            cache_key: The embedding cache key (generated from text hash)
+            embedding: The embedding vector to cache
+            ttl: Optional TTL in seconds (defaults to settings.EMBEDDING_CACHE_TTL)
+        """
+        try:
+            full_key = f"{self.cache_prefix}:{cache_key}"
+
+            # Convert numpy array to list if necessary
+            if hasattr(embedding, 'tolist'):
+                embedding = embedding.tolist()
+
+            # Default TTL for embeddings (7 days if not specified in settings)
+            cache_ttl = ttl or getattr(settings, 'EMBEDDING_CACHE_TTL', 604800)
+
+            await self.redis_client.set(
+                full_key,
+                {"embedding": embedding},
+                CacheOptions(
+                    ttl=cache_ttl,
+                    prefix=None
+                )
+            )
+
+            logger.debug(f"Saved embedding to cache for key: {cache_key}")
+
+        except Exception as e:
+            logger.warning(f"Error saving embedding to cache: {e}")
+            # Don't raise - caching failures shouldn't break the main flow
+
 
 # Singleton instance
 _cache_service: Optional[CacheService] = None

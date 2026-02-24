@@ -574,7 +574,7 @@ export async function errorHandler(
     reply,
     internalError.statusCode,
     internalError.message,
-    internalError.code,
+    internalError.code || 'INTERNAL_SERVER_ERROR',
     traceInfo,
     config.server.isDevelopment
       ? { stack: error.stack, originalError: error.message }

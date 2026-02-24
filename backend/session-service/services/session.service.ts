@@ -13,6 +13,10 @@ import {
   UserInfo,
   QuestionDetail,
   SecurityEventDetail,
+  SessionWithIncludes,
+  UserData,
+  QuestionData,
+  SecurityEventData,
 } from '../types/session.types';
 import { SessionNotFoundError, ValidationError } from '../lib/errors';
 import { config } from '../src/config';
@@ -57,9 +61,12 @@ export class SessionService {
       throw new ValidationError('Interviewer not found or not associated with organization');
     }
 
-    // Create session with questions in transaction
+    // Generate session token
+    const sessionToken = tokenService.generateSessionToken();
+
+    // Create session with questions and token in transaction
     const session = await prisma.$transaction(async (tx) => {
-      // Create session
+      // Create session with token
       const newSession = await tx.interviewSession.create({
         data: {
           interviewerId,
@@ -69,6 +76,7 @@ export class SessionService {
           status: 'scheduled',
           scheduledStart: new Date(dto.scheduled_start),
           durationMinutes: dto.duration_minutes,
+          sessionToken,
           metadata: dto.metadata ? JSON.parse(JSON.stringify(dto.metadata)) : {},
         },
       });
@@ -89,15 +97,8 @@ export class SessionService {
       return newSession;
     });
 
-    // Generate session token
-    const sessionToken = tokenService.generateSessionToken();
+    // Store token mapping in cache (compensation: if this fails, session still exists but token won't work until re-generated)
     await tokenService.storeSessionToken(sessionToken, session.id);
-
-    // Update session with token
-    await prisma.interviewSession.update({
-      where: { id: session.id },
-      data: { sessionToken },
-    });
 
     // Cache session
     await this.cacheSession(session.id, {
@@ -433,8 +434,9 @@ export class SessionService {
    * Delete session (soft delete)
    */
   async deleteSession(sessionId: string): Promise<void> {
-    await prisma.interviewSession.delete({
+    await prisma.interviewSession.update({
       where: { id: sessionId },
+      data: { deletedAt: new Date() },
     });
 
     // Remove from cache
@@ -443,13 +445,7 @@ export class SessionService {
 
   // Private helper methods
 
-  private formatUserInfo(user: {
-    id: string;
-    email: string;
-    firstName: string | null;
-    lastName: string | null;
-    role: string;
-  }): UserInfo {
+  private formatUserInfo(user: UserData): UserInfo {
     return {
       user_id: user.id,
       full_name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email,
@@ -458,7 +454,7 @@ export class SessionService {
     };
   }
 
-  private formatSessionDetail(session: any): SessionDetailResponse {
+  private formatSessionDetail(session: SessionWithIncludes): SessionDetailResponse {
     const durationSeconds = session.actualStart && session.actualEnd
       ? Math.floor((new Date(session.actualEnd).getTime() - new Date(session.actualStart).getTime()) / 1000)
       : null;
@@ -472,16 +468,16 @@ export class SessionService {
       actual_start: session.actualStart?.toISOString() || null,
       actual_end: session.actualEnd?.toISOString() || null,
       duration_seconds: durationSeconds,
-      questions: session.questions.map((q: any) => this.formatQuestion(q)),
-      security_events: session.securityEvents.map((e: any) => this.formatSecurityEvent(e)),
-      risk_score: session.riskScore ? parseFloat(session.riskScore.toString()) : null,
+      questions: session.questions.map((q) => this.formatQuestion(q)),
+      security_events: session.securityEvents.map((e) => this.formatSecurityEvent(e)),
+      risk_score: session.riskScore ? parseFloat(String(session.riskScore)) : null,
       metadata: session.metadata || {},
       created_at: session.createdAt.toISOString(),
       updated_at: session.updatedAt.toISOString(),
     };
   }
 
-  private formatQuestion(question: any): QuestionDetail {
+  private formatQuestion(question: QuestionData): QuestionDetail {
     const answer = question.answerAnalysis && question.answerAnalysis.length > 0
       ? question.answerAnalysis[0]
       : null;
@@ -496,15 +492,15 @@ export class SessionService {
       answer: answer ? {
         answer_id: answer.id,
         answer_text: answer.answerText,
-        risk_score: answer.riskScore ? parseFloat(answer.riskScore.toString()) : null,
+        risk_score: answer.riskScore ? parseFloat(String(answer.riskScore)) : null,
         is_ai_generated: answer.isAiGenerated,
-        confidence_score: answer.confidenceScore ? parseFloat(answer.confidenceScore.toString()) : null,
+        confidence_score: answer.confidenceScore ? parseFloat(String(answer.confidenceScore)) : null,
         analyzed_at: answer.analyzedAt.toISOString(),
       } : undefined,
     };
   }
 
-  private formatSecurityEvent(event: any): SecurityEventDetail {
+  private formatSecurityEvent(event: SecurityEventData): SecurityEventDetail {
     return {
       event_id: event.id,
       event_type: event.eventType,

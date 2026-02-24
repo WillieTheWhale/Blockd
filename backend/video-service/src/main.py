@@ -8,12 +8,16 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Dict, Any
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 import uvicorn
 
 from src.config import settings
+from lib.auth import get_ws_authenticator
 from api.webrtc import router as webrtc_router
 from api.recording import router as recording_router
 from api.stream import router as stream_router
@@ -29,17 +33,21 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Initialize rate limiter
+limiter = Limiter(key_func=get_remote_address)
+
 
 # Global service instances
 recording_manager: RecordingManager = None
 storage_service: S3StorageService = None
 mq_client: MessageQueueClient = None
+cleanup_task: asyncio.Task = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager"""
-    global recording_manager, storage_service, mq_client
+    global recording_manager, storage_service, mq_client, cleanup_task
 
     # Startup
     logger.info(f"Starting {settings.SERVICE_NAME} v{settings.SERVICE_VERSION}")
@@ -66,7 +74,7 @@ async def lifespan(app: FastAPI):
 
         # Start background cleanup task
         if settings.AUTO_CLEANUP_ENABLED:
-            cleanup_task = asyncio.create_task(recording_manager.cleanup_loop())
+            cleanup_task = asyncio.create_task(recording_manager.cleanup_loop(), name="cleanup_loop")
             logger.info("Started automatic cleanup task")
 
         logger.info(f"Service started on {settings.API_HOST}:{settings.API_PORT}")
@@ -77,6 +85,14 @@ async def lifespan(app: FastAPI):
         # Shutdown
         logger.info("Shutting down video processing service")
 
+        # Cancel the cleanup task explicitly
+        if cleanup_task is not None and not cleanup_task.done():
+            cleanup_task.cancel()
+            try:
+                await cleanup_task
+            except asyncio.CancelledError:
+                logger.info("Cleanup task cancelled successfully")
+
         # Stop all active recordings
         await recording_manager.stop_all_recordings()
 
@@ -84,7 +100,6 @@ async def lifespan(app: FastAPI):
         await mq_client.close()
         logger.info("Closed RabbitMQ connection")
 
-        # Cleanup task will be cancelled automatically
         logger.info("Service shutdown complete")
 
 
@@ -96,13 +111,17 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Add CORS middleware
+# Add rate limiting middleware
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Add CORS middleware with restricted methods and headers
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-Session-Token"],
 )
 
 
@@ -114,7 +133,8 @@ app.include_router(meeting_stream_router, prefix=settings.API_PREFIX, tags=["Mee
 
 
 @app.get("/")
-async def root():
+@limiter.limit("60/minute")
+async def root(request: Request):
     """Root endpoint"""
     return {
         "service": settings.SERVICE_NAME,
@@ -124,7 +144,8 @@ async def root():
 
 
 @app.get("/health")
-async def health_check():
+@limiter.limit("30/minute")
+async def health_check(request: Request):
     """Health check endpoint"""
     health_status = {
         "status": "healthy",
@@ -159,7 +180,8 @@ async def health_check():
 
 
 @app.get("/metrics")
-async def metrics():
+@limiter.limit("30/minute")
+async def metrics(request: Request):
     """Prometheus-compatible metrics endpoint"""
     if not settings.ENABLE_METRICS:
         return JSONResponse({"error": "Metrics disabled"}, status_code=404)
@@ -175,13 +197,32 @@ async def metrics():
 
 
 @app.websocket("/ws/signaling/{session_id}")
-async def websocket_signaling(websocket: WebSocket, session_id: str):
+async def websocket_signaling(
+    websocket: WebSocket,
+    session_id: str,
+    token: str = Query(None, description="JWT token for authentication"),
+    session_token: str = Query(None, description="Session-specific token")
+):
     """
     WebSocket endpoint for WebRTC signaling
     Handles offer/answer/ICE candidate exchange
+    Requires JWT authentication via query parameter
     """
+    # Authenticate the connection before accepting
+    authenticator = get_ws_authenticator()
+    auth_result = await authenticator.authenticate(
+        session_id=session_id,
+        jwt_token=token,
+        session_token=session_token
+    )
+
+    if not auth_result.is_valid:
+        logger.warning(f"WebSocket auth failed for session {session_id}: {auth_result.error}")
+        await websocket.close(code=4001, reason=auth_result.error or "Authentication failed")
+        return
+
     await websocket.accept()
-    logger.info(f"WebSocket connection established for session {session_id}")
+    logger.info(f"WebSocket connection established for session {session_id} (user: {auth_result.user_id})")
 
     try:
         while True:

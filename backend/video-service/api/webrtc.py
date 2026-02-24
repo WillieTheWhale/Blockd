@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 import httpx
 
 from src.config import settings
+from lib.auth import require_auth, AuthResult
 
 logger = logging.getLogger(__name__)
 
@@ -123,13 +124,14 @@ async def mediasoup_request(method: str, path: str, json: Dict = None) -> Dict:
 
 
 @router.get("/routers/{session_id}/capabilities", response_model=RTPCapabilitiesResponse)
-async def get_router_capabilities(session_id: str):
+async def get_router_capabilities(session_id: str, auth: AuthResult = Depends(require_auth)):
     """
     Get router RTP capabilities for a session
 
     The client needs these capabilities to configure their RTP parameters.
+    Requires JWT authentication.
     """
-    logger.info(f"Getting router capabilities for session {session_id}")
+    logger.info(f"Getting router capabilities for session {session_id} (user: {auth.user_id})")
 
     try:
         result = await mediasoup_request(
@@ -145,15 +147,16 @@ async def get_router_capabilities(session_id: str):
 
 
 @router.post("/transports", response_model=CreateTransportResponse)
-async def create_transport(request: CreateTransportRequest):
+async def create_transport(request: CreateTransportRequest, auth: AuthResult = Depends(require_auth)):
     """
     Create WebRTC transport for sending or receiving media
 
     Send transport: Used by client to send audio/video to server
     Recv transport: Used by client to receive audio/video from server
+    Requires JWT authentication.
     """
     logger.info(
-        f"Creating {request.direction} transport for session {request.session_id}"
+        f"Creating {request.direction} transport for session {request.session_id} (user: {auth.user_id})"
     )
 
     try:
@@ -179,13 +182,14 @@ async def create_transport(request: CreateTransportRequest):
 
 
 @router.post("/transports/{transport_id}/connect")
-async def connect_transport(transport_id: str, request: ConnectTransportRequest):
+async def connect_transport(transport_id: str, request: ConnectTransportRequest, auth: AuthResult = Depends(require_auth)):
     """
     Connect WebRTC transport with DTLS parameters
 
     Called after client receives transport parameters and establishes ICE connection.
+    Requires JWT authentication.
     """
-    logger.info(f"Connecting transport {transport_id}")
+    logger.info(f"Connecting transport {transport_id} (user: {auth.user_id})")
 
     try:
         await mediasoup_request(
@@ -204,13 +208,14 @@ async def connect_transport(transport_id: str, request: ConnectTransportRequest)
 
 
 @router.post("/transports/{transport_id}/produce", response_model=ProduceResponse)
-async def create_producer(transport_id: str, request: ProduceRequest):
+async def create_producer(transport_id: str, request: ProduceRequest, auth: AuthResult = Depends(require_auth)):
     """
     Create media producer (audio or video)
 
     Called when client starts sending media through send transport.
+    Requires JWT authentication.
     """
-    logger.info(f"Creating {request.kind} producer on transport {transport_id}")
+    logger.info(f"Creating {request.kind} producer on transport {transport_id} (user: {auth.user_id})")
 
     try:
         result = await mediasoup_request(
@@ -230,14 +235,15 @@ async def create_producer(transport_id: str, request: ProduceRequest):
 
 
 @router.post("/transports/{transport_id}/consume", response_model=ConsumeResponse)
-async def create_consumer(transport_id: str, request: ConsumeRequest):
+async def create_consumer(transport_id: str, request: ConsumeRequest, auth: AuthResult = Depends(require_auth)):
     """
     Create media consumer to receive media from producer
 
     Called when client wants to receive media from another participant.
+    Requires JWT authentication.
     """
     logger.info(
-        f"Creating consumer for producer {request.producer_id} on transport {transport_id}"
+        f"Creating consumer for producer {request.producer_id} on transport {transport_id} (user: {auth.user_id})"
     )
 
     try:
@@ -263,13 +269,14 @@ async def create_consumer(transport_id: str, request: ConsumeRequest):
 
 
 @router.post("/consumers/{consumer_id}/resume")
-async def resume_consumer(consumer_id: str):
+async def resume_consumer(consumer_id: str, auth: AuthResult = Depends(require_auth)):
     """
     Resume paused consumer
 
     Consumers are created in paused state and must be resumed to receive media.
+    Requires JWT authentication.
     """
-    logger.info(f"Resuming consumer {consumer_id}")
+    logger.info(f"Resuming consumer {consumer_id} (user: {auth.user_id})")
 
     try:
         await mediasoup_request(
@@ -285,13 +292,14 @@ async def resume_consumer(consumer_id: str):
 
 
 @router.delete("/sessions/{session_id}")
-async def close_session(session_id: str):
+async def close_session(session_id: str, auth: AuthResult = Depends(require_auth)):
     """
     Close WebRTC session and cleanup resources
 
     Closes all transports, producers, and consumers for the session.
+    Requires JWT authentication.
     """
-    logger.info(f"Closing WebRTC session {session_id}")
+    logger.info(f"Closing WebRTC session {session_id} (user: {auth.user_id})")
 
     try:
         await mediasoup_request(
@@ -307,13 +315,14 @@ async def close_session(session_id: str):
 
 
 @router.get("/stats/{session_id}")
-async def get_session_stats(session_id: str):
+async def get_session_stats(session_id: str, auth: AuthResult = Depends(require_auth)):
     """
     Get statistics for WebRTC session
 
     Returns information about transports, producers, and consumers.
+    Requires JWT authentication.
     """
-    logger.info(f"Getting stats for session {session_id}")
+    logger.info(f"Getting stats for session {session_id} (user: {auth.user_id})")
 
     try:
         # This would need to be implemented in mediasoup server

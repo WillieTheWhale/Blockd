@@ -64,8 +64,8 @@ class GazeKalmanFilter:
             [0, r]
         ])
 
-        # Initial state covariance
-        self.kf.P *= 10
+        # Initial state covariance (explicit initialization for reproducibility)
+        self.kf.P = np.eye(4) * 10
 
         # Initial state
         self.kf.x = np.array([0.5, 0.5, 0, 0])  # Start at screen center
@@ -181,7 +181,7 @@ class GazeKalmanFilter:
     def reset(self):
         """Reset filter to initial state"""
         self.kf.x = np.array([0.5, 0.5, 0, 0])
-        self.kf.P *= 10
+        self.kf.P = np.eye(4) * 10
         self.initialized = False
         self.measurement_count = 0
         logger.info("kalman_filter_reset")

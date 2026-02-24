@@ -159,6 +159,9 @@ class GazeEstimator:
             GazeEstimationError: If conversion fails
         """
         try:
+            # Create a copy to avoid modifying the original array
+            gaze_vector = gaze_vector.copy()
+
             # Apply head pose correction if available
             if head_pose:
                 gaze_vector = self._apply_head_pose_correction(gaze_vector, head_pose)

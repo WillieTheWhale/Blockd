@@ -98,8 +98,8 @@ export interface ServerToClientEvents {
  * Inter-server Events (for Socket.io cluster)
  */
 export interface InterServerEvents {
-  'session:broadcast': (sessionId: string, event: string, data: any) => void;
-  'user:broadcast': (userId: string, event: string, data: any) => void;
+  'session:broadcast': (sessionId: string, event: string, data: Record<string, unknown>) => void;
+  'user:broadcast': (userId: string, event: string, data: Record<string, unknown>) => void;
 }
 
 // Event data types
@@ -145,7 +145,7 @@ export interface SecurityEvent {
   event_type: 'tab_switch' | 'window_blur' | 'copy_paste' | 'devtools_open' | 'fullscreen_exit' | 'multiple_monitors' | 'suspicious_activity';
   severity: 'low' | 'medium' | 'high' | 'critical';
   description: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   timestamp: string;
 }
 
@@ -245,5 +245,5 @@ export interface AnswerReceivedData {
 export interface ErrorData {
   message: string;
   code?: string;
-  details?: any;
+  details?: Record<string, unknown>;
 }

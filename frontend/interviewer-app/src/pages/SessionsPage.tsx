@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -61,18 +61,31 @@ export function SessionsPage() {
   } = useSessionStore()
 
   const [searchQuery, setSearchQuery] = useState(filters.search || '')
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     fetchSessions()
   }, [fetchSessions, filters, pagination.page])
 
+  // Cleanup debounce timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current)
+      }
+    }
+  }, [])
+
   const handleSearch = (value: string) => {
     setSearchQuery(value)
+    // Clear previous timeout to properly debounce
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current)
+    }
     // Debounce search
-    const timeoutId = setTimeout(() => {
+    searchTimeoutRef.current = setTimeout(() => {
       setFilters({ search: value })
     }, 500)
-    return () => clearTimeout(timeoutId)
   }
 
   const handleStatusFilter = (status: SessionStatus | 'all') => {

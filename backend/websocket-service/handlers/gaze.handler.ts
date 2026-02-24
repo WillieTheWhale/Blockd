@@ -52,7 +52,8 @@ export function setupGazeHandler(io: Server, throttleHz: number = 10): void {
   const throttler = new GazeThrottler(throttleHz);
 
   // Cleanup throttler periodically
-  setInterval(() => throttler.cleanup(), 60000);
+  const throttlerCleanupInterval = setInterval(() => throttler.cleanup(), 60000);
+  gazeIntervalIds.add(throttlerCleanupInterval);
 
   io.on('connection', (socket: AuthenticatedSocket) => {
     const userId = socket.data.user.user_id;
@@ -162,12 +163,19 @@ const gazeBuffer: Map<string, GazeUpdateData[]> = new Map();
 const BUFFER_FLUSH_SIZE = 50; // Flush when buffer reaches this size
 const BUFFER_FLUSH_INTERVAL = 5000; // Flush every 5 seconds
 const BUFFER_MAX_SIZE = 5000; // Maximum buffer size per session - FIFO eviction beyond this
+const SESSION_IDLE_TIMEOUT = 300000; // 5 minutes - cleanup sessions with no activity
 
 // Track in-flight flush operations to prevent concurrent flushes
 const flushInProgress = new Set<string>();
 
+// Track last activity time per session for cleanup
+const sessionLastActivity: Map<string, number> = new Map();
+
+// Track interval IDs for graceful cleanup
+const gazeIntervalIds: Set<NodeJS.Timeout> = new Set();
+
 // Set up interval for flushing buffers
-setInterval(() => {
+const flushInterval = setInterval(() => {
   for (const [sessionId, buffer] of gazeBuffer.entries()) {
     if (buffer.length > 0 && !flushInProgress.has(sessionId)) {
       flushGazeBuffer(sessionId).catch((error) => {
@@ -176,6 +184,103 @@ setInterval(() => {
     }
   }
 }, BUFFER_FLUSH_INTERVAL);
+gazeIntervalIds.add(flushInterval);
+
+// Set up interval for cleaning up ended/idle sessions
+const cleanupInterval = setInterval(() => {
+  cleanupIdleSessions();
+}, 60000); // Check every minute
+gazeIntervalIds.add(cleanupInterval);
+
+/**
+ * Cleanup idle sessions to prevent memory leaks
+ * Removes sessions that have had no activity for SESSION_IDLE_TIMEOUT
+ */
+function cleanupIdleSessions(): void {
+  const now = Date.now();
+  const sessionsToCleanup: string[] = [];
+
+  for (const [sessionId, lastActivity] of sessionLastActivity.entries()) {
+    if (now - lastActivity > SESSION_IDLE_TIMEOUT) {
+      sessionsToCleanup.push(sessionId);
+    }
+  }
+
+  for (const sessionId of sessionsToCleanup) {
+    // Flush any remaining data before cleanup
+    if (gazeBuffer.has(sessionId) && gazeBuffer.get(sessionId)!.length > 0) {
+      flushGazeBuffer(sessionId).catch((error) => {
+        logger.error('Error flushing buffer during cleanup', error, { sessionId });
+      });
+    }
+
+    // Remove from all tracking maps
+    gazeBuffer.delete(sessionId);
+    sessionLastActivity.delete(sessionId);
+    flushInProgress.delete(sessionId);
+
+    logger.info('Cleaned up idle gaze session', { sessionId });
+  }
+
+  if (sessionsToCleanup.length > 0) {
+    logger.info('Gaze buffer cleanup complete', {
+      cleanedSessions: sessionsToCleanup.length,
+      remainingSessions: gazeBuffer.size,
+    });
+  }
+}
+
+/**
+ * Mark session as active (call this when receiving gaze data)
+ */
+function updateSessionActivity(sessionId: string): void {
+  sessionLastActivity.set(sessionId, Date.now());
+}
+
+/**
+ * Shutdown all gaze handler intervals and cleanup resources
+ * Call this during graceful shutdown
+ */
+export function shutdownGazeHandler(): void {
+  // Clear all tracked intervals
+  for (const intervalId of gazeIntervalIds) {
+    clearInterval(intervalId);
+  }
+  gazeIntervalIds.clear();
+
+  // Flush all remaining buffers
+  for (const [sessionId, buffer] of gazeBuffer.entries()) {
+    if (buffer.length > 0) {
+      flushGazeBuffer(sessionId).catch((error) => {
+        logger.error('Error flushing buffer during shutdown', error, { sessionId });
+      });
+    }
+  }
+
+  logger.info('Gaze handler shutdown complete', {
+    bufferedSessions: gazeBuffer.size,
+  });
+}
+
+/**
+ * Explicitly end a session and cleanup its resources
+ * Call this when a session ends to immediately free memory
+ */
+export async function endGazeSession(sessionId: string): Promise<void> {
+  logger.info('Ending gaze session', { sessionId });
+
+  // Flush any remaining data
+  if (gazeBuffer.has(sessionId) && gazeBuffer.get(sessionId)!.length > 0) {
+    await flushGazeBuffer(sessionId);
+  }
+
+  // Remove from all tracking maps
+  gazeBuffer.delete(sessionId);
+  sessionLastActivity.delete(sessionId);
+  flushInProgress.delete(sessionId);
+
+  logger.info('Gaze session ended and cleaned up', { sessionId });
+}
 
 /**
  * Flush gaze buffer to database
@@ -231,6 +336,9 @@ async function flushGazeBuffer(sessionId: string): Promise<void> {
  */
 async function publishGazeData(sessionId: string, data: GazeUpdateData): Promise<void> {
   try {
+    // Update session activity timestamp for cleanup tracking
+    updateSessionActivity(sessionId);
+
     // Add to buffer
     if (!gazeBuffer.has(sessionId)) {
       gazeBuffer.set(sessionId, []);

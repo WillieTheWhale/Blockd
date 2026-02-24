@@ -70,3 +70,6 @@ infrastructure/terraform/tfplan*
 
 # Large archives
 *.tar
+
+# Kubernetes secrets (use templates instead)
+k8s/manifests/secrets.yaml

@@ -42,7 +42,7 @@ export const loggerConfig = {
     err: (error: Error) => ({
       type: error.name,
       message: error.message,
-      stack: config.server.isDevelopment ? error.stack : undefined,
+      stack: config.server.isDevelopment ? (error.stack ?? '') : '',
     }),
   },
 };

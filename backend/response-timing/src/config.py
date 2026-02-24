@@ -20,14 +20,14 @@ class Settings(BaseSettings):
     PORT: int = 8006
     WORKERS: int = 4
 
-    # Database
-    DATABASE_URL: str = "postgresql://blockd_app:password@postgres:5432/blockd"
+    # Database - must be provided via environment variable
+    DATABASE_URL: str  # Required: set DATABASE_URL env var
     DB_POOL_SIZE: int = 10
     DB_MAX_OVERFLOW: int = 20
     DB_POOL_TIMEOUT: int = 30
 
-    # RabbitMQ
-    RABBITMQ_URL: str = "amqp://guest:guest@rabbitmq:5672/"
+    # RabbitMQ - must be provided via environment variable
+    RABBITMQ_URL: str  # Required: set RABBITMQ_URL env var
     RABBITMQ_EXCHANGE: str = "blockd"
     RABBITMQ_QUEUE_TRANSCRIPTION: str = "transcription_queue"
     RABBITMQ_QUEUE_ANALYSIS: str = "timing_analysis_queue"
@@ -75,7 +75,7 @@ class Settings(BaseSettings):
 
     # Anomaly Detection Thresholds
     INSTANT_RESPONSE_THRESHOLD: float = 0.5  # fraction of expected latency
-    UNNATURAL_CONSISTENCY_THRESHOLD: float = 0.1  # pause duration std dev
+    UNNATURAL_CONSISTENCY_THRESHOLD: float = 0.85  # consistency score threshold
     LOW_FILLER_THRESHOLD: float = 0.01  # <1% filler words
     HIGH_FILLER_THRESHOLD: float = 0.15  # >15% filler words
     PAUSE_PERCENTAGE_THRESHOLD: float = 10.0  # <10% pause time

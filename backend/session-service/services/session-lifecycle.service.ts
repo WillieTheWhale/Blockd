@@ -25,6 +25,23 @@ export class SessionLifecycleService {
   }
 
   /**
+   * Determine WebSocket protocol based on environment
+   */
+  private getWebSocketProtocol(): string {
+    // Use secure WebSocket in production or when explicitly configured
+    if (process.env.WS_PROTOCOL) {
+      return process.env.WS_PROTOCOL;
+    }
+    if (process.env.NODE_ENV === 'production') {
+      return 'wss';
+    }
+    if (process.env.USE_SSL === 'true' || process.env.HTTPS === 'true') {
+      return 'wss';
+    }
+    return 'ws';
+  }
+
+  /**
    * Start session
    */
   async startSession(sessionId: string, dto: StartSessionDTO): Promise<ActiveSessionResponse> {
@@ -50,40 +67,48 @@ export class SessionLifecycleService {
     // Transition to active state
     const newState = SessionStateMachine.transition(session.status, 'start');
 
-    // Update session
-    const updatedSession = await prisma.interviewSession.update({
-      where: { id: sessionId },
-      data: {
-        status: newState,
-        actualStart: new Date(),
-      },
+    // Update session atomically with transaction
+    const updatedSession = await prisma.$transaction(async (tx) => {
+      const updated = await tx.interviewSession.update({
+        where: { id: sessionId },
+        data: {
+          status: newState,
+          actualStart: new Date(),
+        },
+      });
+
+      // Create audit log within the same transaction
+      await tx.auditLog.create({
+        data: {
+          userId: dto.started_by,
+          action: 'session.start',
+          resourceType: 'interview_session',
+          resourceId: sessionId,
+          metadata: {
+            previous_status: session.status,
+            new_status: newState,
+          },
+        },
+      });
+
+      return updated;
     });
 
-    // Start video recording
+    // Start video recording (outside transaction - side effect)
     await this.messageQueue.publishVideoEvent('start', sessionId, {
       interviewer_id: session.interviewerId,
       interviewee_id: session.intervieweeId,
     });
 
-    // Create audit log
-    await prisma.auditLog.create({
-      data: {
-        userId: dto.started_by,
-        action: 'session.start',
-        resourceType: 'interview_session',
-        resourceId: sessionId,
-        metadata: {
-          previous_status: session.status,
-          new_status: newState,
-        },
-      },
-    });
+    const wsProtocol = this.getWebSocketProtocol();
+    const wsHost = process.env.WEBSOCKET_HOST || 'localhost';
+    const wsPort = process.env.WEBSOCKET_PORT || '3003';
 
     return {
       session_id: sessionId,
       status: 'active',
       started_at: updatedSession.actualStart!.toISOString(),
-      websocket_url: `ws://${process.env.WEBSOCKET_PORT || 3003}`,
+      websocket_url: `${wsProtocol}://${wsHost}:${wsPort}`,
       participants: [],
       current_question: session.questions[0] ? {
         question_id: session.questions[0].id,

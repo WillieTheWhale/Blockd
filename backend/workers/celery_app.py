@@ -7,11 +7,21 @@ import os
 from celery import Celery
 from kombu import Queue, Exchange
 
+# Dead Letter Exchange/Queue configuration
+DEAD_LETTER_EXCHANGE = 'dlx'
+DEAD_LETTER_QUEUE = 'dead_letter_queue'
+
+# Common DLQ arguments for queues
+DLQ_ARGUMENTS = {
+    'x-dead-letter-exchange': DEAD_LETTER_EXCHANGE,
+    'x-dead-letter-routing-key': 'dead_letter',
+}
+
 # RabbitMQ connection settings
 RABBITMQ_HOST = os.getenv('RABBITMQ_HOST', 'rabbitmq')
 RABBITMQ_PORT = os.getenv('RABBITMQ_PORT', '5672')
-RABBITMQ_USER = os.getenv('RABBITMQ_USER', 'blockd_user')
-RABBITMQ_PASS = os.getenv('RABBITMQ_PASS', 'blockd_password')
+RABBITMQ_USER = os.environ['RABBITMQ_USER']  # Required - no default for security
+RABBITMQ_PASS = os.environ['RABBITMQ_PASS']  # Required - no default for security
 RABBITMQ_VHOST = os.getenv('RABBITMQ_VHOST', 'blockd')
 
 # Redis for result backend
@@ -86,37 +96,43 @@ app.conf.update(
         'tasks.timing.analyze': {'queue': 'timing_analyze'},
     },
 
-    # Queue configuration
+    # Queue configuration with Dead Letter Queue support
     task_queues=(
+        # Dead Letter Queue for failed messages
+        Queue(DEAD_LETTER_QUEUE, Exchange(DEAD_LETTER_EXCHANGE, type='direct'),
+              routing_key='dead_letter'),
+
         # Video processing queues
         Queue('video_encode', Exchange('video_processing', type='topic'),
-              routing_key='video.encode.*'),
+              routing_key='video.encode.*', queue_arguments=DLQ_ARGUMENTS),
         Queue('video_thumbnail', Exchange('video_processing', type='topic'),
-              routing_key='video.thumbnail.*'),
+              routing_key='video.thumbnail.*', queue_arguments=DLQ_ARGUMENTS),
         Queue('video_upload', Exchange('video_processing', type='topic'),
-              routing_key='video.upload.*'),
+              routing_key='video.upload.*', queue_arguments=DLQ_ARGUMENTS),
 
         # AI detection queues
         Queue('ai_analyze', Exchange('ai_detection', type='topic'),
-              routing_key='ai.analyze.*'),
+              routing_key='ai.analyze.*', queue_arguments=DLQ_ARGUMENTS),
         Queue('embedding_generate', Exchange('ai_detection', type='topic'),
-              routing_key='ai.embedding.*'),
+              routing_key='ai.embedding.*', queue_arguments=DLQ_ARGUMENTS),
         Queue('cache_warmup', Exchange('ai_detection', type='topic'),
-              routing_key='ai.cache.*'),
+              routing_key='ai.cache.*', queue_arguments=DLQ_ARGUMENTS),
 
         # Security queues
-        Queue('security_alert', Exchange('security_events', type='fanout')),
-        Queue('security_log', Exchange('security_events', type='fanout')),
+        Queue('security_alert', Exchange('security_events', type='fanout'),
+              queue_arguments=DLQ_ARGUMENTS),
+        Queue('security_log', Exchange('security_events', type='fanout'),
+              queue_arguments=DLQ_ARGUMENTS),
 
         # Gaze analysis queues
         Queue('gaze_process', Exchange('gaze_analysis', type='topic'),
-              routing_key='gaze.process.*'),
+              routing_key='gaze.process.*', queue_arguments=DLQ_ARGUMENTS),
         Queue('anomaly_detect', Exchange('gaze_analysis', type='topic'),
-              routing_key='gaze.anomaly.*'),
+              routing_key='gaze.anomaly.*', queue_arguments=DLQ_ARGUMENTS),
 
         # Timing analysis queues
         Queue('timing_analyze', Exchange('timing_analysis', type='topic'),
-              routing_key='timing.analyze.*'),
+              routing_key='timing.analyze.*', queue_arguments=DLQ_ARGUMENTS),
     ),
 )
 

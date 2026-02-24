@@ -66,6 +66,40 @@ function emitGlobalError(error: ApiError): void {
 }
 
 /**
+ * Check for unsaved work on the page
+ * Looks for common indicators of unsaved changes
+ */
+function checkForUnsavedWork(): boolean {
+  // Check for dirty form fields
+  const forms = document.querySelectorAll('form')
+  for (const form of forms) {
+    const inputs = form.querySelectorAll('input, textarea, select')
+    for (const input of inputs) {
+      const el = input as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+      if (el.value && el.value !== el.defaultValue) {
+        return true
+      }
+    }
+  }
+
+  // Check for contenteditable elements with content
+  const editables = document.querySelectorAll('[contenteditable="true"]')
+  for (const editable of editables) {
+    if (editable.textContent && editable.textContent.trim().length > 0) {
+      return true
+    }
+  }
+
+  // Check for any data-unsaved attributes set by components
+  const unsavedMarkers = document.querySelectorAll('[data-unsaved="true"]')
+  if (unsavedMarkers.length > 0) {
+    return true
+  }
+
+  return false
+}
+
+/**
  * Create axios instance with default configuration
  */
 const apiClient: AxiosInstance = axios.create({
@@ -107,7 +141,20 @@ apiClient.interceptors.request.use(
             config.headers.Authorization = `Bearer ${refreshed}`
           }
         } catch {
-          // If refresh fails, clear tokens and redirect to login
+          // If refresh fails, show confirmation dialog to prevent losing unsaved work
+          const hasUnsavedWork = checkForUnsavedWork()
+          if (hasUnsavedWork) {
+            const confirmed = window.confirm(
+              'Your session has expired. You may have unsaved work.\n\n' +
+              'Click OK to log in again (unsaved changes will be lost).\n' +
+              'Click Cancel to stay on this page and save your work first.'
+            )
+            if (!confirmed) {
+              // User wants to stay - don't redirect but reject the request
+              return Promise.reject(new Error('Session expired - user chose to stay'))
+            }
+          }
+          // Clear tokens and redirect to login
           clearTokens()
           window.location.href = '/login'
           return Promise.reject(new Error('Session expired'))
@@ -157,6 +204,24 @@ apiClient.interceptors.response.use(
           return apiClient(originalRequest)
         }
       } catch {
+        // Show confirmation dialog to prevent losing unsaved work
+        const hasUnsavedWork = checkForUnsavedWork()
+        if (hasUnsavedWork) {
+          const confirmed = window.confirm(
+            'Your session has expired. You may have unsaved work.\n\n' +
+            'Click OK to log in again (unsaved changes will be lost).\n' +
+            'Click Cancel to stay on this page and save your work first.'
+          )
+          if (!confirmed) {
+            // User wants to stay - don't redirect but reject the request
+            const apiError: ApiError = {
+              message: 'Session expired - please save your work and log in again.',
+              status: 401,
+              code: API_ERROR_CODES.SESSION_EXPIRED,
+            }
+            return Promise.reject(apiError)
+          }
+        }
         clearTokens()
         window.location.href = '/login'
         const apiError: ApiError = {

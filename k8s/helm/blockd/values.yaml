@@ -277,18 +277,25 @@ configMap:
   s3Bucket: blockd-videos-dev
   logLevel: debug
 
-# Secrets (should be provided via secure method)
+# Secrets configuration
+# IMPORTANT: Set create: true only in environment-specific values files
+# and provide secrets via external secret management (e.g., sealed-secrets, external-secrets, vault)
 secrets:
-  create: true
-  # These are example values - REPLACE in production
-  postgresUser: blockd_user
-  postgresPassword: change_me_in_production
-  redisPassword: change_me_in_production
-  rabbitmqUser: blockd_mq
-  rabbitmqPassword: change_me_in_production
-  rabbitmqErlangCookie: change_me_in_production
-  jwtSecret: change_me_in_production_jwt_secret
-  openaiApiKey: your_openai_key_here
-  anthropicApiKey: your_anthropic_key_here
-  awsAccessKeyId: your_aws_access_key
-  awsSecretAccessKey: your_aws_secret_key
+  create: false
+  # Secret values should be provided via:
+  # 1. External secret management (recommended)
+  # 2. --set flags during helm install/upgrade
+  # 3. Environment-specific values files (not committed to version control)
+  #
+  # Required secrets (provide via secure method):
+  # - postgresUser
+  # - postgresPassword
+  # - redisPassword
+  # - rabbitmqUser
+  # - rabbitmqPassword
+  # - rabbitmqErlangCookie
+  # - jwtSecret
+  # - openaiApiKey
+  # - anthropicApiKey
+  # - awsAccessKeyId
+  # - awsSecretAccessKey

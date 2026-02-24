@@ -281,15 +281,15 @@ kubectl get ingress -n production
 curl -f https://blockd.site/api/health
 
 # Auth Service
-curl -f https://blockd.io/api/auth/health
+curl -f https://api.blockd.site/api/v1/auth/health
 
 # Session Service
-curl -f https://blockd.io/api/sessions/health
+curl -f https://api.blockd.site/api/v1/sessions/health
 
 # All services
 for service in api-gateway auth-service session-service websocket-service ai-detection eye-tracking response-timing video-service; do
   echo "Checking $service..."
-  curl -f https://blockd.io/api/$service/health || echo "FAILED"
+  curl -f https://api.blockd.site/api/v1/$service/health || echo "FAILED"
 done
 ```
 

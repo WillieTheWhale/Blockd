@@ -23,6 +23,49 @@ const GAZE_SAMPLE_RATE = 100;
 let gazeEventCounter = 0;
 
 /**
+ * Estimate data size without expensive JSON.stringify
+ * Uses rough heuristics for common data types
+ */
+function estimateDataSize(data: unknown): number {
+  if (data === null || data === undefined) {
+    return 4; // "null" or "undefined"
+  }
+
+  if (typeof data === 'string') {
+    return data.length;
+  }
+
+  if (typeof data === 'number' || typeof data === 'boolean') {
+    return 8; // Approximate size
+  }
+
+  if (Array.isArray(data)) {
+    // For arrays, sample first few items to estimate
+    if (data.length === 0) return 2;
+    const sampleSize = Math.min(data.length, 3);
+    let sample = 0;
+    for (let i = 0; i < sampleSize; i++) {
+      sample += estimateDataSize(data[i]);
+    }
+    return (sample / sampleSize) * data.length + data.length * 2; // account for separators
+  }
+
+  if (typeof data === 'object') {
+    const keys = Object.keys(data as object);
+    if (keys.length === 0) return 2;
+    // Sample first few keys to estimate
+    const sampleSize = Math.min(keys.length, 5);
+    let sample = 0;
+    for (let i = 0; i < sampleSize; i++) {
+      sample += keys[i].length + estimateDataSize((data as Record<string, unknown>)[keys[i]]);
+    }
+    return (sample / sampleSize) * keys.length + keys.length * 4; // account for quotes, colons, commas
+  }
+
+  return 16; // Default estimate for unknown types
+}
+
+/**
  * Logging middleware
  */
 export function loggingMiddleware() {
@@ -60,11 +103,13 @@ export function loggingMiddleware() {
       }
       // Log other events (except excluded)
       else if (!EXCLUDED_EVENTS.has(event)) {
+        // Use estimated size to avoid expensive JSON.stringify on every packet
+        const estimatedSize = estimateDataSize(args);
         logger.debug('Socket event received', {
           socketId,
           userId: socket.data.user?.user_id,
           event,
-          dataSize: JSON.stringify(args).length,
+          dataSize: estimatedSize,
         });
       }
 

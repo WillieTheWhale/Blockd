@@ -52,6 +52,21 @@ def downgrade() -> None:
     conn = op.get_bind()
 
     # Drop all tables in reverse order of dependencies
+    # Allowlist of valid table names to prevent SQL injection
+    ALLOWED_TABLES = frozenset([
+        'audit_logs',
+        'session_reports',
+        'browser_telemetry',
+        'gaze_events',
+        'answer_analysis',
+        'ai_answer_cache',
+        'questions',
+        'security_events',
+        'interview_sessions',
+        'users',
+        'organizations'
+    ])
+
     tables = [
         'audit_logs',
         'session_reports',
@@ -67,6 +82,8 @@ def downgrade() -> None:
     ]
 
     for table in tables:
+        if table not in ALLOWED_TABLES:
+            raise ValueError(f"Invalid table name: {table}")
         conn.execute(sa.text(f"DROP TABLE IF EXISTS {table} CASCADE"))
 
     # Drop views

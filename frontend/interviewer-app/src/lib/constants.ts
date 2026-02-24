@@ -97,8 +97,9 @@ export const API_ENDPOINTS = {
   REPORTS: {
     LIST: '/api/v1/reports',
     GET: (sessionId: string) => `/api/v1/reports/${sessionId}`,
-    DOWNLOAD: (sessionId: string) => `/api/v1/reports/${sessionId}/download`,
-    DELETE: (sessionId: string) => `/api/v1/reports/${sessionId}`,
+    DOWNLOAD: (sessionId: string) => `/api/v1/reports/${sessionId}/pdf`,
+    // TODO: DELETE endpoint not yet implemented in backend
+    // DELETE: (sessionId: string) => `/api/v1/reports/${sessionId}`,
   },
   ANALYTICS: {
     OVERVIEW: '/api/v1/analytics/overview',

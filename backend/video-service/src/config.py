@@ -75,8 +75,9 @@ class Settings(BaseSettings):
     VIDEO_PROCESSING_QUEUE: str = "video_processing_queue"
 
     # Database Configuration (for session metadata)
+    # Required: set DATABASE_URL env var (e.g., postgresql://user:pass@host:5432/db)
     DATABASE_URL: str = Field(
-        default="postgresql://blockd:blockd@localhost:5432/blockd",
+        default="",
         env="DATABASE_URL"
     )
 

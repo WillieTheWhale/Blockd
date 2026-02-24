@@ -1,10 +1,23 @@
 {
+  "_documentation": {
+    "secrets_management": "DO NOT store passwords in this file. Use one of the following secure methods:",
+    "options": [
+      "1. Environment variables: Set RABBITMQ_DEFAULT_USER and RABBITMQ_DEFAULT_PASS",
+      "2. Docker secrets: Use docker secrets with rabbitmq.conf",
+      "3. HashiCorp Vault: Integrate with Vault for dynamic credentials",
+      "4. Kubernetes secrets: Use K8s secrets mounted as environment variables",
+      "5. AWS Secrets Manager / Azure Key Vault: Use cloud provider secrets management"
+    ],
+    "example_docker_compose": "environment: [RABBITMQ_DEFAULT_USER_FILE=/run/secrets/rabbitmq_user, RABBITMQ_DEFAULT_PASS_FILE=/run/secrets/rabbitmq_pass]",
+    "example_kubernetes": "envFrom: [secretRef: {name: rabbitmq-credentials}]"
+  },
   "rabbit_version": "4.0.0",
   "rabbitmq_version": "4.0.0",
   "users": [
     {
       "name": "blockd_user",
-      "password_hash": "blockd_password_change_in_production",
+      "_password_note": "Password must be configured via secrets management - see _documentation above",
+      "password_hash": "${RABBITMQ_PASSWORD_HASH}",
       "hashing_algorithm": "rabbit_password_hashing_sha256",
       "tags": "administrator"
     }

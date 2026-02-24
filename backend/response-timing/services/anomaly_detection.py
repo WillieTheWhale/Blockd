@@ -220,28 +220,58 @@ class AnomalyDetectionService:
         Detect pattern: long delay before answering, then very fluent response
 
         This suggests reading a pre-written answer (human or AI-generated)
+        Uses weighted scoring instead of boolean AND for more nuanced detection.
         """
         try:
-            is_delayed = latency_eval.get('is_delayed', False)
+            latency_ratio = latency_eval.get('latency_ratio', 1.0)
             filler_ratio = filler_analysis.get('filler_ratio', 0.0)
             pause_percentage = pause_patterns.get('pause_percentage', 0.0)
 
-            # Long delay + very fluent (low fillers, few pauses)
-            is_fluent = filler_ratio < self.settings.LOW_FILLER_THRESHOLD
-            minimal_pauses = pause_percentage < self.settings.PAUSE_PERCENTAGE_THRESHOLD
+            # Calculate weighted score for each indicator
+            # Delay score: higher when latency_ratio > 2.0 (delayed)
+            delay_score = min(1.0, max(0.0, (latency_ratio - 1.0) / 2.0)) if latency_ratio > 1.0 else 0.0
 
-            is_anomaly = is_delayed and is_fluent and minimal_pauses
+            # Fluency score: higher when filler_ratio is low
+            fluency_score = max(0.0, 1.0 - (filler_ratio / self.settings.LOW_FILLER_THRESHOLD)) if filler_ratio < self.settings.LOW_FILLER_THRESHOLD else 0.0
+
+            # Minimal pauses score: higher when pause_percentage is low
+            pause_score = max(0.0, 1.0 - (pause_percentage / self.settings.PAUSE_PERCENTAGE_THRESHOLD)) if pause_percentage < self.settings.PAUSE_PERCENTAGE_THRESHOLD else 0.0
+
+            # Weighted combination (weights sum to 1.0)
+            delay_weight = 0.4
+            fluency_weight = 0.35
+            pause_weight = 0.25
+
+            combined_score = (
+                delay_weight * delay_score +
+                fluency_weight * fluency_score +
+                pause_weight * pause_score
+            )
+
+            # Threshold for anomaly detection
+            is_anomaly = combined_score >= 0.6
+
+            # Determine severity based on combined score
+            if combined_score >= 0.8:
+                severity = 'high'
+            elif combined_score >= 0.6:
+                severity = 'medium'
+            else:
+                severity = 'low'
 
             return {
                 'is_anomaly': is_anomaly,
-                'is_delayed': is_delayed,
-                'is_fluent': is_fluent,
+                'combined_score': round(combined_score, 3),
+                'delay_score': round(delay_score, 3),
+                'fluency_score': round(fluency_score, 3),
+                'pause_score': round(pause_score, 3),
+                'latency_ratio': latency_ratio,
                 'filler_ratio': filler_ratio,
                 'pause_percentage': pause_percentage,
-                'severity': 'high' if is_anomaly else 'low',
+                'severity': severity,
                 'description': (
-                    f"Delayed response ({is_delayed}) followed by fluent speech "
-                    f"({filler_ratio*100:.1f}% fillers, {pause_percentage:.1f}% pauses)"
+                    f"Delayed-then-fluent score: {combined_score:.2f} "
+                    f"(delay={delay_score:.2f}, fluency={fluency_score:.2f}, pause={pause_score:.2f})"
                 )
             }
 
@@ -390,37 +420,51 @@ class AnomalyDetectionService:
             risk = 0.0
             factors = []
 
+            # Get raw weights from settings
+            raw_weights = {
+                'instant_response': self.settings.RISK_WEIGHT_INSTANT_RESPONSE,
+                'unnatural_consistency': self.settings.RISK_WEIGHT_UNNATURAL_CONSISTENCY,
+                'delayed_then_fluent': self.settings.RISK_WEIGHT_DELAYED_FLUENT,
+                'robotic_speech_pattern': self.settings.RISK_WEIGHT_ROBOTIC_PATTERN,
+                'no_fillers': self.settings.RISK_WEIGHT_LOW_FILLER,
+                'excessive_speed': self.settings.RISK_WEIGHT_HIGH_SPEED,
+            }
+
+            # Normalize weights to sum to 1.0
+            total_weight = sum(raw_weights.values())
+            normalized_weights = {k: v / total_weight for k, v in raw_weights.items()}
+
             # Instant response
             if anomalies.get('instant_response', False):
-                risk += self.settings.RISK_WEIGHT_INSTANT_RESPONSE
+                risk += normalized_weights['instant_response']
                 factors.append("Instant response to complex question")
 
             # Unnatural consistency
             if anomalies.get('unnatural_consistency', False):
-                risk += self.settings.RISK_WEIGHT_UNNATURAL_CONSISTENCY
+                risk += normalized_weights['unnatural_consistency']
                 factors.append("Unnatural consistency in pause patterns")
 
             # Delayed then fluent
             if anomalies.get('delayed_then_fluent', False):
-                risk += self.settings.RISK_WEIGHT_DELAYED_FLUENT
+                risk += normalized_weights['delayed_then_fluent']
                 factors.append("Delayed response followed by fluent speech")
 
             # Robotic pattern
             if anomalies.get('robotic_speech_pattern', False):
-                risk += self.settings.RISK_WEIGHT_ROBOTIC_PATTERN
+                risk += normalized_weights['robotic_speech_pattern']
                 factors.append("Robotic or TTS-like speech pattern")
 
             # No fillers
             if anomalies.get('no_fillers', False):
-                risk += self.settings.RISK_WEIGHT_LOW_FILLER
+                risk += normalized_weights['no_fillers']
                 factors.append("Absence of natural filler words")
 
             # Excessive speed
             if anomalies.get('excessive_speed', False):
-                risk += self.settings.RISK_WEIGHT_HIGH_SPEED
+                risk += normalized_weights['excessive_speed']
                 factors.append("Excessive speech rate (reading)")
 
-            # Cap at 1.0
+            # Risk is already bounded 0-1 due to normalized weights
             risk = min(risk, 1.0)
 
             # Determine risk level

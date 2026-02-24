@@ -38,10 +38,15 @@ structlog.configure(
 )
 
 from .config import settings
-from .database import init_db, SessionLocal
+from .database import init_db, SessionLocal, engine
 from lib.errors import EyeTrackingError, ValidationError as EyeValidationError
+from concurrent.futures import ThreadPoolExecutor
+import asyncio
 
 logger = structlog.get_logger(__name__)
+
+# Thread pool for running synchronous DB operations in health checks
+_health_check_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="health_db_")
 
 
 @asynccontextmanager
@@ -76,6 +81,11 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error("connection_manager_shutdown_error", error=str(e))
 
+    # Shutdown health check thread pool
+    global _health_check_executor
+    _health_check_executor.shutdown(wait=False)
+    logger.info("health_check_executor_shutdown")
+
     logger.info("eye_tracking_service_shutdown_complete")
 
 
@@ -97,22 +107,31 @@ app.add_middleware(
 )
 
 
-# Health check endpoints
-@app.get("/health")
-async def health_check():
-    """Comprehensive health check endpoint"""
+def _check_db_sync() -> tuple:
+    """
+    Synchronous database health check.
+    Returns (status, message) tuple.
+    """
     from sqlalchemy import text
-
-    # Check database connectivity
-    db_status = "healthy"
-    db_message = None
     try:
         db = SessionLocal()
         db.execute(text("SELECT 1"))
         db.close()
+        return ("healthy", None)
     except Exception as e:
-        db_status = "unhealthy"
-        db_message = str(e)
+        return ("unhealthy", str(e))
+
+
+# Health check endpoints
+@app.get("/health")
+async def health_check():
+    """Comprehensive health check endpoint"""
+    # Run synchronous DB check in thread pool to avoid blocking event loop
+    loop = asyncio.get_event_loop()
+    db_status, db_message = await loop.run_in_executor(
+        _health_check_executor,
+        _check_db_sync
+    )
 
     overall_status = "healthy" if db_status == "healthy" else "unhealthy"
 
@@ -145,22 +164,23 @@ async def readiness_check():
     Returns 200 if the service is ready to accept traffic.
     Checks database connectivity.
     """
-    from sqlalchemy import text
-    from fastapi.responses import JSONResponse
+    # Run synchronous DB check in thread pool to avoid blocking event loop
+    loop = asyncio.get_event_loop()
+    db_status, db_message = await loop.run_in_executor(
+        _health_check_executor,
+        _check_db_sync
+    )
 
-    try:
-        db = SessionLocal()
-        db.execute(text("SELECT 1"))
-        db.close()
+    if db_status == "healthy":
         return {"ready": True, "checks": {"database": True}}
-    except Exception as e:
-        logger.error("readiness_check_failed", error=str(e))
+    else:
+        logger.error("readiness_check_failed", error=db_message)
         return JSONResponse(
             status_code=503,
             content={
                 "ready": False,
                 "checks": {"database": False},
-                "error": str(e)
+                "error": db_message
             }
         )
 

@@ -20,7 +20,7 @@ export interface BufferedMessage {
   id: string;
   userId: string;
   event: string;
-  data: any;
+  data: Record<string, unknown>;
   priority: MessagePriority;
   createdAt: Date;
   expiresAt?: Date;

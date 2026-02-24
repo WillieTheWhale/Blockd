@@ -2,8 +2,12 @@
 Main AI detection service
 Orchestrates all detection components and generates risk scores
 """
+import asyncio
+import hashlib
 import logging
 import uuid
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from typing import Dict, List, Optional, Tuple
 from models.model_manager import get_model_manager
 from lib.hash_utils import hash_question
@@ -27,6 +31,9 @@ from .cache_service import get_cache_service
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
+# Thread pool for CPU-bound operations (embedding, perplexity calculations)
+_cpu_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="cpu_bound_")
+
 
 class DetectionService:
     """Main AI detection orchestration service"""
@@ -39,6 +46,20 @@ class DetectionService:
         self.perplexity_service = get_perplexity_service()
         self.ngram_service = get_ngram_service()
         self.stylometric_service = get_stylometric_service()
+
+    def _get_embedding_cache_key(self, text: str) -> str:
+        """
+        Generate a cache key for text embeddings.
+
+        Args:
+            text: The text to generate cache key for
+
+        Returns:
+            A unique cache key based on text content hash
+        """
+        # Use SHA256 hash of the text for cache key
+        text_hash = hashlib.sha256(text.encode('utf-8')).hexdigest()
+        return f"embedding:{text_hash}"
 
     async def analyze_question(
         self,
@@ -79,17 +100,38 @@ class DetectionService:
         embedding_model = self.model_manager.get_embedding_model()
         perplexity_model = self.model_manager.get_perplexity_model()
 
+        # Get event loop for running CPU-bound operations in executor
+        loop = asyncio.get_event_loop()
+
         # Process each AI answer
         ai_answers = {}
         for model_name, answer_text in ai_answers_raw.items():
             if answer_text is None:
                 continue
 
-            # Generate embedding
-            embedding = embedding_model.encode(answer_text)
+            # Check embedding cache first
+            embedding_cache_key = self._get_embedding_cache_key(answer_text)
+            cached_embedding = await cache_service.get_embedding(embedding_cache_key)
 
-            # Calculate perplexity
-            perplexity = perplexity_model.calculate_perplexity(answer_text)
+            if cached_embedding is not None:
+                embedding = cached_embedding
+                logger.debug(f"Using cached embedding for {model_name}")
+            else:
+                # Generate embedding in thread pool (CPU-bound operation)
+                embedding = await loop.run_in_executor(
+                    _cpu_executor,
+                    embedding_model.encode,
+                    answer_text
+                )
+                # Cache the embedding
+                await cache_service.save_embedding(embedding_cache_key, embedding)
+
+            # Calculate perplexity in thread pool (CPU-bound operation)
+            perplexity = await loop.run_in_executor(
+                _cpu_executor,
+                perplexity_model.calculate_perplexity,
+                answer_text
+            )
 
             # Token count
             token_count = len(answer_text.split())
@@ -153,28 +195,54 @@ class DetectionService:
             if data.get("answer")
         }
 
-        # 1. Calculate semantic similarity
-        similarity_scores = self.similarity_service.calculate_similarity_to_ai_answers(
-            human_answer=answer_text,
-            ai_answers=ai_answers
+        # Get event loop for running CPU-bound operations in executor
+        loop = asyncio.get_event_loop()
+
+        # Run all CPU-bound operations in parallel using asyncio.gather
+        # This significantly improves performance by parallelizing independent computations
+        similarity_task = loop.run_in_executor(
+            _cpu_executor,
+            partial(
+                self.similarity_service.calculate_similarity_to_ai_answers,
+                human_answer=answer_text,
+                ai_answers=ai_answers
+            )
         )
 
+        perplexity_task = loop.run_in_executor(
+            _cpu_executor,
+            self.perplexity_service.calculate_perplexity,
+            answer_text
+        )
+
+        ngram_task = loop.run_in_executor(
+            _cpu_executor,
+            partial(
+                self.ngram_service.calculate_multiple_ngram_overlaps,
+                human_answer=answer_text,
+                ai_answers=ai_answers
+            )
+        )
+
+        stylometric_task = loop.run_in_executor(
+            _cpu_executor,
+            self.stylometric_service.analyze,
+            answer_text
+        )
+
+        # Wait for all tasks to complete concurrently
+        similarity_scores, perplexity_score, ngram_overlaps, stylometric = await asyncio.gather(
+            similarity_task,
+            perplexity_task,
+            ngram_task,
+            stylometric_task
+        )
+
+        # Post-process results (these are fast in-memory operations)
         max_sim, avg_sim = self.similarity_service.calculate_max_and_avg_similarity(
             similarity_scores
         )
-
-        # 2. Calculate perplexity
-        perplexity_score = self.perplexity_service.calculate_perplexity(answer_text)
-
-        # 3. Calculate n-gram overlap
-        ngram_overlaps = self.ngram_service.calculate_multiple_ngram_overlaps(
-            human_answer=answer_text,
-            ai_answers=ai_answers
-        )
         max_ngrams = self.ngram_service.calculate_max_ngram_overlap(ngram_overlaps)
-
-        # 4. Stylometric analysis
-        stylometric = self.stylometric_service.analyze(answer_text)
 
         # 5. Build feature vector
         features = DetectionFeatures(

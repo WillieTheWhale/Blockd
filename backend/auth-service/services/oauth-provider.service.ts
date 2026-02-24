@@ -148,7 +148,7 @@ export async function exchangeGoogleCode(
   });
 
   if (!response.ok) {
-    const errorResponse = await response.json().catch(() => ({ error: 'Unknown error' }));
+    const errorResponse = await response.json().catch(() => ({ error: 'Unknown error' })) as { error?: string; error_description?: string };
     // Security: Only log error type and code, never log tokens or sensitive data
     console.error('Google token exchange failed:', {
       error: errorResponse.error,
@@ -201,7 +201,7 @@ export async function exchangeMicrosoftCode(
   });
 
   if (!response.ok) {
-    const errorResponse = await response.json().catch(() => ({ error: 'Unknown error' }));
+    const errorResponse = await response.json().catch(() => ({ error: 'Unknown error' })) as { error?: string; error_description?: string };
     // Security: Only log error type and code, never log tokens or sensitive data
     console.error('Microsoft token exchange failed:', {
       error: errorResponse.error,

@@ -7,10 +7,11 @@ import logging
 from typing import Optional
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
 from pydantic import BaseModel, Field
 
 from services.recording import RecordingManager, RecordingNotFoundError, RecordingAlreadyStartedError
+from lib.auth import require_auth, AuthResult
 
 logger = logging.getLogger(__name__)
 
@@ -73,14 +74,15 @@ class RecordingStatusResponse(BaseModel):
 
 
 @router.post("/start", response_model=StartRecordingResponse)
-async def start_recording(request: StartRecordingRequest):
+async def start_recording(request: StartRecordingRequest, auth: AuthResult = Depends(require_auth)):
     """
     Start recording for an interview session
 
     Starts FFmpeg recording from the specified input source (RTMP/RTP stream).
     The recording is saved locally and can be uploaded to S3 when stopped.
+    Requires JWT authentication.
     """
-    logger.info(f"Starting recording for session {request.session_id}")
+    logger.info(f"Starting recording for session {request.session_id} (user: {auth.user_id})")
 
     try:
         manager = get_recording_manager()
@@ -105,7 +107,8 @@ async def start_recording(request: StartRecordingRequest):
 @router.post("/stop", response_model=StopRecordingResponse)
 async def stop_recording(
     request: StopRecordingRequest,
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    auth: AuthResult = Depends(require_auth)
 ):
     """
     Stop recording and optionally upload to S3
@@ -117,8 +120,9 @@ async def stop_recording(
     - Returns signed URLs for all versions
 
     Note: Encoding and upload may take several minutes for long recordings.
+    Requires JWT authentication.
     """
-    logger.info(f"Stopping recording for session {request.session_id}")
+    logger.info(f"Stopping recording for session {request.session_id} (user: {auth.user_id})")
 
     try:
         manager = get_recording_manager()
@@ -139,13 +143,14 @@ async def stop_recording(
 
 
 @router.get("/status/{session_id}", response_model=RecordingStatusResponse)
-async def get_recording_status(session_id: str):
+async def get_recording_status(session_id: str, auth: AuthResult = Depends(require_auth)):
     """
     Get current status of a recording
 
     Returns whether a recording is active and its duration if recording.
+    Requires JWT authentication.
     """
-    logger.info(f"Getting recording status for session {session_id}")
+    logger.info(f"Getting recording status for session {session_id} (user: {auth.user_id})")
 
     try:
         manager = get_recording_manager()
@@ -159,11 +164,12 @@ async def get_recording_status(session_id: str):
 
 
 @router.get("/list")
-async def list_active_recordings():
+async def list_active_recordings(auth: AuthResult = Depends(require_auth)):
     """
     List all active recordings
 
     Returns a list of all currently active recording sessions.
+    Requires JWT authentication.
     """
     try:
         manager = get_recording_manager()
@@ -189,11 +195,12 @@ async def list_active_recordings():
 
 
 @router.get("/metrics")
-async def get_recording_metrics():
+async def get_recording_metrics(auth: AuthResult = Depends(require_auth)):
     """
     Get recording service metrics
 
     Returns statistics about recordings (started, completed, failed).
+    Requires JWT authentication.
     """
     try:
         manager = get_recording_manager()
@@ -211,14 +218,15 @@ async def get_recording_metrics():
 
 
 @router.delete("/{session_id}")
-async def delete_recording(session_id: str):
+async def delete_recording(session_id: str, auth: AuthResult = Depends(require_auth)):
     """
     Stop and delete recording for a session
 
     Force stops the recording (if active) without uploading to S3.
     Useful for cancelling recordings or cleaning up.
+    Requires JWT authentication.
     """
-    logger.info(f"Deleting recording for session {session_id}")
+    logger.info(f"Deleting recording for session {session_id} (user: {auth.user_id})")
 
     try:
         manager = get_recording_manager()

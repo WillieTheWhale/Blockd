@@ -21,7 +21,7 @@ export interface RoomInfo {
   type: RoomType;
   participantCount: number;
   createdAt: Date;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -31,7 +31,7 @@ export interface RoomJoinOptions {
   roomId: string;
   userId: string;
   role?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -49,7 +49,7 @@ export interface RoomLeaveOptions {
 export interface RoomBroadcastOptions {
   roomId: string;
   event: string;
-  data: any;
+  data: Record<string, unknown>;
   excludeSocketId?: string;
   excludeUserId?: string;
 }
@@ -62,7 +62,7 @@ export interface RoomParticipant {
   socketId: string;
   role?: string;
   joinedAt: Date;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 /**

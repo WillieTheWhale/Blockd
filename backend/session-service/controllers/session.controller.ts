@@ -49,7 +49,14 @@ export class SessionController {
 
       // Get interviewer ID from JWT (would be extracted from auth middleware)
       const user = (request as FastifyRequest & { user?: { userId: string } }).user;
-      const interviewerId = user?.userId || 'mock-interviewer-id';
+      if (!user?.userId) {
+        return reply.status(401).send({
+          statusCode: 401,
+          error: 'Unauthorized',
+          message: 'Authentication required to create a session',
+        });
+      }
+      const interviewerId = user.userId;
 
       // Create session
       const session = await sessionService.createSession(interviewerId, dto);

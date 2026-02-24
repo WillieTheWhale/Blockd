@@ -32,17 +32,45 @@ export interface RateLimitConfig {
 const limiters = new Map<string, RateLimiterState>();
 
 /**
- * Cleanup old limiters periodically
+ * Track cleanup interval for graceful shutdown
  */
-setInterval(() => {
-  const now = Date.now();
-  for (const [socketId, state] of limiters.entries()) {
-    // Remove limiters that haven't been reset in 5 minutes
-    if (now - state.resetAt > 5 * 60 * 1000) {
-      limiters.delete(socketId);
-    }
+let cleanupIntervalId: NodeJS.Timeout | null = null;
+
+/**
+ * Initialize rate limiter cleanup interval
+ * Called automatically on first use
+ */
+function initializeCleanupInterval(): void {
+  if (cleanupIntervalId !== null) {
+    return; // Already initialized
   }
-}, 60000); // Cleanup every minute
+
+  cleanupIntervalId = setInterval(() => {
+    const now = Date.now();
+    for (const [socketId, state] of limiters.entries()) {
+      // Remove limiters that haven't been reset in 5 minutes
+      if (now - state.resetAt > 5 * 60 * 1000) {
+        limiters.delete(socketId);
+      }
+    }
+  }, 60000); // Cleanup every minute
+}
+
+/**
+ * Shutdown rate limiter and cleanup resources
+ * Call this during graceful shutdown
+ */
+export function shutdownRateLimiter(): void {
+  if (cleanupIntervalId !== null) {
+    clearInterval(cleanupIntervalId);
+    cleanupIntervalId = null;
+  }
+  limiters.clear();
+  logger.debug('Rate limiter shutdown complete');
+}
+
+// Initialize cleanup on module load
+initializeCleanupInterval();
 
 /**
  * Rate limiting middleware

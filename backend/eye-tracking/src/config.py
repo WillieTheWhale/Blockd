@@ -83,6 +83,7 @@ class Settings(BaseSettings):
     MAX_FPS: int = 30
     FRAME_PROCESSING_TIMEOUT: float = 0.050  # 50ms
     MAX_GAZE_BUFFER_SIZE: int = 1000
+    DB_THREAD_POOL_WORKERS: int = 4  # Thread pool workers for async DB operations
 
     # Risk Score Weights
     RISK_OFFSCREEN_WEIGHT_SEVERE: float = 0.3  # <70% on-screen

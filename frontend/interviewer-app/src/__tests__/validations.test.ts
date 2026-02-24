@@ -76,8 +76,10 @@ describe('Validation Schemas', () => {
       expect(() => registerSchema.parse(invalidData)).toThrow()
     })
 
-    it('rejects when terms not accepted', () => {
-      const invalidData = {
+    it('accepts registration when acceptTerms is false (validation moved to ToS page)', () => {
+      // acceptTerms validation has been moved to the Terms of Service page
+      // The registerSchema now accepts any boolean value and defaults to true
+      const validData = {
         name: 'John Doe',
         email: 'john@example.com',
         password: 'Password123!',
@@ -86,7 +88,8 @@ describe('Validation Schemas', () => {
         acceptTerms: false,
       }
 
-      expect(() => registerSchema.parse(invalidData)).toThrow()
+      // Should not throw - acceptTerms is now optional with default true
+      expect(() => registerSchema.parse(validData)).not.toThrow()
     })
   })
 

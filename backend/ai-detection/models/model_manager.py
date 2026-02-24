@@ -3,7 +3,8 @@ Model manager for loading and caching all ML models
 Ensures models are loaded once and reused
 """
 import logging
-from typing import Optional, Dict
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Optional, Dict, Callable, Any
 
 import torch
 
@@ -24,28 +25,57 @@ class ModelManager:
         self._models_loaded = False
 
     def load_all_models(self):
-        """Load all required models"""
-        logger.info("Loading all ML models...")
+        """
+        Load all required models in parallel using ThreadPoolExecutor.
 
-        try:
-            # Load embedding model
-            logger.info("Loading embedding model...")
-            self._embedding_model = get_embedding_model()
+        This significantly reduces startup time by loading the embedding model,
+        perplexity model, and XGBoost classifier concurrently instead of sequentially.
+        """
+        logger.info("Loading all ML models in parallel...")
 
-            # Load perplexity model
-            logger.info("Loading perplexity model...")
-            self._perplexity_model = get_perplexity_model()
+        # Define model loaders with their names for logging
+        model_loaders: Dict[str, Callable[[], Any]] = {
+            "embedding_model": get_embedding_model,
+            "perplexity_model": get_perplexity_model,
+            "xgboost_classifier": get_xgboost_classifier,
+        }
 
-            # Load XGBoost classifier
-            logger.info("Loading XGBoost classifier...")
-            self._xgboost_classifier = get_xgboost_classifier()
+        results: Dict[str, Any] = {}
+        errors: Dict[str, Exception] = {}
 
-            self._models_loaded = True
-            logger.info("All models loaded successfully")
+        # Use ThreadPoolExecutor to load models in parallel
+        # Note: We use threads (not processes) because the models may share
+        # GPU resources and thread-based parallelism works better with PyTorch
+        with ThreadPoolExecutor(max_workers=3, thread_name_prefix="model_loader_") as executor:
+            # Submit all loading tasks
+            future_to_name = {
+                executor.submit(loader): name
+                for name, loader in model_loaders.items()
+            }
 
-        except Exception as e:
-            logger.error(f"Failed to load models: {e}")
-            raise
+            # Collect results as they complete
+            for future in as_completed(future_to_name):
+                name = future_to_name[future]
+                try:
+                    logger.info(f"Loading {name}...")
+                    results[name] = future.result()
+                    logger.info(f"Successfully loaded {name}")
+                except Exception as e:
+                    logger.error(f"Failed to load {name}: {e}")
+                    errors[name] = e
+
+        # Check for any failures
+        if errors:
+            error_msg = "; ".join(f"{name}: {err}" for name, err in errors.items())
+            raise RuntimeError(f"Failed to load models: {error_msg}")
+
+        # Assign loaded models to instance variables
+        self._embedding_model = results["embedding_model"]
+        self._perplexity_model = results["perplexity_model"]
+        self._xgboost_classifier = results["xgboost_classifier"]
+
+        self._models_loaded = True
+        logger.info("All models loaded successfully in parallel")
 
     def get_embedding_model(self) -> EmbeddingModel:
         """Get embedding model instance"""

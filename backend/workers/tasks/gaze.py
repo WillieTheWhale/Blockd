@@ -4,14 +4,72 @@ Handles gaze data processing and anomaly detection
 """
 
 import os
+import json
 import logging
+import hashlib
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 from celery import shared_task
 import requests
 import numpy as np
+import redis
 
 logger = logging.getLogger(__name__)
+
+# Redis configuration for large data storage
+REDIS_HOST = os.getenv('REDIS_HOST', 'redis')
+REDIS_PORT = int(os.getenv('REDIS_PORT', '6379'))
+REDIS_DB = int(os.getenv('REDIS_DB', '0'))
+GAZE_DATA_TTL = int(os.getenv('GAZE_DATA_TTL', '3600'))  # 1 hour default TTL
+
+def get_redis_client():
+    """Get configured Redis client"""
+    return redis.Redis(
+        host=REDIS_HOST,
+        port=REDIS_PORT,
+        db=REDIS_DB,
+        decode_responses=True,
+    )
+
+
+def store_gaze_data(session_id: str, gaze_data: List[Dict[str, Any]]) -> str:
+    """
+    Store large gaze data in Redis and return a reference key.
+
+    Args:
+        session_id: Interview session ID
+        gaze_data: List of gaze data points
+
+    Returns:
+        Reference key to retrieve the data
+    """
+    # Generate unique key based on session and content hash
+    data_json = json.dumps(gaze_data, sort_keys=True)
+    content_hash = hashlib.sha256(data_json.encode()).hexdigest()[:16]
+    reference_key = f"gaze_data:{session_id}:{content_hash}"
+
+    client = get_redis_client()
+    client.setex(reference_key, GAZE_DATA_TTL, data_json)
+
+    return reference_key
+
+
+def retrieve_gaze_data(reference_key: str) -> Optional[List[Dict[str, Any]]]:
+    """
+    Retrieve gaze data from Redis using reference key.
+
+    Args:
+        reference_key: Key returned from store_gaze_data
+
+    Returns:
+        List of gaze data points or None if not found
+    """
+    client = get_redis_client()
+    data_json = client.get(reference_key)
+
+    if data_json:
+        return json.loads(data_json)
+    return None
 
 # Service URLs
 EYE_TRACKING_SERVICE_URL = os.getenv('EYE_TRACKING_SERVICE_URL', 'http://eye-tracking:3004')
@@ -28,6 +86,7 @@ FIXATION_MIN_DURATION = float(os.getenv('FIXATION_MIN_DURATION', '0.1'))  # 100m
     bind=True,
     autoretry_for=(requests.RequestException,),
     retry_backoff=True,
+    retry_jitter=True,
     max_retries=3,
     soft_time_limit=30,
     time_limit=45,
@@ -35,7 +94,7 @@ FIXATION_MIN_DURATION = float(os.getenv('FIXATION_MIN_DURATION', '0.1'))  # 100m
 def process(
     self,
     session_id: str,
-    gaze_data: List[Dict[str, Any]],
+    gaze_data_ref: str,
     **kwargs
 ) -> Dict[str, Any]:
     """
@@ -43,7 +102,8 @@ def process(
 
     Args:
         session_id: Interview session ID
-        gaze_data: List of gaze data points containing:
+        gaze_data_ref: Reference key to gaze data stored in Redis
+            The actual gaze data contains:
             - timestamp: ISO timestamp
             - gaze_x: X coordinate (0-1)
             - gaze_y: Y coordinate (0-1)
@@ -52,6 +112,16 @@ def process(
     Returns:
         Dict with processing results
     """
+    # Retrieve gaze data from Redis using reference key
+    gaze_data = retrieve_gaze_data(gaze_data_ref)
+    if gaze_data is None:
+        logger.error(f"Gaze data not found for reference: {gaze_data_ref}")
+        return {
+            'session_id': session_id,
+            'status': 'error',
+            'error': 'Gaze data not found or expired',
+        }
+
     logger.info(f"Processing gaze data: session={session_id}, points={len(gaze_data)}")
 
     try:
@@ -119,6 +189,7 @@ def process(
     bind=True,
     autoretry_for=(requests.RequestException,),
     retry_backoff=True,
+    retry_jitter=True,
     max_retries=3,
     soft_time_limit=30,
     time_limit=45,

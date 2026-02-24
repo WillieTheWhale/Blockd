@@ -5,6 +5,7 @@
 
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
+import crypto from 'crypto';
 import {
   generateMFASecret,
   verifyTOTPCode,
@@ -15,14 +16,19 @@ import {
   isValidMFACodeFormat
 } from '../services/mfa.service';
 import { getUserById, updateUserMFA, getUserByEmailWithPassword, updateLastLogin } from '../services/user.service';
-import { generateAccessToken, verifyMFAToken } from '../services/jwt.service';
+import { generateAccessToken, verifyMFAToken, generateAccessTokenWithMFA } from '../services/jwt.service';
 import { createRefreshToken, clearLoginAttempts } from '../services/session.service';
+import { storeTemporaryToken, getAndDeleteTemporaryToken } from '../lib/redis';
 import { sendMFASetupEmail } from '../lib/email';
 import { handleError, InvalidMFACodeError, ValidationError } from '../lib/errors';
 
+// MFA setup session TTL (10 minutes)
+const MFA_SETUP_SESSION_TTL = 600;
+
 // Validation schemas
 const mfaSetupVerifySchema = z.object({
-  code: z.string().length(6, 'MFA code must be 6 digits')
+  code: z.string().length(6, 'MFA code must be 6 digits'),
+  setup_session_id: z.string().min(1, 'Setup session ID is required')
 });
 
 const mfaVerifyLoginSchema = z.object({
@@ -77,12 +83,26 @@ export async function setupMFA(
     // Generate MFA secret and QR code
     const mfaData = await generateMFASecret(user.email);
 
-    // Store the secret temporarily in the session
-    // In production, you might want to use Redis for this
-    // For now, we'll return it and expect it to be sent back during verification
+    // Generate a secure session ID for MFA setup
+    const setupSessionId = crypto.randomBytes(32).toString('hex');
 
+    // Store the secret and backup codes in Redis with the session ID
+    // This prevents the client from tampering with the secret
+    await storeTemporaryToken(
+      'mfa_setup',
+      setupSessionId,
+      {
+        userId: request.user.sub,
+        secret: mfaData.secret,
+        backupCodes: mfaData.backup_codes
+      },
+      MFA_SETUP_SESSION_TTL
+    );
+
+    // Return the QR code URL and session ID, but NOT the secret
+    // The backup codes are shown once here for the user to save
     reply.code(200).send({
-      secret: mfaData.secret,
+      setup_session_id: setupSessionId,
       qr_code_url: mfaData.qr_code_url,
       backup_codes: mfaData.backup_codes
     });
@@ -111,15 +131,21 @@ export async function verifyMFASetup(
     }
 
     const data = mfaSetupVerifySchema.parse(request.body);
-    const body = request.body as any;
 
-    // The secret and backup codes should be sent back from the setup response
-    const secret = body.secret;
-    const backupCodes = body.backup_codes;
+    // Retrieve the MFA setup data from Redis using the session ID
+    const setupData = await getAndDeleteTemporaryToken('mfa_setup', data.setup_session_id);
 
-    if (!secret || !backupCodes) {
-      throw new ValidationError('MFA secret and backup codes are required');
+    if (!setupData) {
+      throw new ValidationError('MFA setup session expired or invalid. Please restart MFA setup.');
     }
+
+    // Verify the session belongs to the current user
+    if (setupData.userId !== request.user.sub) {
+      throw new ValidationError('Invalid MFA setup session');
+    }
+
+    const secret = setupData.secret as string;
+    const backupCodes = setupData.backupCodes as string[];
 
     // Verify the TOTP code
     const isValid = verifyTOTPCode(secret, data.code);
@@ -195,8 +221,8 @@ export async function verifyMFALogin(
     // Update last login
     await updateLastLogin(user.id);
 
-    // Generate JWT tokens
-    const accessToken = generateAccessToken(user);
+    // Generate JWT tokens with MFA verification claim
+    const accessToken = generateAccessTokenWithMFA(user);
     const refreshToken = await createRefreshToken(
       user.id,
       request.ip,
@@ -208,7 +234,8 @@ export async function verifyMFALogin(
       email: user.email,
       access_token: accessToken,
       refresh_token: refreshToken,
-      expires_in: 3600
+      expires_in: 3600,
+      mfa_verified: true
     });
   } catch (error) {
     const errorResponse = handleError(error);

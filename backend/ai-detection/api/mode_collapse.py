@@ -2,9 +2,10 @@
 Mode Collapse Detection API Endpoints
 Handles interviewer audio transcription processing and mode collapse analysis
 """
+import asyncio
 import logging
 import time
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from uuid import UUID
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from pydantic import BaseModel, Field
@@ -312,29 +313,49 @@ async def get_stats() -> ServiceStatsResponse:
     summary="Batch analyze multiple answers for mode collapse",
     description="""
     Analyze multiple question-answer pairs for mode collapse in a single request.
-    Useful for post-interview batch analysis.
+    Useful for post-interview batch analysis. Processes requests concurrently for better performance.
     """
 )
 async def batch_analyze_mode_collapse(
     requests: List[ModeCollapseAnalysisRequest]
 ) -> List[ModeCollapseAnalysisResponse]:
-    """Batch analyze multiple answers for mode collapse"""
+    """Batch analyze multiple answers for mode collapse using concurrent processing"""
     if len(requests) > 20:
         raise HTTPException(
             status_code=400,
             detail="Maximum 20 answers can be analyzed in a single batch"
         )
 
-    results = []
-    for req in requests:
+    if not requests:
+        return []
+
+    async def analyze_single(
+        req: ModeCollapseAnalysisRequest,
+        index: int
+    ) -> Tuple[int, Optional[ModeCollapseAnalysisResponse], Optional[Exception]]:
+        """Analyze a single request and return result with index for ordering"""
         try:
             result = await analyze_mode_collapse(req)
-            results.append(result)
-        except HTTPException:
-            # Re-raise HTTP exceptions
-            raise
+            return (index, result, None)
         except Exception as e:
-            logger.error(f"Error analyzing answer in batch: {e}")
+            return (index, None, e)
+
+    # Process all requests concurrently using asyncio.gather
+    tasks = [analyze_single(req, i) for i, req in enumerate(requests)]
+    task_results = await asyncio.gather(*tasks, return_exceptions=False)
+
+    # Sort by original index to maintain order
+    task_results.sort(key=lambda x: x[0])
+
+    # Process results and handle any errors
+    results = []
+    for index, result, error in task_results:
+        if error is not None:
+            if isinstance(error, HTTPException):
+                # Re-raise HTTP exceptions
+                raise error
+            logger.error(f"Error analyzing answer {index} in batch: {error}")
             raise HTTPException(status_code=500, detail="Internal server error")
+        results.append(result)
 
     return results

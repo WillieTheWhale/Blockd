@@ -50,11 +50,16 @@ export class ReportService {
     this.detectionService = detectionService || detectionAggregationService;
   }
 
+  // Default pagination limits to prevent unbounded queries
+  private static readonly MAX_QUESTIONS_PER_PAGE = 100;
+  private static readonly MAX_SECURITY_EVENTS_PER_PAGE = 500;
+  private static readonly MAX_ANSWERS_PER_QUESTION = 10;
+
   /**
    * Generate comprehensive session report
    */
   async generateReport(sessionId: string): Promise<SessionReport> {
-    // Get session with all related data
+    // Get session with related data using pagination limits
     const session = await prisma.interviewSession.findUnique({
       where: { id: sessionId },
       include: {
@@ -63,18 +68,43 @@ export class ReportService {
         organization: true,
         questions: {
           orderBy: { questionOrder: 'asc' },
+          take: ReportService.MAX_QUESTIONS_PER_PAGE,
           include: {
-            answerAnalysis: true,
+            answerAnalysis: {
+              take: ReportService.MAX_ANSWERS_PER_QUESTION,
+              orderBy: { createdAt: 'desc' },
+            },
           },
         },
         securityEvents: {
           orderBy: { timestamp: 'desc' },
+          take: ReportService.MAX_SECURITY_EVENTS_PER_PAGE,
         },
       },
     });
 
     if (!session) {
       throw new SessionNotFoundError(sessionId);
+    }
+
+    // Log if results were truncated
+    const questionCount = await prisma.sessionQuestion.count({ where: { sessionId } });
+    const securityEventCount = await prisma.securityEvent.count({ where: { sessionId } });
+
+    if (questionCount > ReportService.MAX_QUESTIONS_PER_PAGE) {
+      logger.warn('Questions truncated in report', {
+        sessionId,
+        total: questionCount,
+        included: ReportService.MAX_QUESTIONS_PER_PAGE,
+      });
+    }
+
+    if (securityEventCount > ReportService.MAX_SECURITY_EVENTS_PER_PAGE) {
+      logger.warn('Security events truncated in report', {
+        sessionId,
+        total: securityEventCount,
+        included: ReportService.MAX_SECURITY_EVENTS_PER_PAGE,
+      });
     }
 
     // Calculate risk analysis
@@ -192,17 +222,24 @@ export class ReportService {
    * Falls back to cached database data when services are unavailable.
    */
   private async calculateRiskAnalysis(sessionId: string): Promise<RiskAnalysis> {
-    // Fetch session data from database
+    // Fetch session data from database with pagination limits
     const session = await prisma.interviewSession.findUnique({
       where: { id: sessionId },
       include: {
         questions: {
           orderBy: { questionOrder: 'asc' },
+          take: ReportService.MAX_QUESTIONS_PER_PAGE,
           include: {
-            answerAnalysis: true,
+            answerAnalysis: {
+              take: ReportService.MAX_ANSWERS_PER_QUESTION,
+              orderBy: { createdAt: 'desc' },
+            },
           },
         },
-        securityEvents: true,
+        securityEvents: {
+          take: ReportService.MAX_SECURITY_EVENTS_PER_PAGE,
+          orderBy: { timestamp: 'desc' },
+        },
       },
     });
 

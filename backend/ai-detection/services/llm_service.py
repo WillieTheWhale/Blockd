@@ -18,6 +18,9 @@ from openai import AsyncOpenAI
 from anthropic import AsyncAnthropic
 import google.generativeai as genai
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from openai import APIConnectionError, APITimeoutError, RateLimitError as OpenAIRateLimitError
+from anthropic import APIConnectionError as AnthropicConnectionError, APITimeoutError as AnthropicTimeoutError, RateLimitError as AnthropicRateLimitError
+from google.api_core.exceptions import ServiceUnavailable, DeadlineExceeded, ResourceExhausted
 
 from lib.errors import LLMServiceError
 from lib.circuit_breaker import (
@@ -162,7 +165,14 @@ class LLMService:
     @retry(
         stop=stop_after_attempt(2),  # Reduced retries since circuit breaker handles failures
         wait=wait_exponential(multiplier=1, min=1, max=5),
-        retry=retry_if_exception_type((Exception,)),
+        retry=retry_if_exception_type((
+            APIConnectionError,
+            APITimeoutError,
+            OpenAIRateLimitError,
+            asyncio.TimeoutError,
+            ConnectionError,
+            TimeoutError,
+        )),
         reraise=True
     )
     async def generate_openai_answer(self, question: str) -> str:
@@ -209,7 +219,14 @@ class LLMService:
     @retry(
         stop=stop_after_attempt(2),
         wait=wait_exponential(multiplier=1, min=1, max=5),
-        retry=retry_if_exception_type((Exception,)),
+        retry=retry_if_exception_type((
+            AnthropicConnectionError,
+            AnthropicTimeoutError,
+            AnthropicRateLimitError,
+            asyncio.TimeoutError,
+            ConnectionError,
+            TimeoutError,
+        )),
         reraise=True
     )
     async def generate_claude_answer(self, question: str) -> str:
@@ -251,7 +268,14 @@ class LLMService:
     @retry(
         stop=stop_after_attempt(2),
         wait=wait_exponential(multiplier=1, min=1, max=5),
-        retry=retry_if_exception_type((Exception,)),
+        retry=retry_if_exception_type((
+            ServiceUnavailable,
+            DeadlineExceeded,
+            ResourceExhausted,
+            asyncio.TimeoutError,
+            ConnectionError,
+            TimeoutError,
+        )),
         reraise=True
     )
     async def generate_gemini_answer(self, question: str) -> str:

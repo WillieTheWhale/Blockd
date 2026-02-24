@@ -10,10 +10,33 @@ import { PrismaClient } from '@prisma/client';
 
 const SERVICE_NAME = 'session-service';
 
+// Connection pool tracking
+interface PoolMetrics {
+  activeConnections: number;
+  idleConnections: number;
+  waitingRequests: number;
+  totalQueries: number;
+  lastQueryTime: Date | null;
+}
+
+const poolMetrics: PoolMetrics = {
+  activeConnections: 0,
+  idleConnections: 0,
+  waitingRequests: 0,
+  totalQueries: 0,
+  lastQueryTime: null,
+};
+
 // Use global for singleton pattern in development (prevents multiple instances during hot reload)
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
+  poolMetrics: PoolMetrics | undefined;
 };
+
+// Restore metrics from global if available (for hot reload)
+if (globalForPrisma.poolMetrics) {
+  Object.assign(poolMetrics, globalForPrisma.poolMetrics);
+}
 
 const prisma =
   globalForPrisma.prisma ??
@@ -25,8 +48,26 @@ const prisma =
     errorFormat: 'pretty',
   });
 
+// Set up query tracking middleware
+prisma.$use(async (params, next) => {
+  poolMetrics.activeConnections++;
+  poolMetrics.totalQueries++;
+  poolMetrics.lastQueryTime = new Date();
+
+  try {
+    const result = await next(params);
+    return result;
+  } finally {
+    poolMetrics.activeConnections--;
+    // Update idle connections estimate based on pool config
+    const config = getPoolConfig();
+    poolMetrics.idleConnections = Math.max(0, config.connectionLimit - poolMetrics.activeConnections);
+  }
+});
+
 if (process.env.NODE_ENV !== 'production') {
   globalForPrisma.prisma = prisma;
+  globalForPrisma.poolMetrics = poolMetrics;
 }
 
 /**
@@ -76,16 +117,49 @@ export function getPoolConfig(): PoolConfig {
 }
 
 /**
- * Get connection pool statistics (approximate)
+ * Get connection pool statistics
+ * Uses middleware tracking for active connections and queries PostgreSQL for actual pool state
  */
 export async function getPoolStats(): Promise<PoolStats> {
-  // Prisma doesn't expose pool stats directly, but we can track basic info
-  return {
-    serviceName: SERVICE_NAME,
-    activeConnections: 0, // Would need custom tracking
-    idleConnections: 0,
-    waitingRequests: 0,
-  };
+  // Get real-time stats from PostgreSQL for more accurate connection info
+  try {
+    const dbStats = await prisma.$queryRaw<Array<{ count: bigint }>>`
+      SELECT COUNT(*) as count FROM pg_stat_activity
+      WHERE datname = current_database()
+      AND application_name LIKE '%session-service%'
+      AND state = 'active'
+    `;
+
+    const idleStats = await prisma.$queryRaw<Array<{ count: bigint }>>`
+      SELECT COUNT(*) as count FROM pg_stat_activity
+      WHERE datname = current_database()
+      AND application_name LIKE '%session-service%'
+      AND state = 'idle'
+    `;
+
+    const waitingStats = await prisma.$queryRaw<Array<{ count: bigint }>>`
+      SELECT COUNT(*) as count FROM pg_stat_activity
+      WHERE datname = current_database()
+      AND wait_event IS NOT NULL
+      AND application_name LIKE '%session-service%'
+    `;
+
+    return {
+      serviceName: SERVICE_NAME,
+      activeConnections: Number(dbStats[0]?.count ?? poolMetrics.activeConnections),
+      idleConnections: Number(idleStats[0]?.count ?? poolMetrics.idleConnections),
+      waitingRequests: Number(waitingStats[0]?.count ?? poolMetrics.waitingRequests),
+    };
+  } catch (error) {
+    // Fall back to middleware-tracked metrics if pg_stat_activity is not accessible
+    console.warn('Could not query pg_stat_activity, using tracked metrics:', error);
+    return {
+      serviceName: SERVICE_NAME,
+      activeConnections: poolMetrics.activeConnections,
+      idleConnections: poolMetrics.idleConnections,
+      waitingRequests: poolMetrics.waitingRequests,
+    };
+  }
 }
 
 /**

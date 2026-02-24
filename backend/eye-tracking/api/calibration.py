@@ -3,6 +3,8 @@ Gaze Calibration API
 Endpoints for calibrating gaze estimation
 """
 
+import threading
+import time
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from uuid import UUID
@@ -16,8 +18,60 @@ logger = structlog.get_logger(__name__)
 
 router = APIRouter()
 
-# Store processing services per session (in production, use Redis or similar)
-processing_services = {}
+# Store processing services per session with TTL-based cleanup
+# Each entry stores (service, last_access_time)
+_processing_services: dict = {}
+_processing_services_lock = threading.Lock()
+_SERVICE_TTL_SECONDS = 3600  # 1 hour TTL
+
+
+def _cleanup_expired_services():
+    """Remove services that haven't been accessed within TTL"""
+    current_time = time.time()
+    expired_keys = []
+
+    with _processing_services_lock:
+        for session_id, (service, last_access) in _processing_services.items():
+            if current_time - last_access > _SERVICE_TTL_SECONDS:
+                expired_keys.append(session_id)
+
+        for key in expired_keys:
+            service, _ = _processing_services.pop(key)
+            try:
+                service.close()
+            except Exception as e:
+                logger.error("service_cleanup_error", session_id=key, error=str(e))
+
+    if expired_keys:
+        logger.info("expired_services_cleaned", count=len(expired_keys))
+
+
+def _get_or_create_service(session_id: str) -> GazeProcessingService:
+    """Thread-safe get or create processing service with TTL update"""
+    # Periodically cleanup expired services (simple approach)
+    _cleanup_expired_services()
+
+    current_time = time.time()
+    with _processing_services_lock:
+        if session_id in _processing_services:
+            service, _ = _processing_services[session_id]
+            _processing_services[session_id] = (service, current_time)
+            return service
+        else:
+            service = GazeProcessingService()
+            _processing_services[session_id] = (service, current_time)
+            return service
+
+
+def _get_service(session_id: str) -> GazeProcessingService | None:
+    """Thread-safe get service if exists"""
+    current_time = time.time()
+    with _processing_services_lock:
+        if session_id in _processing_services:
+            service, _ = _processing_services[session_id]
+            _processing_services[session_id] = (service, current_time)
+            return service
+    return None
 
 
 @router.post("/calibrate", response_model=CalibrationResponse)
@@ -46,11 +100,8 @@ async def calibrate_gaze(
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
 
-        # Get or create processing service
-        if session_id not in processing_services:
-            processing_services[session_id] = GazeProcessingService()
-
-        processing_service = processing_services[session_id]
+        # Get or create processing service (thread-safe with TTL)
+        processing_service = _get_or_create_service(session_id)
 
         # Extract calibration points
         ground_truth_points = [
@@ -127,9 +178,10 @@ async def reset_calibration(
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
 
-        # Reset processing service calibration
-        if session_id_str in processing_services:
-            processing_services[session_id_str].reset_calibration()
+        # Reset processing service calibration (thread-safe)
+        service = _get_service(session_id_str)
+        if service:
+            service.reset_calibration()
 
         # Update database
         session.is_calibrated = False

@@ -18,6 +18,7 @@ import {
 import { sendSuccess } from '../lib/response';
 import { NotFoundError } from '../lib/errors';
 import prisma from '../lib/prisma';
+import { sanitizeMetadata } from '../lib/sanitize';
 
 export default async function browserRoutes(fastify: FastifyInstance) {
   // Validate session token
@@ -74,6 +75,9 @@ export default async function browserRoutes(fastify: FastifyInstance) {
         throw new NotFoundError('Session not found');
       }
 
+      // Sanitize metadata before database storage to prevent XSS and prototype pollution
+      const sanitizedMetadata = sanitizeMetadata((metadata || {}) as Record<string, unknown>);
+
       // Create security event
       const event = await prisma.securityEvent.create({
         data: {
@@ -81,7 +85,7 @@ export default async function browserRoutes(fastify: FastifyInstance) {
           eventType: eventType as SecurityEventType,
           severity: severity as SeverityLevel,
           description,
-          metadata: (metadata || {}) as Prisma.InputJsonValue,
+          metadata: sanitizedMetadata as Prisma.InputJsonValue,
         },
       });
 

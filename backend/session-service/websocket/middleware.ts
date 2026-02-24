@@ -179,12 +179,9 @@ export function requireSessionAccess() {
       return next();
     }
 
-    // Import prisma client for session lookup
-    // Note: In production, consider using a dedicated session service client
-    // to avoid direct database access from WebSocket middleware
+    // Use shared prisma client instance to avoid connection leaks
     try {
-      const { PrismaClient } = await import('@prisma/client');
-      const prisma = new PrismaClient();
+      const prisma = (await import('../src/database')).default;
 
       const session = await prisma.interviewSession.findUnique({
         where: { id: sessionId },
@@ -196,7 +193,7 @@ export function requireSessionAccess() {
         },
       });
 
-      await prisma.$disconnect();
+      // Note: Do NOT disconnect - using shared singleton instance
 
       if (!session) {
         return next(new WebSocketError('Session not found'));

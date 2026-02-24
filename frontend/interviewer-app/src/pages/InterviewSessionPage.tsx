@@ -20,10 +20,37 @@ import { apiRequest } from '@/lib/api-client'
 import { API_ENDPOINTS, QUERY_KEYS } from '@/lib/constants'
 import type { Session, Question, Answer, AIDetectionResult, SecurityEvent } from '@/types'
 
+/**
+ * Validate session ID format
+ * Session IDs should be UUIDs or alphanumeric strings
+ */
+function isValidSessionId(id: string | undefined): id is string {
+  if (!id || typeof id !== 'string') {
+    return false
+  }
+
+  // Trim and check length
+  const trimmed = id.trim()
+  if (trimmed.length === 0 || trimmed.length > 128) {
+    return false
+  }
+
+  // UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+  // Alphanumeric format with optional hyphens and underscores
+  const alphanumericRegex = /^[a-zA-Z0-9_-]+$/
+
+  return uuidRegex.test(trimmed) || alphanumericRegex.test(trimmed)
+}
+
 export function InterviewSessionPage() {
-  const { id } = useParams<{ id: string }>()
+  const { id: rawId } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+
+  // Validate session ID to prevent injection attacks
+  const id = isValidSessionId(rawId) ? rawId : undefined
 
   // Local state
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
@@ -198,6 +225,19 @@ export function InterviewSessionPage() {
           <Skeleton className="h-96" />
           <Skeleton className="h-96" />
         </div>
+      </div>
+    )
+  }
+
+  // Handle invalid session ID
+  if (!id) {
+    return (
+      <div className="flex flex-col items-center justify-center p-12">
+        <h2 className="text-xl font-semibold">Invalid session ID</h2>
+        <p className="text-muted-foreground mt-2">The session ID in the URL is invalid or missing.</p>
+        <Button onClick={() => navigate('/sessions')} className="mt-4">
+          Back to Sessions
+        </Button>
       </div>
     )
   }

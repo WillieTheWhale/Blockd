@@ -1,13 +1,80 @@
 /**
  * CSRF Protection Middleware
  *
+ * ============================================================================
+ * SECURITY MODEL DOCUMENTATION
+ * ============================================================================
+ *
  * For REST APIs using JWT Bearer authentication, traditional CSRF tokens
  * don't work well since they require server-side session state.
  *
  * This middleware implements protection through:
  * 1. Origin header verification for state-changing requests
- * 2. Custom header requirement (X-Requested-With)
+ * 2. Custom header requirement (X-Requested-With) in production
  * 3. SameSite cookie settings for any cookies
+ *
+ * ============================================================================
+ * EXEMPT ENDPOINTS AND SECURITY RATIONALE
+ * ============================================================================
+ *
+ * The following endpoints are exempt from CSRF protection for specific
+ * security and architectural reasons:
+ *
+ * HEALTH/MONITORING ENDPOINTS:
+ * - /api/v1/health, /api/v1/health/quick, /api/v1/ready, /api/v1/live
+ * - /metrics, /docs
+ * - Rationale: These are read-only endpoints used by orchestration systems
+ *   (Kubernetes, load balancers, monitoring). They expose no sensitive data
+ *   and perform no state changes. CSRF protection would break health checks.
+ *
+ * WEBSOCKET ENDPOINTS:
+ * - /api/v1/gaze/stream
+ * - Rationale: WebSocket connections use a different security model. The
+ *   initial HTTP upgrade request cannot include custom headers in all
+ *   browsers. Authentication is performed via session tokens in the WebSocket
+ *   protocol after connection establishment.
+ *
+ * BROWSER CLIENT ENDPOINTS:
+ * - /api/v1/browser/*
+ * - Rationale: These endpoints serve the browser extension which uses
+ *   session-based tokens (not cookies). The browser extension generates
+ *   cryptographically secure session tokens that are transmitted via headers.
+ *   Since these are not cookie-based, they are not vulnerable to traditional
+ *   CSRF attacks. The extension's content security policy provides isolation.
+ *
+ * ============================================================================
+ * PROTECTION MECHANISMS
+ * ============================================================================
+ *
+ * 1. ORIGIN VALIDATION:
+ *    - All state-changing requests (POST, PUT, PATCH, DELETE) must include
+ *      an Origin or Referer header matching configured allowed origins.
+ *    - In production, requests without origin headers are rejected.
+ *    - In development, localhost requests are allowed for easier testing.
+ *
+ * 2. CUSTOM HEADER REQUIREMENT (Production only):
+ *    - Requires X-Requested-With header for state-changing requests.
+ *    - Simple cross-origin requests cannot set custom headers without CORS
+ *      preflight, providing defense-in-depth against CSRF.
+ *
+ * 3. SAMESITE COOKIES:
+ *    - All cookies are set with SameSite=Strict by default.
+ *    - Combined with Secure flag in production.
+ *    - Prevents cookies from being sent in cross-origin requests.
+ *
+ * ============================================================================
+ * WHEN TO UPDATE EXEMPTIONS
+ * ============================================================================
+ *
+ * Add a new exemption ONLY if:
+ * 1. The endpoint is truly read-only OR
+ * 2. The endpoint uses non-cookie-based authentication AND
+ * 3. The endpoint's authentication mechanism is immune to CSRF AND
+ * 4. The security implications have been reviewed
+ *
+ * Document the rationale for any new exemptions in this file.
+ *
+ * ============================================================================
  */
 
 import { FastifyRequest, FastifyReply, HookHandlerDoneFunction } from 'fastify';
@@ -230,9 +297,9 @@ export function setSecureCookieDefaults(
       options: Record<string, unknown> = {}
     ) {
       // Apply secure defaults
-      const secureOptions = {
+      const secureOptions: typeof options = {
         ...options,
-        sameSite: options.sameSite || 'strict',
+        sameSite: (options.sameSite || 'strict') as 'strict' | 'lax' | 'none',
         secure: config.server.isProduction ? true : (options.secure ?? false),
         httpOnly: options.httpOnly ?? true,
         path: options.path || '/',

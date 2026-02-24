@@ -62,7 +62,23 @@ class XGBoostClassifier:
     def load(self):
         """Load trained model from disk"""
         if not os.path.exists(self.model_path):
-            logger.warning(f"XGBoost model not found at {self.model_path}. Using default model.")
+            # ALERT: Trained model is missing - service will use rule-based fallback
+            # This significantly reduces detection accuracy and should be addressed
+            logger.error(
+                f"CRITICAL: Trained XGBoost model not found at {self.model_path}. "
+                f"Service will fall back to rule-based detection with reduced accuracy. "
+                f"Please train and deploy a model to restore full functionality."
+            )
+            logger.warning(
+                f"XGBoost model fallback activated. Detection accuracy may be degraded. "
+                f"Expected model path: {self.model_path}"
+            )
+            # Emit metric for monitoring/alerting systems
+            try:
+                from src.metrics import increment_counter
+                increment_counter("ai_detection_model_fallback", tags={"model": "xgboost", "reason": "model_not_found"})
+            except ImportError:
+                logger.debug("Metrics module not available for fallback alerting")
             self._load_default_model()
             return
 
@@ -118,8 +134,35 @@ class XGBoostClassifier:
                     f"Expected {self.feature_count} features, got {len(features)}"
                 )
 
-            # Create DMatrix
-            dmatrix = xgb.DMatrix([features], feature_names=self.FEATURE_NAMES)
+            # Convert to numpy array for validation
+            features_array = np.array(features, dtype=np.float64)
+
+            # Validate for NaN and Inf values
+            nan_mask = np.isnan(features_array)
+            inf_mask = np.isinf(features_array)
+
+            if np.any(nan_mask):
+                nan_indices = np.where(nan_mask)[0]
+                nan_feature_names = [self.FEATURE_NAMES[i] for i in nan_indices]
+                logger.warning(
+                    f"NaN values detected in features: {nan_feature_names}. "
+                    f"Replacing with 0.0 for prediction."
+                )
+                features_array[nan_mask] = 0.0
+
+            if np.any(inf_mask):
+                inf_indices = np.where(inf_mask)[0]
+                inf_feature_names = [self.FEATURE_NAMES[i] for i in inf_indices]
+                logger.warning(
+                    f"Inf values detected in features: {inf_feature_names}. "
+                    f"Replacing with boundary values for prediction."
+                )
+                # Replace positive inf with large value, negative inf with small value
+                features_array[np.isposinf(features_array)] = 1e6
+                features_array[np.isneginf(features_array)] = -1e6
+
+            # Create DMatrix with validated features
+            dmatrix = xgb.DMatrix([features_array.tolist()], feature_names=self.FEATURE_NAMES)
 
             # Predict
             prediction = self.model.predict(dmatrix)[0]

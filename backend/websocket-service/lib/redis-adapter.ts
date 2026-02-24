@@ -15,6 +15,13 @@ export interface RedisAdapterConfig {
   password?: string;
   db?: number;
   keyPrefix?: string;
+  tls?: boolean;
+  tlsOptions?: {
+    rejectUnauthorized?: boolean;
+    ca?: string;
+    cert?: string;
+    key?: string;
+  };
 }
 
 export class RedisAdapterManager {
@@ -35,6 +42,8 @@ export class RedisAdapterManager {
       // Create Redis clients
       const redisUrl = this.buildRedisUrl();
 
+      const tlsSocketOptions = this.getTlsSocketOptions();
+
       this.pubClient = createClient({
         url: redisUrl,
         socket: {
@@ -47,6 +56,7 @@ export class RedisAdapterManager {
             logger.warn(`Redis reconnecting in ${delay}ms (attempt ${retries})`);
             return delay;
           },
+          ...tlsSocketOptions,
         },
       });
 
@@ -146,8 +156,9 @@ export class RedisAdapterManager {
    * Build Redis URL from config
    */
   private buildRedisUrl(): string {
-    const { host, port, password, db } = this.config;
-    let url = 'redis://';
+    const { host, port, password, db, tls } = this.config;
+    // Use rediss:// protocol for TLS connections
+    let url = tls ? 'rediss://' : 'redis://';
 
     if (password) {
       url += `:${password}@`;
@@ -160,6 +171,25 @@ export class RedisAdapterManager {
     }
 
     return url;
+  }
+
+  /**
+   * Get TLS socket options from config
+   */
+  private getTlsSocketOptions(): object | undefined {
+    const { tls, tlsOptions } = this.config;
+
+    if (!tls) {
+      return undefined;
+    }
+
+    return {
+      tls: true,
+      rejectUnauthorized: tlsOptions?.rejectUnauthorized ?? true,
+      ...(tlsOptions?.ca && { ca: tlsOptions.ca }),
+      ...(tlsOptions?.cert && { cert: tlsOptions.cert }),
+      ...(tlsOptions?.key && { key: tlsOptions.key }),
+    };
   }
 
   /**

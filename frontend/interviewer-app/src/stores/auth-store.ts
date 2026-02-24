@@ -1,10 +1,19 @@
 import { create } from 'zustand'
 import { devtools, persist } from 'zustand/middleware'
 import type { User, LoginCredentials, RegisterData, ProfileUpdateFormData } from '@/types'
-import { clearTokens, setTokens as setAuthTokens } from '@/lib/auth'
+import { clearTokens, setTokens as setAuthTokens, getAccessToken, isTokenExpired } from '@/lib/auth'
 import { STORAGE_KEYS, OAUTH_CONFIG } from '@/lib/constants'
 import { apiRequest, getErrorMessage } from '@/lib/api-client'
 import { validateOAuthCallback, clearOAuthState } from '@/lib/oauth'
+
+/**
+ * Derives authentication state from token validity.
+ * This prevents stale isAuthenticated state when tokens expire.
+ */
+function deriveIsAuthenticated(): boolean {
+  const token = getAccessToken()
+  return token !== null && !isTokenExpired(token)
+}
 
 interface AuthState {
   user: User | null
@@ -288,7 +297,15 @@ export const useAuthStore = create<AuthStore>()(
         name: STORAGE_KEYS.USER_DATA,
         partialize: (state) => ({
           user: state.user,
-          isAuthenticated: state.isAuthenticated,
+          // Note: isAuthenticated is derived from token validity, not persisted
+          // This prevents stale auth state when tokens expire while app is closed
+        }),
+        // Merge persisted state with derived isAuthenticated on rehydration
+        merge: (persistedState, currentState) => ({
+          ...currentState,
+          ...(persistedState as Partial<AuthState>),
+          // Always derive isAuthenticated from actual token validity
+          isAuthenticated: deriveIsAuthenticated(),
         }),
       }
     ),

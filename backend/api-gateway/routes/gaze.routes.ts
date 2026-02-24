@@ -16,9 +16,13 @@ import prisma from '../lib/prisma';
 import config from '../src/config';
 import { z } from 'zod';
 
-/** Param type for routes using session_id */
+/**
+ * Param type for routes using sessionId.
+ * NOTE: URL parameters use camelCase (sessionId) for consistency across the API.
+ * This matches the convention used in sessions.routes.ts and other gateway routes.
+ */
 interface SessionIdParam {
-  session_id: string;
+  sessionId: string;
 }
 
 /**
@@ -337,11 +341,11 @@ export default async function gazeRoutes(fastify: FastifyInstance) {
   });
 
   // Get gaze summary for a session
-  fastify.get<{ Params: SessionIdParam }>('/summary/:session_id', {
+  fastify.get<{ Params: SessionIdParam }>('/summary/:sessionId', {
     preHandler: [
       authenticate,
       authRateLimiter,
-      validateParams(idParamSchema.extend({ session_id: idParamSchema.shape.id })),
+      validateParams(idParamSchema.extend({ sessionId: idParamSchema.shape.id })),
     ],
     schema: {
       tags: ['Gaze'],
@@ -350,13 +354,13 @@ export default async function gazeRoutes(fastify: FastifyInstance) {
       params: {
         type: 'object',
         properties: {
-          session_id: { type: 'string', format: 'uuid' },
+          sessionId: { type: 'string', format: 'uuid' },
         },
       },
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
-      const { session_id: sessionId } = request.params;
+      const { sessionId } = request.params;
 
       // Verify session exists
       const session = await prisma.interviewSession.findUnique({

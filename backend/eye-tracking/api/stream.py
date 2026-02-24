@@ -4,8 +4,9 @@ WebSocket endpoint for real-time gaze tracking with authentication
 """
 
 import asyncio
+import threading
 from concurrent.futures import ThreadPoolExecutor
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, Query
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime
 import json
@@ -14,6 +15,7 @@ from typing import Dict, Optional
 from uuid import UUID
 
 from src.database import get_db_session, GazeEvent, SessionLocal
+from src.config import settings
 from services.gaze_processing import GazeProcessingService
 from schemas.gaze import StreamFrameMessage, StreamGazeMessage, StreamErrorMessage
 from lib.errors import FrameProcessingError, NoFaceDetectedError
@@ -21,8 +23,68 @@ from lib.auth import get_authenticator, WebSocketAuthenticator
 
 logger = structlog.get_logger(__name__)
 
-# Thread pool for async database operations
-_db_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="gaze_db_")
+# Thread pool for async database operations (configurable via settings)
+_db_executor = ThreadPoolExecutor(max_workers=settings.DB_THREAD_POOL_WORKERS, thread_name_prefix="gaze_db_")
+
+# Global set to track pending fire-and-forget DB tasks
+_pending_db_tasks: set = set()
+
+# Service pool for REST endpoint to avoid per-request instantiation
+class GazeServicePool:
+    """Thread-safe pool of GazeProcessingService instances for REST endpoint"""
+
+    def __init__(self, pool_size: int = 4):
+        self._pool: list = []
+        self._lock = threading.Lock()
+        self._pool_size = pool_size
+        self._initialized = False
+
+    def _ensure_initialized(self):
+        """Lazily initialize pool on first use"""
+        if self._initialized:
+            return
+        with self._lock:
+            if not self._initialized:
+                for _ in range(self._pool_size):
+                    self._pool.append(GazeProcessingService())
+                self._initialized = True
+                logger.info("gaze_service_pool_initialized", pool_size=self._pool_size)
+
+    def acquire(self) -> GazeProcessingService:
+        """Acquire a service from the pool, or create new if pool exhausted"""
+        self._ensure_initialized()
+        with self._lock:
+            if self._pool:
+                return self._pool.pop()
+            # Pool exhausted, create temporary instance
+            logger.warning("gaze_service_pool_exhausted")
+            return GazeProcessingService()
+
+    def release(self, service: GazeProcessingService):
+        """Return a service to the pool"""
+        with self._lock:
+            if len(self._pool) < self._pool_size:
+                self._pool.append(service)
+            else:
+                # Pool full, close the extra service
+                try:
+                    service.close()
+                except Exception:
+                    pass
+
+    def shutdown(self):
+        """Close all services in the pool"""
+        with self._lock:
+            for service in self._pool:
+                try:
+                    service.close()
+                except Exception:
+                    pass
+            self._pool.clear()
+            self._initialized = False
+            logger.info("gaze_service_pool_shutdown")
+
+_gaze_service_pool = GazeServicePool()
 
 
 def _store_gaze_event_sync(session_id: str, result: dict, timestamp: datetime) -> None:
@@ -77,6 +139,25 @@ async def store_gaze_event_async(session_id: str, result: dict, timestamp: datet
     except Exception as e:
         # Log but don't raise - we don't want DB errors to break the WebSocket
         logger.error("async_gaze_storage_error", session_id=session_id, error=str(e))
+
+
+def _task_done_callback(task: asyncio.Task) -> None:
+    """Callback to remove completed tasks from tracking set."""
+    _pending_db_tasks.discard(task)
+    # Log any exceptions from fire-and-forget tasks
+    if task.exception() is not None:
+        logger.error("db_task_exception", error=str(task.exception()))
+
+
+def schedule_db_task(coro) -> asyncio.Task:
+    """
+    Schedule a fire-and-forget DB task with proper tracking.
+    Tasks are tracked and awaited during shutdown to prevent data loss.
+    """
+    task = asyncio.create_task(coro)
+    _pending_db_tasks.add(task)
+    task.add_done_callback(_task_done_callback)
+    return task
 
 router = APIRouter()
 
@@ -174,6 +255,27 @@ def get_connection_manager() -> ConnectionManager:
 async def shutdown_connection_manager():
     """Shutdown handler for the connection manager"""
     await manager.close_all()
+
+    # Shutdown the gaze service pool
+    _gaze_service_pool.shutdown()
+
+    # Await all pending fire-and-forget DB tasks to prevent data loss
+    global _pending_db_tasks
+    if _pending_db_tasks:
+        logger.info("awaiting_pending_db_tasks", count=len(_pending_db_tasks))
+        # Wait for all pending tasks with a timeout
+        done, pending = await asyncio.wait(
+            _pending_db_tasks,
+            timeout=30.0,  # 30 second timeout for graceful shutdown
+            return_when=asyncio.ALL_COMPLETED
+        )
+        if pending:
+            logger.warning("db_tasks_timed_out", pending_count=len(pending))
+            # Cancel remaining tasks
+            for task in pending:
+                task.cancel()
+        logger.info("pending_db_tasks_completed", completed=len(done), cancelled=len(pending))
+    _pending_db_tasks.clear()
 
     # Also shutdown the DB executor
     global _db_executor
@@ -305,8 +407,8 @@ async def gaze_stream(
                     await manager.send_gaze_data(session_id, gaze_response)
 
                     # Store gaze event to database asynchronously
-                    # Fire-and-forget: don't await to avoid blocking WebSocket
-                    asyncio.create_task(
+                    # Fire-and-forget with tracking: task is awaited during shutdown
+                    schedule_db_task(
                         store_gaze_event_async(session_id, result, timestamp)
                     )
 
@@ -356,7 +458,7 @@ async def process_single_frame(
         timestamp_str = request.get("timestamp")
 
         if not session_id or not frame_base64:
-            return {"error": "session_id and frame required"}, 400
+            raise HTTPException(status_code=400, detail="session_id and frame required")
 
         # Parse timestamp
         if timestamp_str:
@@ -364,15 +466,18 @@ async def process_single_frame(
         else:
             timestamp = datetime.now()
 
-        # Create processing service (or get from cache)
-        processing_service = GazeProcessingService()
-
-        # Process frame
-        result = processing_service.process_base64_frame(
-            base64_frame=frame_base64,
-            timestamp=timestamp,
-            detect_anomalies=True
-        )
+        # Acquire processing service from pool
+        processing_service = _gaze_service_pool.acquire()
+        try:
+            # Process frame
+            result = processing_service.process_base64_frame(
+                base64_frame=frame_base64,
+                timestamp=timestamp,
+                detect_anomalies=True
+            )
+        finally:
+            # Always return service to pool
+            _gaze_service_pool.release(processing_service)
 
         # Store in database
         gaze_event = GazeEvent(
@@ -401,4 +506,4 @@ async def process_single_frame(
 
     except Exception as e:
         logger.error("frame_processing_error", error=str(e))
-        return {"error": str(e)}, 500
+        raise HTTPException(status_code=500, detail=str(e))

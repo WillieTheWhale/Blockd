@@ -16,6 +16,42 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a **native Chromium fork**, not a browser extension. Security features are embedded at the browser process level.
 
+## Recent Changes (February 2026)
+
+A comprehensive code review was completed with 376 fixes across all services. Key changes:
+
+### Security Hardening
+- `crypto.randomInt()` for password generation (not `Math.random()`)
+- `crypto.timingSafeEqual()` for OAuth state comparison
+- MFA verification encoded in JWT claims (not headers)
+- XSS sanitization for WebSocket chat messages
+- Connection rate limiting (10 per IP, 10K global)
+- Path traversal prevention with UUID validation
+
+### TypeScript Strict Mode
+All Node.js services now use TypeScript strict mode. Before making changes:
+```bash
+cd backend/api-gateway  # or auth-service, session-service
+npx tsc --noEmit        # Check for type errors
+npm run build           # Verify compilation
+```
+
+### Docker Health Checks
+All services now have health checks configured. Check status with:
+```bash
+docker compose ps       # Shows (healthy) status
+```
+
+### New API Endpoints
+- `GET /users/me`, `PUT /users/me` - User profile management
+- `POST /auth/change-password`, `/forgot-password`, `/reset-password`
+- `PUT /sessions/:id`, `DELETE /sessions/:id`
+- `GET /reports`, `DELETE /reports/:id`, `GET /reports/:id/download`
+
+See [CHANGELOG.md](./CHANGELOG.md) for complete details.
+
+---
+
 ## Build & Development Commands
 
 ### Quick Start (Docker)

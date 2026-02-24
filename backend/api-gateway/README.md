@@ -171,12 +171,12 @@ http://localhost:3000/docs
 #### Gaze Tracking
 
 - `WS /api/v1/gaze/stream` - WebSocket for gaze streaming
-- `GET /api/v1/gaze/summary/:session_id` - Get gaze summary
+- `GET /api/v1/gaze/summary/:sessionId` - Get gaze summary
 
 #### Reports
 
-- `GET /api/v1/reports/:session_id` - Get session report
-- `GET /api/v1/reports/:session_id/pdf` - Download report as PDF
+- `GET /api/v1/reports/:sessionId` - Get session report
+- `GET /api/v1/reports/:sessionId/pdf` - Download report as PDF
 
 #### Health
 

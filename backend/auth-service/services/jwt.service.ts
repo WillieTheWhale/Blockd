@@ -40,7 +40,7 @@ function loadKeys(): void {
 /**
  * Generate JWT access token
  */
-export function generateAccessToken(user: UserProfile): string {
+export function generateAccessToken(user: UserProfile, mfaVerified: boolean = false): string {
   loadKeys();
 
   const payload: JWTPayload = {
@@ -54,11 +54,24 @@ export function generateAccessToken(user: UserProfile): string {
     aud: DEFAULT_AUDIENCE
   };
 
+  // Include MFA verification status in token claims
+  if (mfaVerified) {
+    payload.mfa_verified = true;
+  }
+
   const token = jwt.sign(payload, privateKey!, {
     algorithm: 'RS256'
   });
 
   return token;
+}
+
+/**
+ * Generate JWT access token with MFA verification claim
+ * Used after successful MFA verification during login
+ */
+export function generateAccessTokenWithMFA(user: UserProfile): string {
+  return generateAccessToken(user, true);
 }
 
 /**

@@ -25,8 +25,9 @@ terraform {
     encrypt        = true
     dynamodb_table = "blockd-terraform-locks"
 
-    # KMS encryption for state file (recommended for production)
-    # kms_key_id = "arn:aws:kms:us-east-1:ACCOUNT_ID:key/KEY_ID"
+    # KMS encryption for state file (required for production)
+    # Replace ACCOUNT_ID and KEY_ID with your actual values
+    kms_key_id = "arn:aws:kms:us-east-1:ACCOUNT_ID:key/KEY_ID"
 
     # Workspaces are automatically supported - each workspace gets its own state file
     # The key becomes: blockd/env:/<workspace>/terraform.tfstate

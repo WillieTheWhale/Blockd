@@ -16,14 +16,14 @@ import { logger } from '../lib/logger';
 import { RoomManager } from '../lib/room-manager';
 import { MessageBuffer } from '../lib/message-buffer';
 import { authMiddleware } from '../middleware/auth.middleware';
-import { rateLimitMiddleware } from '../middleware/rate-limit.middleware';
+import { rateLimitMiddleware, shutdownRateLimiter } from '../middleware/rate-limit.middleware';
 import { loggingMiddleware } from '../middleware/logging.middleware';
 import { setupConnectionHandler } from '../handlers/connection.handler';
 import { setupSessionHandler } from '../handlers/session.handler';
 import { setupSecurityHandler } from '../handlers/security.handler';
-import { setupGazeHandler } from '../handlers/gaze.handler';
+import { setupGazeHandler, shutdownGazeHandler } from '../handlers/gaze.handler';
 import { setupChatHandler } from '../handlers/chat.handler';
-import { setupHeartbeatHandler } from '../handlers/heartbeat.handler';
+import { setupHeartbeatHandler, shutdownHeartbeatHandler } from '../handlers/heartbeat.handler';
 
 /**
  * Main application class
@@ -147,6 +147,15 @@ class WebSocketServer {
       logger.info(`Received ${signal}, shutting down gracefully...`);
 
       try {
+        // Shutdown all handlers and cleanup intervals
+        shutdownHeartbeatHandler();
+        shutdownGazeHandler();
+        shutdownRateLimiter();
+
+        // Destroy message buffer (clears its cleanup interval)
+        this.messageBuffer.destroy();
+
+        // Graceful shutdown of Socket.io and Redis
         await gracefulShutdown(this.io, this.httpServer, this.redisAdapter);
         process.exit(0);
       } catch (error) {

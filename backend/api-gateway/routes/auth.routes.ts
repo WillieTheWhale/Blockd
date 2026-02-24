@@ -5,12 +5,14 @@
 
 import { FastifyInstance } from 'fastify';
 import { UserRole } from '@prisma/client';
+import crypto from 'crypto';
 import { authenticate } from '../middleware/auth.middleware';
 import {
   publicRateLimiter,
   strictRateLimiter,
   loginRateLimiter,
   mfaRateLimiter,
+  emailRateLimiter,
   recordMfaSuccess,
   recordMfaFailure,
 } from '../middleware/rate-limit.middleware';
@@ -22,12 +24,24 @@ import {
   logoutRequestSchema,
   mfaSetupRequestSchema,
   mfaVerifyRequestSchema,
+  changePasswordRequestSchema,
+  mfaDisableRequestSchema,
+  forgotPasswordRequestSchema,
+  resetPasswordRequestSchema,
+  oauthStateRequestSchema,
+  oauthCallbackRequestSchema,
   RegisterRequest,
   LoginRequest,
   RefreshTokenRequest,
   LogoutRequest,
   MfaSetupRequest,
   MfaVerifyRequest,
+  ChangePasswordRequest,
+  MfaDisableRequest,
+  ForgotPasswordRequest,
+  ResetPasswordRequest,
+  OAuthStateRequest,
+  OAuthCallbackRequest,
 } from '../schemas/auth.schema';
 import { generateTokenPair, verifyRefreshToken, revokeRefreshToken, revokeAllRefreshTokens } from '../lib/jwt';
 import { sendSuccess, sendCreated } from '../lib/response';
@@ -35,6 +49,10 @@ import { BadRequestError, UnauthorizedError } from '../lib/errors';
 import prisma from '../lib/prisma';
 import { hashPassword, verifyPassword, validatePasswordStrength, isCommonPassword } from '../lib/password';
 import { generateMFASecret, verifyTOTPCode, generateBackupCodes, isValidTOTPFormat, isValidBackupCodeFormat } from '../lib/mfa';
+import { getRedisClient } from '../lib/redis-client';
+
+// OAuth state TTL in seconds (5 minutes)
+const OAUTH_STATE_TTL = 300;
 
 /**
  * Mask email address for secure logging
@@ -184,6 +202,10 @@ export default async function authRoutes(fastify: FastifyInstance) {
       }
 
       // Verify password using bcrypt
+      // OAuth users may not have a password hash
+      if (!user.passwordHash) {
+        throw new UnauthorizedError('Invalid email or password');
+      }
       const isValidPassword = await verifyPassword(password, user.passwordHash);
       if (!isValidPassword) {
         // Record failed attempt for rate limiting
@@ -482,24 +504,441 @@ export default async function authRoutes(fastify: FastifyInstance) {
     },
   });
 
+  // Get current authenticated user endpoint
+  fastify.get('/me', {
+    preHandler: [authenticate],
+    schema: {
+      tags: ['Authentication'],
+      summary: 'Get current user',
+      description: 'Returns the profile of the currently authenticated user',
+      security: [{ bearerAuth: [] }],
+    },
+    handler: async (request, reply) => {
+      const userId = request.user!.userId;
+
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          email: true,
+          role: true,
+          firstName: true,
+          lastName: true,
+          organizationId: true,
+          mfaEnabled: true,
+          emailVerified: true,
+          lastLoginAt: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+
+      if (!user) {
+        throw new UnauthorizedError('User not found');
+      }
+
+      // Build user's full name
+      const fullName = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email;
+
+      return sendSuccess(reply, {
+        id: user.id,
+        email: user.email,
+        name: fullName,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        role: user.role,
+        organizationId: user.organizationId,
+        mfaEnabled: user.mfaEnabled,
+        emailVerified: user.emailVerified,
+        lastLoginAt: user.lastLoginAt?.toISOString() || null,
+        createdAt: user.createdAt.toISOString(),
+        updatedAt: user.updatedAt.toISOString(),
+      });
+    },
+  });
+
+  // Change password endpoint
+  fastify.post<{ Body: ChangePasswordRequest }>('/change-password', {
+    preHandler: [authenticate, strictRateLimiter, validateBody(changePasswordRequestSchema)],
+    schema: {
+      tags: ['Authentication'],
+      summary: 'Change password',
+      description: 'Change password for the currently authenticated user',
+      security: [{ bearerAuth: [] }],
+    },
+    handler: async (request, reply) => {
+      const { currentPassword, newPassword } = request.body;
+      const userId = request.user!.userId;
+
+      // Get user with password hash
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true, passwordHash: true, email: true },
+      });
+
+      if (!user) {
+        throw new UnauthorizedError('User not found');
+      }
+
+      // Check if user has a password (OAuth-only users don't)
+      if (!user.passwordHash) {
+        throw new BadRequestError('Cannot change password for OAuth-only accounts. Please set a password first.');
+      }
+
+      // Verify current password
+      const isValidPassword = await verifyPassword(currentPassword, user.passwordHash);
+      if (!isValidPassword) {
+        request.log.warn({
+          security_event: 'password_change_failure',
+          reason: 'invalid_current_password',
+          user_id: userId,
+          ip: request.ip,
+          timestamp: new Date().toISOString(),
+        }, 'Failed password change attempt: invalid current password');
+
+        throw new BadRequestError('Current password is incorrect');
+      }
+
+      // Validate new password strength
+      const passwordValidation = validatePasswordStrength(newPassword);
+      if (!passwordValidation.valid) {
+        throw new BadRequestError(`Password requirements not met: ${passwordValidation.errors.join(', ')}`);
+      }
+
+      // Check if new password is too common
+      if (isCommonPassword(newPassword)) {
+        throw new BadRequestError('New password is too common. Please choose a stronger password.');
+      }
+
+      // Check if new password is same as current
+      const isSamePassword = await verifyPassword(newPassword, user.passwordHash);
+      if (isSamePassword) {
+        throw new BadRequestError('New password must be different from current password');
+      }
+
+      // Hash and update password
+      const newPasswordHash = await hashPassword(newPassword);
+      await prisma.user.update({
+        where: { id: userId },
+        data: { passwordHash: newPasswordHash },
+      });
+
+      // Log successful password change
+      request.log.info({
+        security_event: 'password_changed',
+        user_id: userId,
+        ip: request.ip,
+        timestamp: new Date().toISOString(),
+      }, 'Password changed successfully');
+
+      return sendSuccess(reply, { message: 'Password changed successfully' });
+    },
+  });
+
+  // MFA disable endpoint (with password verification for security)
+  fastify.post<{ Body: MfaDisableRequest }>('/mfa/disable', {
+    preHandler: [authenticate, strictRateLimiter, validateBody(mfaDisableRequestSchema)],
+    schema: {
+      tags: ['Authentication'],
+      summary: 'Disable MFA',
+      description: 'Disable MFA for the currently authenticated user. Requires password verification.',
+      security: [{ bearerAuth: [] }],
+    },
+    handler: async (request, reply) => {
+      const { password, mfaCode } = request.body;
+      const userId = request.user!.userId;
+
+      // Get user
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          passwordHash: true,
+          mfaEnabled: true,
+          mfaSecret: true,
+        },
+      });
+
+      if (!user) {
+        throw new UnauthorizedError('User not found');
+      }
+
+      // Check if MFA is enabled
+      if (!user.mfaEnabled) {
+        throw new BadRequestError('MFA is not enabled for this account');
+      }
+
+      // Verify password
+      if (!user.passwordHash) {
+        throw new BadRequestError('Cannot disable MFA for OAuth-only accounts without a password');
+      }
+
+      const isValidPassword = await verifyPassword(password, user.passwordHash);
+      if (!isValidPassword) {
+        await recordMfaFailure(userId);
+        request.log.warn({
+          security_event: 'mfa_disable_failure',
+          reason: 'invalid_password',
+          user_id: userId,
+          ip: request.ip,
+          timestamp: new Date().toISOString(),
+        }, 'Failed MFA disable attempt: invalid password');
+
+        throw new BadRequestError('Invalid password');
+      }
+
+      // Optionally verify MFA code if provided
+      if (mfaCode && user.mfaSecret) {
+        const isValidMfa = verifyTOTPCode(user.mfaSecret, mfaCode);
+        if (!isValidMfa) {
+          await recordMfaFailure(userId);
+          throw new BadRequestError('Invalid MFA code');
+        }
+      }
+
+      // Disable MFA
+      await prisma.user.update({
+        where: { id: userId },
+        data: {
+          mfaEnabled: false,
+          mfaSecret: null,
+          mfaBackupCodes: [],
+        },
+      });
+
+      // Clear failure tracking
+      await recordMfaSuccess(userId);
+
+      // Log successful MFA disable
+      request.log.info({
+        security_event: 'mfa_disabled',
+        user_id: userId,
+        ip: request.ip,
+        timestamp: new Date().toISOString(),
+      }, 'MFA disabled successfully');
+
+      return sendSuccess(reply, { message: 'MFA disabled successfully' });
+    },
+  });
+
+  // Forgot password endpoint (initiate password reset)
+  fastify.post<{ Body: ForgotPasswordRequest }>('/forgot-password', {
+    preHandler: [emailRateLimiter, validateBody(forgotPasswordRequestSchema)],
+    schema: {
+      tags: ['Authentication'],
+      summary: 'Forgot password',
+      description: 'Initiate password reset by sending a reset token to the user email',
+    },
+    handler: async (request, reply) => {
+      const { email } = request.body;
+
+      // Find user by email
+      const user = await prisma.user.findUnique({
+        where: { email },
+        select: { id: true, email: true, firstName: true },
+      });
+
+      // Always return success to prevent email enumeration attacks
+      // Even if user doesn't exist, we return the same response
+      if (user) {
+        // Generate password reset token
+        const resetToken = crypto.randomBytes(32).toString('hex');
+        const resetTokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
+
+        // Store reset token in Redis
+        const redis = getRedisClient();
+        await redis.set(
+          `password_reset:${resetTokenHash}`,
+          {
+            userId: user.id,
+            email: user.email,
+            createdAt: Date.now(),
+          },
+          { ttl: 3600, prefix: 'auth' } // 1 hour TTL
+        );
+
+        // Log password reset request
+        request.log.info({
+          security_event: 'password_reset_requested',
+          user_id: user.id,
+          email_masked: maskEmail(email),
+          ip: request.ip,
+          timestamp: new Date().toISOString(),
+        }, 'Password reset requested');
+
+        // TODO: Send email with reset link
+        // In production, integrate with email service to send:
+        // Reset URL: ${FRONTEND_URL}/reset-password?token=${resetToken}
+        // For now, we log the token in development
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[DEV] Password reset token for ${email}: ${resetToken}`);
+        }
+      }
+
+      // Always return success message (prevents email enumeration)
+      return sendSuccess(reply, {
+        message: 'If an account exists with this email, a password reset link has been sent.',
+      });
+    },
+  });
+
+  // Reset password endpoint (complete password reset with token)
+  fastify.post<{ Body: ResetPasswordRequest }>('/reset-password', {
+    preHandler: [publicRateLimiter, validateBody(resetPasswordRequestSchema)],
+    schema: {
+      tags: ['Authentication'],
+      summary: 'Reset password',
+      description: 'Complete password reset using the token sent to user email',
+    },
+    handler: async (request, reply) => {
+      const { token, newPassword } = request.body;
+
+      // Hash the token to look up in Redis
+      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+      // Look up reset token in Redis
+      const redis = getRedisClient();
+      const tokenData = await redis.get<{
+        userId: string;
+        email: string;
+        createdAt: number;
+      }>(`password_reset:${tokenHash}`, { prefix: 'auth' });
+
+      if (!tokenData) {
+        request.log.warn({
+          security_event: 'password_reset_failure',
+          reason: 'invalid_or_expired_token',
+          ip: request.ip,
+          timestamp: new Date().toISOString(),
+        }, 'Failed password reset: invalid or expired token');
+
+        throw new BadRequestError('Invalid or expired reset token. Please request a new password reset.');
+      }
+
+      // Verify user still exists
+      const user = await prisma.user.findUnique({
+        where: { id: tokenData.userId },
+        select: { id: true, email: true, passwordHash: true },
+      });
+
+      if (!user) {
+        // Delete the token since user doesn't exist
+        await redis.del(`password_reset:${tokenHash}`, { prefix: 'auth' });
+        throw new BadRequestError('User account not found');
+      }
+
+      // Validate new password strength
+      const passwordValidation = validatePasswordStrength(newPassword);
+      if (!passwordValidation.valid) {
+        throw new BadRequestError(`Password requirements not met: ${passwordValidation.errors.join(', ')}`);
+      }
+
+      // Check if new password is too common
+      if (isCommonPassword(newPassword)) {
+        throw new BadRequestError('Password is too common. Please choose a stronger password.');
+      }
+
+      // Check if new password is same as current (if user has a password)
+      if (user.passwordHash) {
+        const isSamePassword = await verifyPassword(newPassword, user.passwordHash);
+        if (isSamePassword) {
+          throw new BadRequestError('New password must be different from your previous password');
+        }
+      }
+
+      // Hash and update password
+      const newPasswordHash = await hashPassword(newPassword);
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { passwordHash: newPasswordHash },
+      });
+
+      // Delete the used reset token (one-time use)
+      await redis.del(`password_reset:${tokenHash}`, { prefix: 'auth' });
+
+      // Revoke all refresh tokens for security
+      await revokeAllRefreshTokens(user.id);
+
+      // Log successful password reset
+      request.log.info({
+        security_event: 'password_reset_completed',
+        user_id: user.id,
+        ip: request.ip,
+        timestamp: new Date().toISOString(),
+      }, 'Password reset completed successfully');
+
+      return sendSuccess(reply, {
+        message: 'Password reset successfully. Please log in with your new password.',
+      });
+    },
+  });
+
+  // OAuth state generation endpoint - generates CSRF state for OAuth flow
+  fastify.post<{ Body: OAuthStateRequest }>('/oauth/state', {
+    preHandler: [publicRateLimiter, validateBody(oauthStateRequestSchema)],
+    schema: {
+      tags: ['Authentication'],
+      summary: 'Generate OAuth state',
+      description: 'Generate a CSRF state parameter for OAuth flow',
+    },
+    handler: async (request, reply) => {
+      const { provider } = request.body;
+
+      // Generate cryptographically secure random state
+      const state = crypto.randomBytes(32).toString('hex');
+
+      // Store state in Redis with short TTL
+      const redis = getRedisClient();
+      await redis.set(
+        `oauth_state:${state}`,
+        { provider, createdAt: Date.now() },
+        { ttl: OAUTH_STATE_TTL, prefix: 'auth' }
+      );
+
+      return sendSuccess(reply, { state });
+    },
+  });
+
   // OAuth callback endpoint - handles authorization code exchange
-  fastify.post<{ Body: OAuthCallbackBody }>('/oauth/callback', {
-    preHandler: [publicRateLimiter],
+  fastify.post<{ Body: OAuthCallbackRequest }>('/oauth/callback', {
+    preHandler: [publicRateLimiter, validateBody(oauthCallbackRequestSchema)],
     schema: {
       tags: ['Authentication'],
       summary: 'OAuth callback',
       description: 'Exchange OAuth authorization code for tokens',
     },
     handler: async (request, reply) => {
-      const { code, codeVerifier, provider, redirectUri } = request.body;
+      const { code, codeVerifier, provider, redirectUri, state } = request.body;
 
-      if (!code || !codeVerifier || !provider) {
-        throw new BadRequestError('Missing required OAuth parameters');
+      // Validate CSRF state parameter
+      const redis = getRedisClient();
+      const stateKey = `oauth_state:${state}`;
+      const storedState = await redis.get<{ provider: string; createdAt: number }>(stateKey, { prefix: 'auth' });
+
+      if (!storedState) {
+        request.log.warn({
+          security_event: 'oauth_state_invalid',
+          reason: 'state_not_found',
+          provider,
+          ip: request.ip,
+        }, 'OAuth state validation failed: state not found or expired');
+        throw new BadRequestError('Invalid or expired OAuth state. Please try again.');
       }
 
-      if (provider !== 'google' && provider !== 'microsoft') {
-        throw new BadRequestError('Invalid OAuth provider');
+      // Verify the state was generated for the same provider
+      if (storedState.provider !== provider) {
+        request.log.warn({
+          security_event: 'oauth_state_invalid',
+          reason: 'provider_mismatch',
+          expectedProvider: storedState.provider,
+          actualProvider: provider,
+          ip: request.ip,
+        }, 'OAuth state validation failed: provider mismatch');
+        throw new BadRequestError('Invalid OAuth state. Please try again.');
       }
+
+      // Delete the state to prevent reuse (one-time use)
+      await redis.del(stateKey, { prefix: 'auth' });
 
       try {
         // Exchange code for tokens with the OAuth provider
@@ -565,14 +1004,6 @@ export default async function authRoutes(fastify: FastifyInstance) {
       }
     },
   });
-}
-
-// OAuth callback body type
-interface OAuthCallbackBody {
-  code: string;
-  codeVerifier: string;
-  provider: 'google' | 'microsoft';
-  redirectUri?: string;
 }
 
 // OAuth user info from provider

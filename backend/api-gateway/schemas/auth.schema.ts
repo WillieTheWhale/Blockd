@@ -101,3 +101,87 @@ export const mfaSetupResponseSchema = z.object({
 });
 
 export type MfaSetupResponse = z.infer<typeof mfaSetupResponseSchema>;
+
+// Change password request schema
+export const changePasswordRequestSchema = z.object({
+  currentPassword: z.string().min(1, 'Current password is required').max(128),
+  newPassword: z
+    .string()
+    .min(8, 'Password must be at least 8 characters')
+    .max(128, 'Password must not exceed 128 characters')
+    .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
+    .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
+    .regex(/[0-9]/, 'Password must contain at least one number')
+    .regex(/[^A-Za-z0-9]/, 'Password must contain at least one special character'),
+});
+
+export type ChangePasswordRequest = z.infer<typeof changePasswordRequestSchema>;
+
+// MFA disable request schema (requires password for security)
+export const mfaDisableRequestSchema = z.object({
+  password: z.string().min(1, 'Password is required').max(128),
+  mfaCode: z.string().length(6, 'MFA code must be 6 digits').optional(),
+});
+
+export type MfaDisableRequest = z.infer<typeof mfaDisableRequestSchema>;
+
+// Forgot password request schema
+export const forgotPasswordRequestSchema = z.object({
+  email: emailSchema,
+});
+
+export type ForgotPasswordRequest = z.infer<typeof forgotPasswordRequestSchema>;
+
+// Reset password request schema
+export const resetPasswordRequestSchema = z.object({
+  token: z.string().min(1, 'Reset token is required').max(256),
+  newPassword: z
+    .string()
+    .min(8, 'Password must be at least 8 characters')
+    .max(128, 'Password must not exceed 128 characters')
+    .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
+    .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
+    .regex(/[0-9]/, 'Password must contain at least one number')
+    .regex(/[^A-Za-z0-9]/, 'Password must contain at least one special character'),
+});
+
+export type ResetPasswordRequest = z.infer<typeof resetPasswordRequestSchema>;
+
+// OAuth state request schema
+export const oauthStateRequestSchema = z.object({
+  provider: z.enum(['google', 'microsoft'], {
+    errorMap: () => ({ message: 'Provider must be either "google" or "microsoft"' }),
+  }),
+});
+
+export type OAuthStateRequest = z.infer<typeof oauthStateRequestSchema>;
+
+// OAuth callback request schema
+export const oauthCallbackRequestSchema = z.object({
+  code: z.string().min(1, 'Authorization code is required').max(2048, 'Authorization code is too long'),
+  codeVerifier: z.string().min(43, 'Code verifier must be at least 43 characters').max(128, 'Code verifier is too long'),
+  provider: z.enum(['google', 'microsoft'], {
+    errorMap: () => ({ message: 'Provider must be either "google" or "microsoft"' }),
+  }),
+  redirectUri: z.string().url('Redirect URI must be a valid URL').max(2048).optional(),
+  state: z.string().min(1, 'State parameter is required').max(256, 'State parameter is too long'),
+});
+
+export type OAuthCallbackRequest = z.infer<typeof oauthCallbackRequestSchema>;
+
+// User profile response schema (for /me endpoint)
+export const userProfileResponseSchema = z.object({
+  id: z.string().uuid(),
+  email: z.string().email(),
+  role: z.enum(['admin', 'interviewer', 'interviewee']),
+  firstName: z.string().nullable(),
+  lastName: z.string().nullable(),
+  organizationId: z.string().uuid().nullable(),
+  mfaEnabled: z.boolean(),
+  emailVerified: z.boolean(),
+  lastLoginAt: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export type UserProfileResponse = z.infer<typeof userProfileResponseSchema>;

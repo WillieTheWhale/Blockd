@@ -461,18 +461,32 @@ class RedisClient {
   }
 
   /**
-   * Delete keys by pattern
+   * Delete keys by pattern using SCAN (production-safe, non-blocking)
    */
   async deletePattern(pattern: string, options?: CacheOptions): Promise<number> {
     try {
       const fullPattern = this.buildKey(pattern, options?.prefix);
-      const keys = await this.client.keys(fullPattern);
+      let deletedCount = 0;
+      let cursor = '0';
 
-      if (keys.length === 0) {
-        return 0;
-      }
+      do {
+        // Use SCAN to iterate through keys in batches (non-blocking)
+        const [nextCursor, keys] = await this.client.scan(
+          cursor,
+          'MATCH',
+          fullPattern,
+          'COUNT',
+          '100'
+        );
+        cursor = nextCursor;
 
-      return await this.client.del(...keys);
+        if (keys.length > 0) {
+          const deleted = await this.client.del(...keys);
+          deletedCount += deleted;
+        }
+      } while (cursor !== '0');
+
+      return deletedCount;
     } catch (error) {
       console.error(`[Redis] Error deleting pattern ${pattern}:`, error);
       throw error;

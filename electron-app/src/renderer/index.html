@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self';
+                 script-src 'self' 'unsafe-inline';
+                 style-src 'self' 'unsafe-inline';
+                 img-src 'self' data: blob:;
+                 connect-src 'self' wss://*.blockd.site;
+                 media-src 'self' blob:;">
+  <title>Blockd - Interview Monitor</title>
+
+  <style>
+    /* Initial loading styles */
+    body {
+      margin: 0;
+      padding: 0;
+      background: #1a1a1a;
+      color: #e0e0e0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    }
+
+    #loading {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      gap: 20px;
+    }
+
+    #loading.hidden {
+      display: none;
+    }
+
+    .spinner {
+      width: 50px;
+      height: 50px;
+      border: 4px solid #3a3a3a;
+      border-top-color: #667eea;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .loading-text {
+      font-size: 18px;
+      color: #b0b0b0;
+    }
+
+    #app {
+      display: none;
+    }
+
+    #app.ready {
+      display: block;
+    }
+
+    /* Error state */
+    .error-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      padding: 40px;
+      text-align: center;
+    }
+
+    .error-title {
+      font-size: 24px;
+      font-weight: 600;
+      color: #ef4444;
+      margin-bottom: 10px;
+    }
+
+    .error-message {
+      font-size: 16px;
+      color: #d1d5db;
+      max-width: 600px;
+    }
+  </style>
+</head>
+<body>
+  <!-- Loading Screen -->
+  <div id="loading">
+    <div class="spinner"></div>
+    <div class="loading-text">Initializing Blockd...</div>
+  </div>
+
+  <!-- Main Application -->
+  <div id="app"></div>
+
+  <!-- Error Screen (hidden by default) -->
+  <div id="error" style="display: none;">
+    <div class="error-container">
+      <div class="error-title">Initialization Error</div>
+      <div class="error-message" id="error-message">
+        An error occurred while initializing the application. Please restart the application.
+      </div>
+    </div>
+  </div>
+
+  <!-- MediaPipe Models (loaded from CDN or local assets) -->
+  <!-- These will be loaded by the face detector module -->
+
+  <!-- Main Application Script -->
+  <script type="module" src="./index.ts"></script>
+</body>
+</html>

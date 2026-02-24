@@ -146,3 +146,72 @@ export const emailReportRecipientsSchema = z.object({
 export type EmailReportRecipientsRequest = z.infer<typeof emailReportRecipientsSchema>;
 
 export type SessionEventsQuery = z.infer<typeof sessionEventsQuerySchema>;
+
+// =============================================================================
+// Question Schemas
+// =============================================================================
+
+// Question difficulty enum (matches Prisma schema)
+export const questionDifficultySchema = z.enum(['easy', 'medium', 'hard', 'expert']);
+
+export type QuestionDifficulty = z.infer<typeof questionDifficultySchema>;
+
+// Session questions query schema (for GET /sessions/:id/questions)
+export const sessionQuestionsQuerySchema = paginationQuerySchema.extend({
+  difficulty: questionDifficultySchema.optional(),
+  answered: z.coerce.boolean().optional(),
+});
+
+export type SessionQuestionsQuery = z.infer<typeof sessionQuestionsQuerySchema>;
+
+// Submit answer request schema (for POST /sessions/:id/questions/:qid/answer)
+export const submitAnswerRequestSchema = z.object({
+  answerText: z.string()
+    .min(1, 'Answer text is required')
+    .max(INPUT_LIMITS.MAX_TEXT, `Answer text exceeds maximum of ${INPUT_LIMITS.MAX_TEXT} characters`)
+    .transform((val) => sanitizeTransform(val)),
+  answerAudioUrl: z.string()
+    .url('Invalid audio URL')
+    .max(INPUT_LIMITS.URL, 'Audio URL too long')
+    .optional(),
+  transcriptionText: z.string()
+    .max(INPUT_LIMITS.MAX_TEXT, `Transcription text exceeds maximum of ${INPUT_LIMITS.MAX_TEXT} characters`)
+    .optional()
+    .transform((val) => val ? sanitizeTransform(val) : val),
+  responseTiming: z
+    .record(z.unknown())
+    .optional()
+    .refine(
+      (val) => !val || JSON.stringify(val).length <= INPUT_LIMITS.METADATA_SIZE,
+      { message: `Response timing data exceeds maximum of ${INPUT_LIMITS.METADATA_SIZE} bytes` }
+    )
+    .transform((val) => val ? metadataTransform(val) : val),
+  metadata: z
+    .record(z.unknown())
+    .optional()
+    .refine(
+      (val) => !val || JSON.stringify(val).length <= INPUT_LIMITS.METADATA_SIZE,
+      { message: `Metadata size exceeds maximum of ${INPUT_LIMITS.METADATA_SIZE} bytes` }
+    )
+    .transform((val) => val ? metadataTransform(val) : val),
+});
+
+export type SubmitAnswerRequest = z.infer<typeof submitAnswerRequestSchema>;
+
+// Question ID parameter schema
+export const questionIdParamSchema = z.object({
+  id: uuidSchema,
+  qid: uuidSchema,
+});
+
+export type QuestionIdParam = z.infer<typeof questionIdParamSchema>;
+
+// Cancel/delete session request schema
+export const cancelSessionRequestSchema = z.object({
+  reason: z.string()
+    .max(INPUT_LIMITS.MEDIUM_TEXT, `Reason exceeds maximum of ${INPUT_LIMITS.MEDIUM_TEXT} characters`)
+    .optional()
+    .transform((val) => val ? sanitizeTransform(val) : val),
+});
+
+export type CancelSessionRequest = z.infer<typeof cancelSessionRequestSchema>;

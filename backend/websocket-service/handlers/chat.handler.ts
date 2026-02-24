@@ -161,7 +161,28 @@ function validateChatMessage(message: string): boolean {
 }
 
 /**
- * Sanitize message (remove potentially harmful content)
+ * HTML entity encoding map for XSS prevention
+ */
+const HTML_ENTITIES: Record<string, string> = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#x27;',
+  '/': '&#x2F;',
+  '`': '&#x60;',
+  '=': '&#x3D;',
+};
+
+/**
+ * Encode HTML entities to prevent XSS attacks
+ */
+function encodeHtmlEntities(str: string): string {
+  return str.replace(/[&<>"'`=/]/g, (char) => HTML_ENTITIES[char] || char);
+}
+
+/**
+ * Sanitize message (remove potentially harmful content and encode HTML entities)
  */
 function sanitizeMessage(message: string): string {
   // Trim whitespace
@@ -172,6 +193,12 @@ function sanitizeMessage(message: string): string {
 
   // Normalize whitespace
   sanitized = sanitized.replace(/\s+/g, ' ');
+
+  // Encode HTML entities to prevent XSS attacks
+  sanitized = encodeHtmlEntities(sanitized);
+
+  // Remove any remaining control characters (except newlines and tabs for formatting)
+  sanitized = sanitized.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
 
   return sanitized;
 }

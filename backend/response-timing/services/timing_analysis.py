@@ -226,8 +226,8 @@ class TimingAnalysisService:
             # Lower std dev relative to mean = more consistent = less natural
             if result['pause_duration_mean'] > 0:
                 coefficient_of_variation = result['pause_duration_std'] / result['pause_duration_mean']
-                # Normalize to 0-1, invert so low variation = high consistency score
-                result['consistency_score'] = max(0, min(1, 1 - coefficient_of_variation))
+                # Normalize to 0-1 using bounded formula, invert so low variation = high consistency score
+                result['consistency_score'] = max(0, min(1, 1 / (1 + coefficient_of_variation)))
             else:
                 result['consistency_score'] = 1.0  # Perfect consistency (unnatural)
 

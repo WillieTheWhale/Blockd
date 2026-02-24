@@ -56,27 +56,36 @@ function extractTokenFromHeader(header: string | undefined): string | null {
 }
 
 /**
- * Extract token from socket handshake
+ * Token extraction result with source information
  */
-function extractToken(socket: Socket): string | null {
-  // Try auth object first (recommended)
+interface TokenExtractionResult {
+  token: string | null;
+  source: 'auth' | 'header' | 'query' | null;
+}
+
+/**
+ * Extract token from socket handshake
+ * Prefers secure methods (auth object, header) over query parameter
+ */
+function extractToken(socket: Socket): TokenExtractionResult {
+  // Try auth object first (recommended - most secure)
   if (socket.handshake.auth?.token) {
-    return socket.handshake.auth.token;
+    return { token: socket.handshake.auth.token, source: 'auth' };
   }
 
-  // Try Authorization header
+  // Try Authorization header (secure)
   const authHeader = socket.handshake.headers.authorization;
   const headerToken = extractTokenFromHeader(authHeader);
   if (headerToken) {
-    return headerToken;
+    return { token: headerToken, source: 'header' };
   }
 
-  // Try query parameter (fallback, less secure)
+  // Try query parameter (fallback, less secure - logs in server access logs)
   if (socket.handshake.query?.token) {
-    return socket.handshake.query.token as string;
+    return { token: socket.handshake.query.token as string, source: 'query' };
   }
 
-  return null;
+  return { token: null, source: null };
 }
 
 /**
@@ -111,8 +120,8 @@ function verifyAccessToken(token: string): JWTPayloadData {
 export function authMiddleware() {
   return async (socket: Socket, next: (err?: ExtendedError) => void) => {
     try {
-      // Extract token
-      const token = extractToken(socket);
+      // Extract token with source information
+      const { token, source } = extractToken(socket);
 
       if (!token) {
         logger.warn('Authentication failed: No token provided', {
@@ -120,6 +129,17 @@ export function authMiddleware() {
           ip: socket.handshake.address,
         });
         return next(new AuthenticationError('Authentication token required') as ExtendedError);
+      }
+
+      // Warn if token is provided via query parameter (less secure)
+      if (source === 'query') {
+        logger.warn('SECURITY WARNING: Token provided via query parameter. ' +
+          'This is less secure as tokens may be logged in server access logs, ' +
+          'browser history, and referrer headers. ' +
+          'Please use the auth object or Authorization header instead.', {
+          socketId: socket.id,
+          ip: socket.handshake.address,
+        });
       }
 
       // Verify token

@@ -7,6 +7,26 @@ import { STORAGE_KEYS } from './constants'
  * For production deployment, consider migrating to httpOnly cookies with CSRF protection.
  * See: https://owasp.org/www-community/attacks/csrf
  *
+ * KNOWN LIMITATION: localStorage token storage is inherently vulnerable to XSS attacks.
+ * This is an accepted tradeoff for simplicity in the current implementation.
+ * A future enhancement should migrate to httpOnly cookies with CSRF tokens.
+ *
+ * RECOMMENDED CSP HEADERS for production deployment:
+ * Content-Security-Policy:
+ *   default-src 'self';
+ *   script-src 'self' 'strict-dynamic';
+ *   style-src 'self' 'unsafe-inline';
+ *   img-src 'self' data: https:;
+ *   connect-src 'self' https://api.blockd.site wss://api.blockd.site;
+ *   frame-ancestors 'none';
+ *   base-uri 'self';
+ *   form-action 'self';
+ *
+ * Additional security headers recommended:
+ * - X-Content-Type-Options: nosniff
+ * - X-Frame-Options: DENY
+ * - Strict-Transport-Security: max-age=31536000; includeSubDomains
+ *
  * Current mitigations:
  * - CSP headers should be configured to prevent inline scripts
  * - All user inputs should be sanitized before rendering

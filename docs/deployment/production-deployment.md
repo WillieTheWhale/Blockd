@@ -5,11 +5,13 @@ Detailed guide for deploying to production environment with zero downtime.
 ## Pre-Deployment Checklist
 
 - [ ] All tests passing in CI/CD
+- [ ] TypeScript compilation successful (`npm run build`)
 - [ ] Code review approved and merged to main
 - [ ] Security scan passed (no critical vulnerabilities)
 - [ ] Database migrations tested in staging
 - [ ] Secrets uploaded to AWS Secrets Manager
 - [ ] Monitoring dashboards configured
+- [ ] Health check endpoints verified
 - [ ] Rollback plan documented
 - [ ] Team notification sent
 - [ ] Change window scheduled (if needed)
@@ -90,10 +92,21 @@ kubectl port-forward \
   8080:3000 \
   -n production &
 
-# Run smoke tests
+# Run health checks on all services
+echo "Checking API Gateway..."
 curl -f http://localhost:8080/health
-curl -f http://localhost:8080/auth/health
-curl -f http://localhost:8080/sessions/health
+
+echo "Checking Auth Service..."
+curl -f http://localhost:8080/api/v1/auth/health
+
+echo "Checking Session Service..."
+curl -f http://localhost:8080/api/v1/sessions/health
+
+# Check Python services (port-forward separately if needed)
+# curl -f http://ai-detection:8000/health
+# curl -f http://eye-tracking:8001/health
+# curl -f http://response-timing:8002/health
+# curl -f http://video-service:8003/health
 
 # Run Newman API tests
 cd tests/api

@@ -5,6 +5,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import crypto from 'crypto';
 import { OAuthUserInfo as AuthOAuthUserInfo } from '../types/auth.types';
 import { OAuthUserInfo as ProviderOAuthUserInfo } from './oauth-provider.service';
 import { UserProfile } from '../types/user.types';
@@ -276,10 +277,31 @@ export async function getOAuthAccountByProviderId(
 }
 
 /**
- * Validate OAuth state parameter
+ * Validate OAuth state parameter using timing-safe comparison
+ * Prevents timing attacks by ensuring constant-time string comparison
  */
 export function validateOAuthState(state: string, expectedState: string): boolean {
-  return state === expectedState;
+  // Both strings must be non-empty for valid comparison
+  if (!state || !expectedState) {
+    return false;
+  }
+
+  // Convert strings to buffers for timing-safe comparison
+  const stateBuffer = Buffer.from(state, 'utf8');
+  const expectedBuffer = Buffer.from(expectedState, 'utf8');
+
+  // If lengths differ, still perform comparison to avoid timing leak
+  // timingSafeEqual requires equal length buffers, so pad shorter one
+  if (stateBuffer.length !== expectedBuffer.length) {
+    // Use the expected length as the canonical length
+    const paddedState = Buffer.alloc(expectedBuffer.length);
+    stateBuffer.copy(paddedState, 0, 0, Math.min(stateBuffer.length, expectedBuffer.length));
+    // Always return false for length mismatch, but still do the comparison
+    crypto.timingSafeEqual(paddedState, expectedBuffer);
+    return false;
+  }
+
+  return crypto.timingSafeEqual(stateBuffer, expectedBuffer);
 }
 
 /**

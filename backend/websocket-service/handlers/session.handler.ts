@@ -14,6 +14,160 @@ import { RoomManager, RoomType } from '../lib/room-manager';
 import { logger } from '../lib/logger';
 import { SessionAccessDeniedError } from '../lib/errors';
 import prisma from '../lib/prisma';
+import { createClient, RedisClientType } from 'redis';
+
+/**
+ * Session state cache configuration
+ */
+const SESSION_CACHE_TTL = 30; // 30 seconds TTL
+const SESSION_CACHE_PREFIX = 'session:state:';
+const SESSION_ACCESS_CACHE_PREFIX = 'session:access:';
+
+/**
+ * Redis client for session caching (lazy initialized)
+ */
+let redisClient: RedisClientType | null = null;
+let redisInitPromise: Promise<void> | null = null;
+
+/**
+ * Initialize Redis client for session caching
+ */
+async function getRedisClient(): Promise<RedisClientType | null> {
+  if (redisClient?.isReady) {
+    return redisClient;
+  }
+
+  if (redisInitPromise) {
+    await redisInitPromise;
+    return redisClient;
+  }
+
+  redisInitPromise = (async () => {
+    try {
+      const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+      redisClient = createClient({ url: redisUrl });
+
+      redisClient.on('error', (err) => {
+        logger.error('Session cache Redis error', err);
+      });
+
+      await redisClient.connect();
+      logger.info('Session cache Redis connected');
+    } catch (error) {
+      logger.warn('Session cache Redis unavailable, falling back to database', { error });
+      redisClient = null;
+    }
+  })();
+
+  await redisInitPromise;
+  return redisClient;
+}
+
+/**
+ * Get cached session access result
+ */
+async function getCachedSessionAccess(
+  sessionId: string,
+  userId: string
+): Promise<boolean | null> {
+  try {
+    const redis = await getRedisClient();
+    if (!redis) return null;
+
+    const cacheKey = `${SESSION_ACCESS_CACHE_PREFIX}${sessionId}:${userId}`;
+    const cached = await redis.get(cacheKey);
+    if (cached !== null) {
+      logger.debug('Session access cache hit', { sessionId, userId });
+      return cached === 'true';
+    }
+    return null;
+  } catch (error) {
+    logger.error('Error getting cached session access', error);
+    return null;
+  }
+}
+
+/**
+ * Cache session access result
+ */
+async function cacheSessionAccess(
+  sessionId: string,
+  userId: string,
+  hasAccess: boolean
+): Promise<void> {
+  try {
+    const redis = await getRedisClient();
+    if (!redis) return;
+
+    const cacheKey = `${SESSION_ACCESS_CACHE_PREFIX}${sessionId}:${userId}`;
+    await redis.setEx(cacheKey, SESSION_CACHE_TTL, hasAccess ? 'true' : 'false');
+    logger.debug('Session access cached', { sessionId, userId, hasAccess });
+  } catch (error) {
+    logger.error('Error caching session access', error);
+  }
+}
+
+/**
+ * Get cached session state
+ */
+async function getCachedSessionState(sessionId: string): Promise<SessionState | null> {
+  try {
+    const redis = await getRedisClient();
+    if (!redis) return null;
+
+    const cacheKey = `${SESSION_CACHE_PREFIX}${sessionId}`;
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      logger.debug('Session state cache hit', { sessionId });
+      return JSON.parse(cached);
+    }
+    return null;
+  } catch (error) {
+    logger.error('Error getting cached session state', error);
+    return null;
+  }
+}
+
+/**
+ * Cache session state
+ */
+async function cacheSessionState(sessionId: string, state: SessionState): Promise<void> {
+  try {
+    const redis = await getRedisClient();
+    if (!redis) return;
+
+    const cacheKey = `${SESSION_CACHE_PREFIX}${sessionId}`;
+    await redis.setEx(cacheKey, SESSION_CACHE_TTL, JSON.stringify(state));
+    logger.debug('Session state cached', { sessionId });
+  } catch (error) {
+    logger.error('Error caching session state', error);
+  }
+}
+
+/**
+ * Invalidate session cache (call when session state changes)
+ */
+export async function invalidateSessionCache(sessionId: string): Promise<void> {
+  try {
+    const redis = await getRedisClient();
+    if (!redis) return;
+
+    const stateKey = `${SESSION_CACHE_PREFIX}${sessionId}`;
+    // Use pattern to delete all access keys for this session
+    const accessPattern = `${SESSION_ACCESS_CACHE_PREFIX}${sessionId}:*`;
+
+    await redis.del(stateKey);
+    // Scan and delete access keys
+    const keys = await redis.keys(accessPattern);
+    if (keys.length > 0) {
+      await redis.del(keys);
+    }
+
+    logger.debug('Session cache invalidated', { sessionId, keysDeleted: keys.length + 1 });
+  } catch (error) {
+    logger.error('Error invalidating session cache', error);
+  }
+}
 
 /**
  * Setup session handler
@@ -187,6 +341,12 @@ async function verifySessionAccess(
       userRole,
     });
 
+    // Check cache first
+    const cachedAccess = await getCachedSessionAccess(sessionId, userId);
+    if (cachedAccess !== null) {
+      return cachedAccess;
+    }
+
     // Query session from database
     const session = await prisma.interviewSession.findUnique({
       where: { id: sessionId },
@@ -201,17 +361,20 @@ async function verifySessionAccess(
     // Session doesn't exist
     if (!session) {
       logger.warn('Session not found', { sessionId });
+      await cacheSessionAccess(sessionId, userId, false);
       return false;
     }
 
     // Session is cancelled or ended
     if (session.status === 'cancelled' || session.status === 'ended') {
       logger.warn('Session is not active', { sessionId, status: session.status });
+      await cacheSessionAccess(sessionId, userId, false);
       return false;
     }
 
     // Admins have access to all sessions
     if (userRole === 'admin') {
+      await cacheSessionAccess(sessionId, userId, true);
       return true;
     }
 
@@ -226,9 +389,11 @@ async function verifySessionAccess(
         interviewerId: session.interviewerId,
         intervieweeId: session.intervieweeId,
       });
+      await cacheSessionAccess(sessionId, userId, false);
       return false;
     }
 
+    await cacheSessionAccess(sessionId, userId, true);
     return true;
   } catch (error) {
     logger.error('Error verifying session access', error, { sessionId, userId });
@@ -237,11 +402,48 @@ async function verifySessionAccess(
 }
 
 /**
- * Get current session state from database
+ * Session state returned from database
  */
-async function getSessionState(sessionId: string): Promise<any> {
+interface SessionState {
+  session_id: string;
+  status: string;
+  scheduled_start: string | null;
+  actual_start: string | null;
+  actual_end: string | null;
+  duration_minutes: number | null;
+  participants: Array<{
+    user_id: string;
+    role: string;
+    name: string;
+  }>;
+  questions: Array<{
+    id: string;
+    text: string;
+    order: number;
+    difficulty: string | null;
+    asked_at: string | null;
+  }>;
+  stats: {
+    security_events_count: number;
+    gaze_events_count: number;
+  };
+  risk_score: number | null;
+  metadata: Record<string, unknown> | null;
+  error?: string;
+}
+
+/**
+ * Get current session state from database (with Redis caching)
+ */
+async function getSessionState(sessionId: string): Promise<SessionState | null> {
   try {
     logger.debug('Getting session state', { sessionId });
+
+    // Check cache first
+    const cachedState = await getCachedSessionState(sessionId);
+    if (cachedState) {
+      return cachedState;
+    }
 
     const session = await prisma.interviewSession.findUnique({
       where: { id: sessionId },
@@ -304,7 +506,7 @@ async function getSessionState(sessionId: string): Promise<any> {
       });
     }
 
-    return {
+    const sessionState: SessionState = {
       session_id: session.id,
       status: session.status,
       scheduled_start: session.scheduledStart?.toISOString() || null,
@@ -326,6 +528,11 @@ async function getSessionState(sessionId: string): Promise<any> {
       risk_score: session.riskScore ? parseFloat(session.riskScore.toString()) : null,
       metadata: session.metadata,
     };
+
+    // Cache the session state
+    await cacheSessionState(sessionId, sessionState);
+
+    return sessionState;
   } catch (error) {
     logger.error('Error getting session state', error, { sessionId });
     return {
@@ -344,7 +551,7 @@ export function broadcastSessionEvent(
   io: Server,
   sessionId: string,
   event: string,
-  data: any
+  data: Record<string, unknown>
 ): void {
   const sessionRoomId = RoomManager.createRoomId(RoomType.SESSION, sessionId);
 
@@ -362,13 +569,23 @@ export function broadcastSessionEvent(
 }
 
 /**
+ * Participant info for session notifications
+ */
+interface ParticipantInfo {
+  user_id: string;
+  name: string;
+  email?: string;
+  role: string;
+}
+
+/**
  * Send session start notification
  */
 export function notifySessionStarted(
   io: Server,
   sessionId: string,
-  interviewer: any,
-  interviewee: any
+  interviewer: ParticipantInfo,
+  interviewee: ParticipantInfo
 ): void {
   broadcastSessionEvent(io, sessionId, 'session:started', {
     started_at: new Date().toISOString(),

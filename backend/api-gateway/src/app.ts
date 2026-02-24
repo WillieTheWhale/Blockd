@@ -20,13 +20,12 @@ import {
   register,
   collectDefaultMetrics,
   fastifyMetricsPlugin,
-  httpRequestDuration,
-  httpRequestsTotal,
 } from '../../shared/metrics/index.js';
 
 // Import routes
 import healthRoutes from '../routes/health.routes';
 import authRoutes from '../routes/auth.routes';
+import usersRoutes from '../routes/users.routes';
 import sessionsRoutes from '../routes/sessions.routes';
 import browserRoutes from '../routes/browser.routes';
 import analysisRoutes from '../routes/analysis.routes';
@@ -50,7 +49,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
 
   // Create Fastify instance with security defaults
   const app = Fastify({
-    logger: loggerConfig,
+    logger: loggerConfig as import('fastify').FastifyServerOptions['logger'],
     requestIdLogLabel: 'requestId',
     requestIdHeader: 'x-request-id',
     genReqId,
@@ -106,7 +105,10 @@ async function registerPlugins(app: FastifyInstance): Promise<void> {
   await app.register(websocket, {
     options: {
       maxPayload: 1048576, // 1MB
-      verifyClient: (info, next) => {
+      verifyClient: (
+        info: { origin: string; secure: boolean; req: import('http').IncomingMessage },
+        next: (result: boolean, code?: number, message?: string) => void
+      ) => {
         // Add WebSocket authentication here if needed
         next(true);
       },
@@ -143,6 +145,7 @@ async function registerPlugins(app: FastifyInstance): Promise<void> {
         tags: [
           { name: 'Health', description: 'Health check endpoints' },
           { name: 'Authentication', description: 'User authentication and authorization' },
+          { name: 'Users', description: 'User profile management' },
           { name: 'Sessions', description: 'Interview session management' },
           { name: 'Browser', description: 'Browser client endpoints' },
           { name: 'Analysis', description: 'AI detection and analysis' },
@@ -186,6 +189,7 @@ async function registerRoutes(app: FastifyInstance, prefix = '/api/v1'): Promise
 
   // API routes
   await app.register(authRoutes, { prefix: `${prefix}/auth` });
+  await app.register(usersRoutes, { prefix: `${prefix}/users` });
   await app.register(sessionsRoutes, { prefix: `${prefix}/sessions` });
   await app.register(browserRoutes, { prefix: `${prefix}/browser` });
   await app.register(analysisRoutes, { prefix: `${prefix}/analysis` });

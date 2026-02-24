@@ -20,10 +20,47 @@ import { RoomNotFoundError } from './errors';
 // Re-export RoomType for convenience
 export { RoomType } from '../types/room.types';
 
+/**
+ * Simple mutex implementation for room operations
+ * Prevents race conditions during concurrent room joins/leaves
+ */
+class RoomMutex {
+  private locks: Map<string, Promise<void>> = new Map();
+
+  /**
+   * Acquire a lock for a specific room
+   * Returns a release function to call when done
+   */
+  async acquire(roomId: string): Promise<() => void> {
+    // Wait for any existing lock on this room
+    while (this.locks.has(roomId)) {
+      await this.locks.get(roomId);
+    }
+
+    // Create a new lock
+    let releaseFn: () => void;
+    const lockPromise = new Promise<void>((resolve) => {
+      releaseFn = resolve;
+    });
+
+    this.locks.set(roomId, lockPromise);
+
+    // Return release function
+    return () => {
+      this.locks.delete(roomId);
+      releaseFn!();
+    };
+  }
+}
+
 export class RoomManager {
   private io: Server;
   private rooms: Map<string, RoomInfo> = new Map();
-  private participants: Map<string, Set<RoomParticipant>> = new Map();
+  // Use Map with composite key ${userId}:${socketId} to prevent memory leaks
+  // from duplicate entries when the same user reconnects
+  private participants: Map<string, Map<string, RoomParticipant>> = new Map();
+  // Mutex for preventing race conditions in room operations
+  private mutex: RoomMutex = new RoomMutex();
 
   constructor(io: Server) {
     this.io = io;
@@ -53,6 +90,9 @@ export class RoomManager {
   async joinRoom(socket: AuthenticatedSocket, options: RoomJoinOptions): Promise<void> {
     const { roomId, userId, role, metadata } = options;
 
+    // Acquire lock for this room to prevent race conditions
+    const release = await this.mutex.acquire(roomId);
+
     try {
       // Join the Socket.io room
       await socket.join(roomId);
@@ -69,9 +109,9 @@ export class RoomManager {
         });
       }
 
-      // Track participant
+      // Track participant using Map with composite key to prevent duplicates
       if (!this.participants.has(roomId)) {
-        this.participants.set(roomId, new Set());
+        this.participants.set(roomId, new Map());
       }
 
       const participant: RoomParticipant = {
@@ -82,7 +122,9 @@ export class RoomManager {
         metadata,
       };
 
-      this.participants.get(roomId)!.add(participant);
+      // Use composite key to ensure uniqueness and allow efficient lookup/removal
+      const participantKey = `${userId}:${socket.id}`;
+      this.participants.get(roomId)!.set(participantKey, participant);
 
       // Update participant count
       const room = this.rooms.get(roomId)!;
@@ -97,6 +139,9 @@ export class RoomManager {
     } catch (error) {
       logger.error('Failed to join room', error, { userId, roomId });
       throw error;
+    } finally {
+      // Always release the lock
+      release();
     }
   }
 
@@ -106,19 +151,18 @@ export class RoomManager {
   async leaveRoom(socket: Socket, options: RoomLeaveOptions): Promise<void> {
     const { roomId, userId, reason } = options;
 
+    // Acquire lock for this room to prevent race conditions
+    const release = await this.mutex.acquire(roomId);
+
     try {
       // Leave the Socket.io room
       await socket.leave(roomId);
 
-      // Remove participant
+      // Remove participant using composite key for O(1) lookup
       const participants = this.participants.get(roomId);
       if (participants) {
-        const toRemove = Array.from(participants).find(
-          (p) => p.userId === userId && p.socketId === socket.id
-        );
-        if (toRemove) {
-          participants.delete(toRemove);
-        }
+        const participantKey = `${userId}:${socket.id}`;
+        participants.delete(participantKey);
 
         // Update participant count
         const room = this.rooms.get(roomId);
@@ -142,6 +186,9 @@ export class RoomManager {
     } catch (error) {
       logger.error('Failed to leave room', error, { userId, roomId });
       throw error;
+    } finally {
+      // Always release the lock
+      release();
     }
   }
 
@@ -162,7 +209,7 @@ export class RoomManager {
       if (excludeUserId) {
         const participants = this.participants.get(roomId);
         if (participants) {
-          const socketIds = Array.from(participants)
+          const socketIds = Array.from(participants.values())
             .filter((p) => p.userId === excludeUserId)
             .map((p) => p.socketId);
           if (socketIds.length > 0) {
@@ -197,7 +244,7 @@ export class RoomManager {
    */
   getRoomParticipants(roomId: string): RoomParticipant[] {
     const participants = this.participants.get(roomId);
-    return participants ? Array.from(participants) : [];
+    return participants ? Array.from(participants.values()) : [];
   }
 
   /**
@@ -208,7 +255,7 @@ export class RoomManager {
     if (!participants) {
       return false;
     }
-    return Array.from(participants).some((p) => p.userId === userId);
+    return Array.from(participants.values()).some((p) => p.userId === userId);
   }
 
   /**
@@ -218,7 +265,7 @@ export class RoomManager {
     const userRooms: string[] = [];
 
     for (const [roomId, participants] of this.participants.entries()) {
-      if (Array.from(participants).some((p) => p.userId === userId)) {
+      if (Array.from(participants.values()).some((p) => p.userId === userId)) {
         userRooms.push(roomId);
       }
     }
@@ -260,9 +307,17 @@ export class RoomManager {
    */
   cleanupSocket(socketId: string): void {
     for (const [roomId, participants] of this.participants.entries()) {
-      const toRemove = Array.from(participants).find((p) => p.socketId === socketId);
-      if (toRemove) {
-        participants.delete(toRemove);
+      // Find and remove participant by socketId
+      let removedKey: string | null = null;
+      for (const [key, participant] of participants.entries()) {
+        if (participant.socketId === socketId) {
+          removedKey = key;
+          break;
+        }
+      }
+
+      if (removedKey) {
+        participants.delete(removedKey);
 
         const room = this.rooms.get(roomId);
         if (room) {

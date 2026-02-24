@@ -4,8 +4,17 @@
  */
 
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { getRedisClient } from './redis-client';
 import { UnauthorizedError } from './errors';
+
+/**
+ * Hash a token for use as Redis key
+ * Prevents exposure of raw tokens in Redis keys
+ */
+function hashToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
 
 export interface JwtPayload {
   userId: string;
@@ -94,9 +103,10 @@ export async function generateTokenPair(payload: Omit<JwtPayload, 'iat' | 'exp'>
     audience: 'blockd-platform',
   });
 
-  // Store refresh token in Redis
+  // Store refresh token in Redis (hash the token to avoid exposing it in keys)
+  const tokenHash = hashToken(refreshToken);
   await redis.set(
-    `refresh_token:${payload.userId}:${refreshToken}`,
+    `refresh_token:${payload.userId}:${tokenHash}`,
     { userId: payload.userId, email: payload.email, role: payload.role },
     { ttl: REFRESH_TOKEN_TTL, prefix: 'auth' }
   );
@@ -144,10 +154,11 @@ export async function verifyRefreshToken(token: string): Promise<JwtPayload> {
       audience: 'blockd-platform',
     }) as JwtPayload;
 
-    // Check if refresh token exists in Redis
+    // Check if refresh token exists in Redis (hash the token to match stored key)
     const redis = getRedisClient();
+    const tokenHash = hashToken(token);
     const storedToken = await redis.exists(
-      `refresh_token:${decoded.userId}:${token}`,
+      `refresh_token:${decoded.userId}:${tokenHash}`,
       { prefix: 'auth' }
     );
 
@@ -175,7 +186,8 @@ export async function verifyRefreshToken(token: string): Promise<JwtPayload> {
  */
 export async function revokeRefreshToken(userId: string, token: string): Promise<void> {
   const redis = getRedisClient();
-  await redis.del(`refresh_token:${userId}:${token}`, { prefix: 'auth' });
+  const tokenHash = hashToken(token);
+  await redis.del(`refresh_token:${userId}:${tokenHash}`, { prefix: 'auth' });
 }
 
 /**

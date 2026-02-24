@@ -5,6 +5,7 @@
  */
 
 import bcrypt from 'bcrypt';
+import { randomInt } from 'crypto';
 import { WeakPasswordError } from '../lib/errors';
 
 const SALT_ROUNDS = 12;
@@ -168,17 +169,22 @@ export function generateSecurePassword(length: number = 16): string {
   const allChars = uppercase + lowercase + numbers + special;
   let password = '';
 
-  // Ensure at least one of each type
-  password += uppercase[Math.floor(Math.random() * uppercase.length)];
-  password += lowercase[Math.floor(Math.random() * lowercase.length)];
-  password += numbers[Math.floor(Math.random() * numbers.length)];
-  password += special[Math.floor(Math.random() * special.length)];
+  // Ensure at least one of each type (using crypto.randomInt for security)
+  password += uppercase[randomInt(uppercase.length)];
+  password += lowercase[randomInt(lowercase.length)];
+  password += numbers[randomInt(numbers.length)];
+  password += special[randomInt(special.length)];
 
   // Fill the rest randomly
   for (let i = password.length; i < length; i++) {
-    password += allChars[Math.floor(Math.random() * allChars.length)];
+    password += allChars[randomInt(allChars.length)];
   }
 
-  // Shuffle the password
-  return password.split('').sort(() => Math.random() - 0.5).join('');
+  // Shuffle the password using Fisher-Yates with crypto.randomInt
+  const chars = password.split('');
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = randomInt(i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  return chars.join('');
 }

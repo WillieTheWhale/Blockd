@@ -6,10 +6,10 @@
 import { FastifyInstance } from 'fastify';
 import { authenticate } from '../middleware/auth.middleware';
 import { authRateLimiter, pdfRateLimiter, emailRateLimiter } from '../middleware/rate-limit.middleware';
-import { validateParams, validateBody } from '../middleware/validation.middleware';
-import { idParamSchema, IdParam } from '../schemas/common.schema';
+import { validateParams, validateBody, validateQuery } from '../middleware/validation.middleware';
+import { idParamSchema, IdParam, paginationQuerySchema, PaginationQuery } from '../schemas/common.schema';
 import { emailReportRecipientsSchema, EmailReportRecipientsRequest } from '../schemas/session.schema';
-import { sendSuccess } from '../lib/response';
+import { sendSuccess, sendPaginated, sendNoContent } from '../lib/response';
 import { NotFoundError, ForbiddenError } from '../lib/errors';
 import prisma from '../lib/prisma';
 import {
@@ -18,9 +18,13 @@ import {
   SessionReportData,
 } from '../lib/pdf-generator';
 
-/** Param type for routes using session_id */
+/**
+ * Param type for routes using sessionId.
+ * NOTE: URL parameters use camelCase (sessionId) for consistency across the API.
+ * This matches the convention used in sessions.routes.ts and other gateway routes.
+ */
 interface SessionIdParam {
-  session_id: string;
+  sessionId: string;
 }
 
 // ============================================================================
@@ -202,12 +206,170 @@ async function verifySessionAccess(userId: string, sessionId: string): Promise<b
 }
 
 export default async function reportsRoutes(fastify: FastifyInstance) {
-  // Get session report
-  fastify.get<{ Params: SessionIdParam }>('/:session_id', {
+  // ============================================================================
+  // List Reports
+  // ============================================================================
+
+  // List all reports for the authenticated user with pagination
+  fastify.get<{ Querystring: PaginationQuery }>('/', {
     preHandler: [
       authenticate,
       authRateLimiter,
-      validateParams(idParamSchema.extend({ session_id: idParamSchema.shape.id })),
+      validateQuery(paginationQuerySchema),
+    ],
+    schema: {
+      tags: ['Reports'],
+      summary: 'List all reports',
+      description: 'Lists all session reports accessible to the authenticated user with pagination. Admins see all reports in their organization; interviewers see reports for their sessions.',
+      querystring: {
+        type: 'object',
+        properties: {
+          page: { type: 'integer', minimum: 1, default: 1 },
+          pageSize: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+          sortBy: { type: 'string' },
+          sortOrder: { type: 'string', enum: ['asc', 'desc'], default: 'desc' },
+        },
+      },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: async (request, reply) => {
+      const { page, pageSize } = request.query;
+      const userId = request.user!.userId;
+      const userRole = request.user!.role;
+      const organizationId = request.user!.organizationId;
+
+      // Build the where clause based on user role
+      const where: any = {};
+
+      if (userRole === 'admin' && organizationId) {
+        // Admins can see all reports for sessions in their organization
+        where.session = {
+          organizationId,
+        };
+      } else {
+        // Non-admins can only see reports for sessions they are involved in
+        where.session = {
+          OR: [
+            { interviewerId: userId },
+            { intervieweeId: userId },
+          ],
+        };
+      }
+
+      const [reports, totalItems] = await Promise.all([
+        prisma.sessionReport.findMany({
+          where,
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+          orderBy: { createdAt: 'desc' },
+          include: {
+            session: {
+              select: {
+                id: true,
+                status: true,
+                scheduledStart: true,
+                actualStart: true,
+                actualEnd: true,
+                durationMinutes: true,
+                interviewer: {
+                  select: {
+                    email: true,
+                    firstName: true,
+                    lastName: true,
+                  },
+                },
+                interviewee: {
+                  select: {
+                    email: true,
+                    firstName: true,
+                    lastName: true,
+                  },
+                },
+              },
+            },
+          },
+        }),
+        prisma.sessionReport.count({ where }),
+      ]);
+
+      return sendPaginated(reply, reports, page, pageSize, totalItems);
+    },
+  });
+
+  // ============================================================================
+  // Delete Report
+  // ============================================================================
+
+  // Delete a report by ID
+  fastify.delete<{ Params: IdParam }>('/:id', {
+    preHandler: [
+      authenticate,
+      authRateLimiter,
+      validateParams(idParamSchema),
+    ],
+    schema: {
+      tags: ['Reports'],
+      summary: 'Delete a report',
+      description: 'Deletes a session report. Only the interviewer who conducted the session or an organization admin can delete reports.',
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+        },
+      },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: async (request, reply) => {
+      const { id } = request.params;
+      const userId = request.user!.userId;
+
+      // Fetch the report with its session to verify access
+      const report = await prisma.sessionReport.findUnique({
+        where: { id },
+        include: {
+          session: {
+            select: {
+              interviewerId: true,
+              organizationId: true,
+            },
+          },
+        },
+      });
+
+      if (!report) {
+        throw new NotFoundError('Report not found');
+      }
+
+      // Verify user has permission to delete this report
+      const hasAccess = await verifySessionAccess(userId, report.sessionId);
+      if (!hasAccess) {
+        throw new ForbiddenError('You do not have permission to delete this report');
+      }
+
+      // Delete the report
+      await prisma.sessionReport.delete({
+        where: { id },
+      });
+
+      request.log.info(
+        { reportId: id, sessionId: report.sessionId, userId },
+        'Report deleted'
+      );
+
+      return sendNoContent(reply);
+    },
+  });
+
+  // ============================================================================
+  // Get Session Report
+  // ============================================================================
+
+  // Get session report
+  fastify.get<{ Params: SessionIdParam }>('/:sessionId', {
+    preHandler: [
+      authenticate,
+      authRateLimiter,
+      validateParams(idParamSchema.extend({ sessionId: idParamSchema.shape.id })),
     ],
     schema: {
       tags: ['Reports'],
@@ -216,13 +378,13 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
       params: {
         type: 'object',
         properties: {
-          session_id: { type: 'string', format: 'uuid' },
+          sessionId: { type: 'string', format: 'uuid' },
         },
       },
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
-      const { session_id: sessionId } = request.params;
+      const { sessionId } = request.params;
 
       // Fetch session with participants using helper
       const session = await fetchSessionWithParticipants(sessionId);
@@ -253,11 +415,11 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
   });
 
   // Get session report as PDF
-  fastify.get<{ Params: SessionIdParam }>('/:session_id/pdf', {
+  fastify.get<{ Params: SessionIdParam }>('/:sessionId/pdf', {
     preHandler: [
       authenticate,
       pdfRateLimiter, // Stricter rate limit for expensive PDF generation
-      validateParams(idParamSchema.extend({ session_id: idParamSchema.shape.id })),
+      validateParams(idParamSchema.extend({ sessionId: idParamSchema.shape.id })),
     ],
     schema: {
       tags: ['Reports'],
@@ -266,13 +428,13 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
       params: {
         type: 'object',
         properties: {
-          session_id: { type: 'string', format: 'uuid' },
+          sessionId: { type: 'string', format: 'uuid' },
         },
       },
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
-      const { session_id: sessionId } = request.params;
+      const { sessionId } = request.params;
       const userId = request.user!.userId;
 
       // Verify user has access to this session
@@ -382,12 +544,169 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
     },
   });
 
+  // ============================================================================
+  // Download Report (Alias for PDF endpoint)
+  // ============================================================================
+
+  /**
+   * Download report as PDF - Alias route for frontend compatibility
+   * Frontend uses: /api/v1/reports/:id/download
+   * This aliases to the existing /:session_id/pdf endpoint
+   *
+   * Note: The :id parameter here refers to the report ID, which maps to session_id
+   * since reports have a 1:1 relationship with sessions.
+   */
+  fastify.get<{ Params: IdParam }>('/:id/download', {
+    preHandler: [
+      authenticate,
+      pdfRateLimiter, // Stricter rate limit for expensive PDF generation
+      validateParams(idParamSchema),
+    ],
+    schema: {
+      tags: ['Reports'],
+      summary: 'Download report as PDF (alias)',
+      description: 'Downloads the session report as a PDF file. This is an alias endpoint for frontend compatibility. The :id parameter can be either a report ID or session ID.',
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+        },
+      },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: async (request, reply) => {
+      const { id } = request.params;
+      const userId = request.user!.userId;
+
+      // First, try to find a report with this ID to get the session ID
+      let sessionId = id;
+      const report = await prisma.sessionReport.findUnique({
+        where: { id },
+        select: { sessionId: true },
+      });
+
+      if (report) {
+        // The ID was a report ID, use its session ID
+        sessionId = report.sessionId;
+      }
+      // Otherwise, assume the ID is a session ID directly
+
+      // Verify user has access to this session
+      const hasAccess = await verifySessionAccess(userId, sessionId);
+      if (!hasAccess) {
+        throw new ForbiddenError('You do not have access to this report');
+      }
+
+      // Fetch session with participants
+      const session = await fetchSessionWithParticipants(sessionId);
+
+      if (!session) {
+        throw new NotFoundError('Session not found');
+      }
+
+      // Get or create report
+      const sessionReport = await getOrCreateSessionReport(sessionId, session.riskScore);
+
+      // Fetch security events for the report
+      const securityEvents = await prisma.securityEvent.findMany({
+        where: { sessionId },
+        orderBy: { timestamp: 'desc' },
+        take: 50,
+        select: {
+          eventType: true,
+          severity: true,
+          description: true,
+          timestamp: true,
+        },
+      });
+
+      // Fetch answer analyses with questions
+      const answerAnalyses = await prisma.answerAnalysis.findMany({
+        where: {
+          question: {
+            sessionId,
+          },
+        },
+        include: {
+          question: {
+            select: {
+              questionText: true,
+            },
+          },
+        },
+      });
+
+      // Build PDF data
+      const pdfData: SessionReportData = {
+        sessionId: session.id,
+        status: session.status,
+        scheduledStart: session.scheduledStart,
+        actualStart: session.actualStart,
+        actualEnd: session.actualEnd,
+        durationMinutes: session.durationMinutes,
+        interviewer: {
+          email: session.interviewer.email,
+          firstName: session.interviewer.firstName,
+          lastName: session.interviewer.lastName,
+        },
+        interviewee: {
+          email: session.interviewee.email,
+          firstName: session.interviewee.firstName,
+          lastName: session.interviewee.lastName,
+        },
+        report: {
+          overallRiskScore: Number(sessionReport.overallRiskScore),
+          aiDetectionScore: Number(sessionReport.aiDetectionScore),
+          gazeAnomalyScore: Number(sessionReport.gazeAnomalyScore),
+          timingAnomalyScore: Number(sessionReport.timingAnomalyScore),
+          securityEventsCount: sessionReport.securityEventsCount,
+          recommendations: sessionReport.recommendations as string[],
+          detailedAnalysis: sessionReport.detailedAnalysis as {
+            questionsAsked: number;
+            answersAnalyzed: number;
+            aiGeneratedAnswers: number;
+            securityEvents: number;
+          },
+          createdAt: sessionReport.createdAt,
+        },
+        securityEvents: securityEvents.map(e => ({
+          eventType: e.eventType,
+          severity: e.severity,
+          description: e.description,
+          timestamp: e.timestamp,
+        })),
+        answerAnalyses: answerAnalyses.map(a => ({
+          questionText: a.question.questionText,
+          riskScore: Number(a.riskScore),
+          isAiGenerated: a.isAiGenerated ?? false,
+          similarityScores: a.similarityScores as Record<string, number> | undefined,
+        })),
+      };
+
+      // Generate PDF
+      const pdfBuffer = await generateSessionReportPdf(pdfData);
+      const filename = generateReportFilename(sessionId);
+
+      // Set response headers
+      reply.header('Content-Type', 'application/pdf');
+      reply.header('Content-Disposition', `attachment; filename="${filename}"`);
+      reply.header('Content-Length', pdfBuffer.length.toString());
+      reply.header('Cache-Control', 'no-cache');
+
+      return reply.send(pdfBuffer);
+    },
+  });
+
+  // ============================================================================
+  // Email Report
+  // ============================================================================
+
   // Generate and email report
-  fastify.post<{ Params: SessionIdParam; Body: EmailReportRecipientsRequest }>('/:session_id/email', {
+  fastify.post<{ Params: SessionIdParam; Body: EmailReportRecipientsRequest }>('/:sessionId/email', {
     preHandler: [
       authenticate,
       emailRateLimiter, // Stricter rate limit for email operations
-      validateParams(idParamSchema.extend({ session_id: idParamSchema.shape.id })),
+      validateParams(idParamSchema.extend({ sessionId: idParamSchema.shape.id })),
       validateBody(emailReportRecipientsSchema),
     ],
     schema: {
@@ -397,14 +716,14 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
       params: {
         type: 'object',
         properties: {
-          session_id: { type: 'string', format: 'uuid' },
+          sessionId: { type: 'string', format: 'uuid' },
         },
       },
-      
+
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
-      const { session_id: sessionId } = request.params;
+      const { sessionId } = request.params;
       const userId = request.user!.userId;
       const { recipients } = request.body;
 

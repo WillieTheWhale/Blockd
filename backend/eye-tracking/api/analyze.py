@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from uuid import UUID
 from datetime import datetime
+from functools import lru_cache
 import structlog
 
 from src.database import get_db_session, GazeEvent
@@ -19,10 +20,33 @@ logger = structlog.get_logger(__name__)
 router = APIRouter()
 
 
+# Singleton service instances using FastAPI dependency injection
+@lru_cache(maxsize=1)
+def get_pattern_service() -> PatternRecognitionService:
+    """
+    Get singleton PatternRecognitionService instance.
+    Uses lru_cache for singleton scope - service is created once and reused.
+    """
+    logger.info("pattern_recognition_service_initialized")
+    return PatternRecognitionService()
+
+
+@lru_cache(maxsize=1)
+def get_anomaly_service() -> AnomalyDetectionService:
+    """
+    Get singleton AnomalyDetectionService instance.
+    Uses lru_cache for singleton scope - service is created once and reused.
+    """
+    logger.info("anomaly_detection_service_initialized")
+    return AnomalyDetectionService()
+
+
 @router.post("/analyze", response_model=AnalysisResponse)
 async def analyze_gaze_data(
     request: AnalysisBatchRequest,
-    db: Session = Depends(get_db_session)
+    db: Session = Depends(get_db_session),
+    pattern_service: PatternRecognitionService = Depends(get_pattern_service),
+    anomaly_service: AnomalyDetectionService = Depends(get_anomaly_service)
 ):
     """
     Perform batch analysis on gaze data
@@ -30,6 +54,8 @@ async def analyze_gaze_data(
     Args:
         request: Analysis request with session_id and time range
         db: Database session
+        pattern_service: Singleton pattern recognition service
+        anomaly_service: Singleton anomaly detection service
 
     Returns:
         Analysis results with patterns and anomalies
@@ -65,9 +91,7 @@ async def analyze_gaze_data(
             for event in gaze_events
         ]
 
-        # Initialize services
-        pattern_service = PatternRecognitionService()
-        anomaly_service = AnomalyDetectionService()
+        # Use singleton services (injected via dependencies)
 
         # Detect patterns
         patterns = None
@@ -139,7 +163,8 @@ async def analyze_gaze_data(
 @router.get("/analyze/{session_id}/fixations")
 async def analyze_fixations(
     session_id: UUID,
-    db: Session = Depends(get_db_session)
+    db: Session = Depends(get_db_session),
+    pattern_service: PatternRecognitionService = Depends(get_pattern_service)
 ):
     """
     Analyze fixations and saccades for session
@@ -147,6 +172,7 @@ async def analyze_fixations(
     Args:
         session_id: Session UUID
         db: Database session
+        pattern_service: Singleton pattern recognition service
 
     Returns:
         Fixations and saccades data
@@ -173,8 +199,7 @@ async def analyze_fixations(
             for event in gaze_events
         ]
 
-        # Analyze fixations and saccades
-        pattern_service = PatternRecognitionService()
+        # Analyze fixations and saccades using singleton service
         result = pattern_service.detect_fixations_and_saccades(gaze_points)
 
         logger.info(

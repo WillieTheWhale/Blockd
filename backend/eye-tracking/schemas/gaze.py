@@ -2,7 +2,7 @@
 Pydantic Schemas for Gaze Data
 """
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 from datetime import datetime
 from uuid import UUID

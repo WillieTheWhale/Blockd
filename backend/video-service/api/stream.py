@@ -6,10 +6,11 @@ Endpoints for managing WebRTC stream sessions
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 
 from services.stream import StreamManager, StreamError
+from lib.auth import require_auth, AuthResult
 
 logger = logging.getLogger(__name__)
 
@@ -65,16 +66,17 @@ class SessionStatsResponse(BaseModel):
 
 
 @router.post("/sessions", response_model=SessionInfoResponse)
-async def create_session(request: CreateSessionRequest):
+async def create_session(request: CreateSessionRequest, auth: AuthResult = Depends(require_auth)):
     """
     Create new stream session
 
     Initializes a new WebRTC streaming session for an interview.
     Must be called before participants can join.
+    Requires JWT authentication.
     """
     logger.info(
         f"Creating stream session {request.session_id} "
-        f"(interviewer: {request.interviewer_id}, candidate: {request.candidate_id})"
+        f"(interviewer: {request.interviewer_id}, candidate: {request.candidate_id}, user: {auth.user_id})"
     )
 
     try:
@@ -97,13 +99,14 @@ async def create_session(request: CreateSessionRequest):
 
 
 @router.get("/sessions/{session_id}", response_model=SessionInfoResponse)
-async def get_session(session_id: str):
+async def get_session(session_id: str, auth: AuthResult = Depends(require_auth)):
     """
     Get stream session information
 
     Returns current state and participants for a session.
+    Requires JWT authentication.
     """
-    logger.info(f"Getting session info for {session_id}")
+    logger.info(f"Getting session info for {session_id} (user: {auth.user_id})")
 
     try:
         manager = get_stream_manager()
@@ -122,13 +125,14 @@ async def get_session(session_id: str):
 
 
 @router.post("/sessions/{session_id}/start")
-async def start_session(session_id: str):
+async def start_session(session_id: str, auth: AuthResult = Depends(require_auth)):
     """
     Start stream session
 
     Marks the session as active. Should be called when both participants are ready.
+    Requires JWT authentication.
     """
-    logger.info(f"Starting session {session_id}")
+    logger.info(f"Starting session {session_id} (user: {auth.user_id})")
 
     try:
         manager = get_stream_manager()
@@ -148,13 +152,14 @@ async def start_session(session_id: str):
 
 
 @router.post("/sessions/{session_id}/end")
-async def end_session(session_id: str):
+async def end_session(session_id: str, auth: AuthResult = Depends(require_auth)):
     """
     End stream session
 
     Marks the session as ended and cleans up resources.
+    Requires JWT authentication.
     """
-    logger.info(f"Ending session {session_id}")
+    logger.info(f"Ending session {session_id} (user: {auth.user_id})")
 
     try:
         manager = get_stream_manager()
@@ -171,13 +176,14 @@ async def end_session(session_id: str):
 
 
 @router.post("/sessions/{session_id}/participants/add")
-async def add_participant(session_id: str, request: ParticipantRequest):
+async def add_participant(session_id: str, request: ParticipantRequest, auth: AuthResult = Depends(require_auth)):
     """
     Add participant to session
 
     Registers a user as connected to the session.
+    Requires JWT authentication.
     """
-    logger.info(f"Adding participant {request.user_id} to session {session_id}")
+    logger.info(f"Adding participant {request.user_id} to session {session_id} (user: {auth.user_id})")
 
     try:
         manager = get_stream_manager()
@@ -197,13 +203,14 @@ async def add_participant(session_id: str, request: ParticipantRequest):
 
 
 @router.post("/sessions/{session_id}/participants/remove")
-async def remove_participant(session_id: str, request: ParticipantRequest):
+async def remove_participant(session_id: str, request: ParticipantRequest, auth: AuthResult = Depends(require_auth)):
     """
     Remove participant from session
 
     Unregisters a user from the session. If no participants remain, the session ends.
+    Requires JWT authentication.
     """
-    logger.info(f"Removing participant {request.user_id} from session {session_id}")
+    logger.info(f"Removing participant {request.user_id} from session {session_id} (user: {auth.user_id})")
 
     try:
         manager = get_stream_manager()
@@ -220,13 +227,14 @@ async def remove_participant(session_id: str, request: ParticipantRequest):
 
 
 @router.get("/sessions")
-async def list_sessions():
+async def list_sessions(auth: AuthResult = Depends(require_auth)):
     """
     List all active sessions
 
     Returns information about all currently active streaming sessions.
+    Requires JWT authentication.
     """
-    logger.info("Listing all active sessions")
+    logger.info(f"Listing all active sessions (user: {auth.user_id})")
 
     try:
         manager = get_stream_manager()
@@ -243,13 +251,14 @@ async def list_sessions():
 
 
 @router.get("/stats", response_model=SessionStatsResponse)
-async def get_stats():
+async def get_stats(auth: AuthResult = Depends(require_auth)):
     """
     Get streaming statistics
 
     Returns aggregate statistics about all active sessions.
+    Requires JWT authentication.
     """
-    logger.info("Getting stream stats")
+    logger.info(f"Getting stream stats (user: {auth.user_id})")
 
     try:
         manager = get_stream_manager()
@@ -263,13 +272,14 @@ async def get_stats():
 
 
 @router.delete("/sessions/{session_id}")
-async def delete_session(session_id: str):
+async def delete_session(session_id: str, auth: AuthResult = Depends(require_auth)):
     """
     Force delete session
 
     Immediately ends and removes a session, cleaning up all resources.
+    Requires JWT authentication.
     """
-    logger.info(f"Force deleting session {session_id}")
+    logger.info(f"Force deleting session {session_id} (user: {auth.user_id})")
 
     try:
         manager = get_stream_manager()

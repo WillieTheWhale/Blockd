@@ -1,5 +1,5 @@
 import { randomBytes, createHash } from 'crypto';
-import { redis } from '../src/redis';
+import redisClient from '../src/redis';
 
 // Constants
 const HEARTBEAT_INTERVAL_SECONDS = 30;
@@ -84,7 +84,7 @@ export class VerificationService {
     const isBlockdBrowser = this.isValidBlockdBrowser(dto.user_agent, dto.browser_fingerprint);
 
     // Get stored verification data
-    const storedData = await redis.get(verificationKey);
+    const storedData = await redisClient.get(verificationKey);
     const verification = storedData ? JSON.parse(storedData) : null;
 
     // Validate fingerprint matches if we have previous data
@@ -112,7 +112,7 @@ export class VerificationService {
       current_url: dto.current_url,
     };
 
-    await redis.setex(heartbeatKey, HEARTBEAT_INTERVAL_SECONDS * 2, JSON.stringify(heartbeatData));
+    await redisClient.setex(heartbeatKey, HEARTBEAT_INTERVAL_SECONDS * 2, JSON.stringify(heartbeatData));
 
     // Update verification status
     const updatedVerification = {
@@ -124,7 +124,7 @@ export class VerificationService {
       isOnMeetingPlatform: dto.is_on_meeting_platform,
     };
 
-    await redis.setex(verificationKey, 3600, JSON.stringify(updatedVerification));
+    await redisClient.setex(verificationKey, 3600, JSON.stringify(updatedVerification));
 
     // Track meeting platform usage
     if (dto.is_on_meeting_platform && dto.meeting_url) {
@@ -184,7 +184,7 @@ export class VerificationService {
       missedHeartbeats: 0,
     };
 
-    await redis.setex(verificationKey, BROWSER_TOKEN_EXPIRY_HOURS * 3600, JSON.stringify(verificationData));
+    await redisClient.setex(verificationKey, BROWSER_TOKEN_EXPIRY_HOURS * 3600, JSON.stringify(verificationData));
 
     return {
       verified: true,
@@ -283,7 +283,7 @@ export class VerificationService {
       isActive: true,
     };
 
-    await redis.setex(meetingKey, 7200, JSON.stringify(meetingData)); // 2 hour expiry
+    await redisClient.setex(meetingKey, 7200, JSON.stringify(meetingData)); // 2 hour expiry
 
     // Return streaming configuration
     return {
@@ -305,14 +305,14 @@ export class VerificationService {
   ): Promise<void> {
     const meetingKey = `${MEETING_KEY_PREFIX}${sessionId}`;
 
-    const existingData = await redis.get(meetingKey);
+    const existingData = await redisClient.get(meetingKey);
     if (existingData) {
       const meeting = JSON.parse(existingData);
       meeting.isActive = false;
       meeting.endedAt = info.endedAt;
       meeting.durationSeconds = info.durationSeconds;
 
-      await redis.setex(meetingKey, 3600, JSON.stringify(meeting)); // Keep for 1 hour after end
+      await redisClient.setex(meetingKey, 3600, JSON.stringify(meeting)); // Keep for 1 hour after end
     }
   }
 
@@ -360,11 +360,11 @@ export class VerificationService {
   private async trackMeetingPlatform(sessionId: string, meetingUrl: string): Promise<void> {
     const meetingKey = `${MEETING_KEY_PREFIX}${sessionId}`;
 
-    const existingData = await redis.get(meetingKey);
+    const existingData = await redisClient.get(meetingKey);
     if (existingData) {
       const meeting = JSON.parse(existingData);
       meeting.lastActivity = new Date().toISOString();
-      await redis.setex(meetingKey, 7200, JSON.stringify(meeting));
+      await redisClient.setex(meetingKey, 7200, JSON.stringify(meeting));
     }
   }
 
@@ -377,7 +377,7 @@ export class VerificationService {
     details: Record<string, unknown>
   ): Promise<void> {
     const warningKey = `blockd:warnings:${sessionId}`;
-    const warnings = await redis.lrange(warningKey, 0, -1);
+    const warnings = await redisClient.lrange(warningKey, 0, -1);
 
     const warning = {
       type: warningType,
@@ -385,8 +385,8 @@ export class VerificationService {
       details,
     };
 
-    await redis.rpush(warningKey, JSON.stringify(warning));
-    await redis.expire(warningKey, 86400); // 24 hour expiry
+    await redisClient.rpush(warningKey, JSON.stringify(warning));
+    await redisClient.expire(warningKey, 86400); // 24 hour expiry
 
     // Also emit as a security event (would be picked up by monitoring)
     console.warn(`[SECURITY WARNING] Session ${sessionId}: ${warningType}`, details);

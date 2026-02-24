@@ -95,6 +95,7 @@ def get_job_status(job_id: str) -> Optional[Dict]:
     autoretry_for=(requests.RequestException,),
     retry_backoff=True,
     retry_backoff_max=300,
+    retry_jitter=True,
     max_retries=3,
     soft_time_limit=420,  # 7 minutes soft limit (Whisper can take 5+ min)
     time_limit=480,       # 8 minutes hard limit

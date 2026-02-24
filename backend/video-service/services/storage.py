@@ -3,8 +3,11 @@ Storage Service - S3 Upload and Management
 Handles video upload to S3-compatible storage (AWS S3, MinIO, Cloudflare R2)
 """
 
+import asyncio
 import os
 import logging
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from typing import Optional, Dict, List
 from datetime import datetime, timedelta
 
@@ -28,6 +31,8 @@ class S3StorageService:
     def __init__(self):
         """Initialize S3 client"""
         self.bucket = settings.S3_BUCKET
+        # Thread pool for running blocking S3 operations
+        self._executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="s3_worker")
 
         # Configure S3 client with path-style addressing for MinIO compatibility
         config = Config(
@@ -53,8 +58,12 @@ class S3StorageService:
 
     async def ensure_bucket_exists(self):
         """Ensure S3 bucket exists, create if it doesn't"""
+        loop = asyncio.get_event_loop()
         try:
-            self.s3_client.head_bucket(Bucket=self.bucket)
+            await loop.run_in_executor(
+                self._executor,
+                partial(self.s3_client.head_bucket, Bucket=self.bucket)
+            )
             logger.info(f"Bucket '{self.bucket}' exists")
         except ClientError as e:
             error_code = str(e.response.get('Error', {}).get('Code', ''))
@@ -70,16 +79,26 @@ class S3StorageService:
                     # MinIO doesn't need LocationConstraint, only AWS S3 does
                     if settings.S3_ENDPOINT:
                         # MinIO or other S3-compatible service
-                        self.s3_client.create_bucket(Bucket=self.bucket)
+                        await loop.run_in_executor(
+                            self._executor,
+                            partial(self.s3_client.create_bucket, Bucket=self.bucket)
+                        )
                     elif settings.S3_REGION != 'us-east-1':
                         # AWS S3 with non-default region
-                        self.s3_client.create_bucket(
-                            Bucket=self.bucket,
-                            CreateBucketConfiguration={'LocationConstraint': settings.S3_REGION}
+                        await loop.run_in_executor(
+                            self._executor,
+                            partial(
+                                self.s3_client.create_bucket,
+                                Bucket=self.bucket,
+                                CreateBucketConfiguration={'LocationConstraint': settings.S3_REGION}
+                            )
                         )
                     else:
                         # AWS S3 us-east-1
-                        self.s3_client.create_bucket(Bucket=self.bucket)
+                        await loop.run_in_executor(
+                            self._executor,
+                            partial(self.s3_client.create_bucket, Bucket=self.bucket)
+                        )
                     logger.info(f"Created bucket '{self.bucket}'")
                 except ClientError as create_error:
                     # Bucket may already exist (race condition) - that's OK
@@ -94,8 +113,12 @@ class S3StorageService:
 
     async def check_connection(self):
         """Check S3 connection health"""
+        loop = asyncio.get_event_loop()
         try:
-            self.s3_client.head_bucket(Bucket=self.bucket)
+            await loop.run_in_executor(
+                self._executor,
+                partial(self.s3_client.head_bucket, Bucket=self.bucket)
+            )
             return True
         except Exception as e:
             logger.error(f"S3 connection check failed: {e}")
@@ -154,16 +177,24 @@ class S3StorageService:
                 'uploaded_at': datetime.utcnow().isoformat(),
             })
 
-            # Upload file
-            self.s3_client.upload_file(
-                file_path,
-                self.bucket,
-                object_key,
-                ExtraArgs=extra_args
+            # Upload file (run in executor to avoid blocking)
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                self._executor,
+                partial(
+                    self.s3_client.upload_file,
+                    file_path,
+                    self.bucket,
+                    object_key,
+                    ExtraArgs=extra_args
+                )
             )
 
             # Generate signed URL
-            url = self._generate_signed_url(object_key)
+            url = await loop.run_in_executor(
+                self._executor,
+                partial(self._generate_signed_url, object_key)
+            )
 
             file_size = os.path.getsize(file_path)
             logger.info(
@@ -207,58 +238,77 @@ class S3StorageService:
 
         logger.info(f"Starting multipart upload for {file_path}")
 
+        loop = asyncio.get_event_loop()
+
         try:
             # Initiate multipart upload
             content_type = self._get_content_type(file_path)
-            response = self.s3_client.create_multipart_upload(
-                Bucket=self.bucket,
-                Key=object_key,
-                ContentType=content_type,
-                Metadata={
-                    'session_id': session_id,
-                    'resolution': resolution,
-                    'uploaded_at': datetime.utcnow().isoformat(),
-                }
+            response = await loop.run_in_executor(
+                self._executor,
+                partial(
+                    self.s3_client.create_multipart_upload,
+                    Bucket=self.bucket,
+                    Key=object_key,
+                    ContentType=content_type,
+                    Metadata={
+                        'session_id': session_id,
+                        'resolution': resolution,
+                        'uploaded_at': datetime.utcnow().isoformat(),
+                    }
+                )
             )
 
             upload_id = response['UploadId']
             parts = []
             part_number = 1
 
-            # Upload parts
-            with open(file_path, 'rb') as f:
-                while True:
-                    data = f.read(chunk_size)
-                    if not data:
-                        break
+            # Upload parts (read file in executor to avoid blocking)
+            def read_and_upload_parts():
+                nonlocal part_number
+                local_parts = []
+                with open(file_path, 'rb') as f:
+                    while True:
+                        data = f.read(chunk_size)
+                        if not data:
+                            break
 
-                    logger.debug(f"Uploading part {part_number}")
+                        logger.debug(f"Uploading part {part_number}")
 
-                    part_response = self.s3_client.upload_part(
-                        Bucket=self.bucket,
-                        Key=object_key,
-                        PartNumber=part_number,
-                        UploadId=upload_id,
-                        Body=data
-                    )
+                        part_response = self.s3_client.upload_part(
+                            Bucket=self.bucket,
+                            Key=object_key,
+                            PartNumber=part_number,
+                            UploadId=upload_id,
+                            Body=data
+                        )
 
-                    parts.append({
-                        'PartNumber': part_number,
-                        'ETag': part_response['ETag']
-                    })
+                        local_parts.append({
+                            'PartNumber': part_number,
+                            'ETag': part_response['ETag']
+                        })
 
-                    part_number += 1
+                        part_number += 1
+                return local_parts
+
+            parts = await loop.run_in_executor(self._executor, read_and_upload_parts)
 
             # Complete multipart upload
-            self.s3_client.complete_multipart_upload(
-                Bucket=self.bucket,
-                Key=object_key,
-                UploadId=upload_id,
-                MultipartUpload={'Parts': parts}
+            await loop.run_in_executor(
+                self._executor,
+                partial(
+                    self.s3_client.complete_multipart_upload,
+                    Bucket=self.bucket,
+                    Key=object_key,
+                    UploadId=upload_id,
+                    MultipartUpload={'Parts': parts}
+                )
             )
 
             # Generate signed URL
-            url = self._generate_signed_url(object_key)
+            url = await loop.run_in_executor(
+                self._executor,
+                partial(self._generate_signed_url, object_key)
+            )
 
             logger.info(f"Multipart upload completed: {object_key}")
 
@@ -270,10 +320,14 @@ class S3StorageService:
             # Abort multipart upload on failure
             try:
                 if 'upload_id' in locals():
-                    self.s3_client.abort_multipart_upload(
-                        Bucket=self.bucket,
-                        Key=object_key,
-                        UploadId=upload_id
+                    await loop.run_in_executor(
+                        self._executor,
+                        partial(
+                            self.s3_client.abort_multipart_upload,
+                            Bucket=self.bucket,
+                            Key=object_key,
+                            UploadId=upload_id
+                        )
                     )
             except Exception as abort_error:
                 logger.error(f"Failed to abort multipart upload: {abort_error}")
@@ -288,8 +342,10 @@ class S3StorageService:
             session_id: Interview session UUID
         """
         logger.info(f"Deleting videos for session {session_id}")
+        loop = asyncio.get_event_loop()
 
-        try:
+        def _delete_videos_sync():
+            """Synchronous delete operation to run in executor"""
             # List all objects with session prefix
             prefix = f"recordings/"
             paginator = self.s3_client.get_paginator('list_objects_v2')
@@ -317,6 +373,10 @@ class S3StorageService:
 
                     delete_count += len(response.get('Deleted', []))
 
+            return delete_count
+
+        try:
+            delete_count = await loop.run_in_executor(self._executor, _delete_videos_sync)
             logger.info(f"Deleted {delete_count} objects for session {session_id}")
 
         except ClientError as e:
@@ -333,7 +393,10 @@ class S3StorageService:
         Returns:
             List of video metadata
         """
-        try:
+        loop = asyncio.get_event_loop()
+
+        def _list_videos_sync():
+            """Synchronous list operation to run in executor"""
             prefix = f"recordings/"
             paginator = self.s3_client.get_paginator('list_objects_v2')
             pages = paginator.paginate(Bucket=self.bucket, Prefix=prefix)
@@ -354,6 +417,9 @@ class S3StorageService:
                         })
 
             return videos
+
+        try:
+            return await loop.run_in_executor(self._executor, _list_videos_sync)
 
         except ClientError as e:
             logger.error(f"Failed to list videos for session {session_id}: {e}")
@@ -408,7 +474,10 @@ class S3StorageService:
 
     async def get_storage_stats(self) -> Dict:
         """Get storage statistics for the bucket"""
-        try:
+        loop = asyncio.get_event_loop()
+
+        def _get_stats_sync():
+            """Synchronous stats operation to run in executor"""
             total_size = 0
             total_objects = 0
 
@@ -427,6 +496,9 @@ class S3StorageService:
                 'total_size_mb': total_size / 1024 / 1024,
                 'total_size_gb': total_size / 1024 / 1024 / 1024,
             }
+
+        try:
+            return await loop.run_in_executor(self._executor, _get_stats_sync)
 
         except ClientError as e:
             logger.error(f"Failed to get storage stats: {e}")

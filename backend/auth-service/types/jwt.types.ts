@@ -12,6 +12,7 @@ export interface JWTPayload {
   exp: number;           // expiration
   iss: string;           // issuer
   aud: string;           // audience
+  mfa_verified?: boolean; // true if MFA was verified during login
 }
 
 export interface JWTOptions {

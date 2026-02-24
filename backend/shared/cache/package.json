@@ -2,7 +2,6 @@
   "name": "@blockd/cache",
   "version": "1.0.0",
   "description": "Redis cache utilities for Blockd platform",
-  "type": "module",
   "main": "redis-client.js",
   "types": "redis-client.d.ts",
   "scripts": {

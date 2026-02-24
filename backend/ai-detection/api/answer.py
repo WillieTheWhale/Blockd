@@ -2,8 +2,10 @@
 Answer analysis endpoint
 Detects AI-generated content in user answers
 """
+import asyncio
 import time
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, HTTPException
 from schemas.answer import AnswerAnalysisRequest, AnswerAnalysisResponse
 from services.detection_service import get_detection_service
@@ -13,6 +15,9 @@ from src.database import DatabaseManager
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# Thread pool for database operations
+_db_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="db_")
 
 
 @router.post("/answer", response_model=AnswerAnalysisResponse)
@@ -39,17 +44,22 @@ async def analyze_answer(request: AnswerAnalysisRequest):
     start_time = time.time()
 
     try:
-        # Get question to generate hash
-        with DatabaseManager() as db:
-            question = db.get_question(request.question_id)
+        # Get question to generate hash (run sync DB operation in executor)
+        loop = asyncio.get_event_loop()
 
-            if not question:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Question not found: {request.question_id}"
-                )
+        def _get_question_sync():
+            with DatabaseManager() as db:
+                return db.get_question(request.question_id)
 
-            question_hash = hash_question(question.question_text)
+        question = await loop.run_in_executor(_db_executor, _get_question_sync)
+
+        if not question:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Question not found: {request.question_id}"
+            )
+
+        question_hash = hash_question(question.question_text)
 
         # Get detection service
         detection_service = get_detection_service()
@@ -72,23 +82,26 @@ async def analyze_answer(request: AnswerAnalysisRequest):
         processing_time_ms = (time.time() - start_time) * 1000
         result.processing_time_ms = processing_time_ms
 
-        # Save to database
-        with DatabaseManager() as db:
-            db.save_answer_analysis(
-                question_id=request.question_id,
-                answer_text=request.answer_text,
-                risk_score=result.risk_score,
-                similarity_scores=result.similarity_scores.model_dump(),
-                perplexity_score=result.perplexity_score,
-                is_ai_generated=(result.risk_level in ["high", "critical"]),
-                confidence_score=result.confidence,
-                response_timing={"response_time_ms": request.response_time_ms} if request.response_time_ms else None,
-                metadata={
-                    "flags": result.flags,
-                    "risk_level": result.risk_level,
-                    "recommendation": result.recommendation
-                }
-            )
+        # Save to database (run sync DB operation in executor)
+        def _save_analysis_sync():
+            with DatabaseManager() as db:
+                db.save_answer_analysis(
+                    question_id=request.question_id,
+                    answer_text=request.answer_text,
+                    risk_score=result.risk_score,
+                    similarity_scores=result.similarity_scores.model_dump(),
+                    perplexity_score=result.perplexity_score,
+                    is_ai_generated=(result.risk_level in ["high", "critical"]),
+                    confidence_score=result.confidence,
+                    response_timing={"response_time_ms": request.response_time_ms} if request.response_time_ms else None,
+                    metadata={
+                        "flags": result.flags,
+                        "risk_level": result.risk_level,
+                        "recommendation": result.recommendation
+                    }
+                )
+
+        await loop.run_in_executor(_db_executor, _save_analysis_sync)
 
         return result
 

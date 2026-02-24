@@ -49,7 +49,9 @@ REDIS_DB = int(os.getenv('REDIS_DB', '0'))
 JOB_STATUS_PREFIX = 'timing_job:'
 
 # Internal service token for worker authentication
-INTERNAL_SERVICE_TOKEN = os.getenv('INTERNAL_SERVICE_TOKEN', 'blockd-internal-service-token')
+INTERNAL_SERVICE_TOKEN = os.getenv('INTERNAL_SERVICE_TOKEN')
+if not INTERNAL_SERVICE_TOKEN:
+    raise RuntimeError('INTERNAL_SERVICE_TOKEN environment variable must be set')
 
 
 async def verify_internal_token(

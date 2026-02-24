@@ -221,3 +221,57 @@ export interface SessionStatistics {
   avg_risk_score: number;
   high_risk_sessions: number;
 }
+
+// Prisma result types for formatSessionDetail
+export interface SessionWithIncludes {
+  id: string;
+  status: SessionStatus;
+  scheduledStart: Date | null;
+  actualStart: Date | null;
+  actualEnd: Date | null;
+  durationMinutes: number | null;
+  riskScore: unknown;
+  metadata: Record<string, unknown> | null;
+  createdAt: Date;
+  updatedAt: Date;
+  interviewer: UserData;
+  interviewee: UserData | null;
+  questions: QuestionData[];
+  securityEvents: SecurityEventData[];
+}
+
+export interface UserData {
+  id: string;
+  email: string;
+  firstName: string | null;
+  lastName: string | null;
+  role: string;
+}
+
+export interface QuestionData {
+  id: string;
+  questionText: string;
+  questionOrder: number | null;
+  expectedDuration: number | null;
+  difficulty: QuestionDifficulty | null;
+  askedAt: Date | null;
+  answerAnalysis: AnswerAnalysisData[];
+}
+
+export interface AnswerAnalysisData {
+  id: string;
+  answerText: string;
+  riskScore: unknown;
+  isAiGenerated: boolean | null;
+  confidenceScore: unknown;
+  analyzedAt: Date;
+}
+
+export interface SecurityEventData {
+  id: string;
+  eventType: SecurityEventType;
+  severity: SeverityLevel;
+  description: string | null;
+  metadata: Record<string, unknown> | null;
+  timestamp: Date;
+}

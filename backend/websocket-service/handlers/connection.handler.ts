@@ -6,6 +6,7 @@
 import { Server } from 'socket.io';
 import { AuthenticatedSocket } from '../types/socket.types';
 import { RoomManager, RoomType } from '../lib/room-manager';
+import { RoomStatistics } from '../types/room.types';
 import { MessageBuffer } from '../lib/message-buffer';
 import { logger } from '../lib/logger';
 import { logConnection } from '../middleware/logging.middleware';
@@ -190,7 +191,7 @@ function setupErrorHandler(socket: AuthenticatedSocket): void {
 export function getConnectionStats(io: Server, roomManager: RoomManager): {
   totalConnections: number;
   connectionsByRole: Record<string, number>;
-  roomStatistics: any;
+  roomStatistics: RoomStatistics;
 } {
   const sockets = io.sockets.sockets;
   const connectionsByRole: Record<string, number> = {

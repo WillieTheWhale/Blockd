@@ -266,6 +266,7 @@ CREATE INDEX idx_sessions_org_status ON interview_sessions(organization_id, stat
 CREATE INDEX idx_sessions_status ON interview_sessions(status);
 CREATE INDEX idx_sessions_scheduled_start ON interview_sessions(scheduled_start);
 CREATE INDEX idx_sessions_token ON interview_sessions(session_token);
+CREATE INDEX idx_sessions_created_at ON interview_sessions(created_at DESC);
 
 -- Security events indexes
 CREATE INDEX idx_security_events_session ON security_events(session_id);
@@ -285,6 +286,7 @@ CREATE INDEX idx_ai_answer_cache_model ON ai_answer_cache(model_name);
 CREATE INDEX idx_answer_analysis_question ON answer_analysis(question_id);
 CREATE INDEX idx_answer_analysis_risk_score ON answer_analysis(risk_score DESC);
 CREATE INDEX idx_answer_analysis_ai_generated ON answer_analysis(is_ai_generated);
+CREATE INDEX idx_answer_analysis_question_analyzed ON answer_analysis(question_id, analyzed_at DESC);
 
 -- Gaze events indexes
 CREATE INDEX idx_gaze_events_session_time ON gaze_events(session_id, timestamp DESC);
@@ -433,6 +435,55 @@ LEFT JOIN answer_analysis aa ON q.id = aa.question_id
 LEFT JOIN security_events se ON s.id = se.session_id
 LEFT JOIN gaze_events ge ON s.id = ge.session_id
 GROUP BY s.id;
+
+-- ============================================================================
+-- MATERIALIZED VIEW (Optional - for performance optimization)
+-- ============================================================================
+
+-- Materialized view for active_sessions (optional performance optimization)
+-- Uncomment if the regular active_sessions view causes performance issues
+-- Note: Requires periodic refresh via: REFRESH MATERIALIZED VIEW CONCURRENTLY active_sessions_mat;
+
+/*
+CREATE MATERIALIZED VIEW active_sessions_mat AS
+SELECT
+    s.id,
+    s.session_token,
+    s.scheduled_start,
+    s.actual_start,
+    i.email AS interviewer_email,
+    i.first_name AS interviewer_first_name,
+    i.last_name AS interviewer_last_name,
+    ie.email AS interviewee_email,
+    ie.first_name AS interviewee_first_name,
+    ie.last_name AS interviewee_last_name,
+    o.name AS organization_name,
+    s.risk_score,
+    COUNT(DISTINCT se.id) AS security_events_count
+FROM interview_sessions s
+INNER JOIN users i ON s.interviewer_id = i.id
+LEFT JOIN users ie ON s.interviewee_id = ie.id
+INNER JOIN organizations o ON s.organization_id = o.id
+LEFT JOIN security_events se ON s.id = se.session_id
+WHERE s.status = 'active'
+GROUP BY s.id, i.id, ie.id, o.id;
+
+-- Create unique index to support CONCURRENTLY refresh
+CREATE UNIQUE INDEX idx_active_sessions_mat_id ON active_sessions_mat(id);
+
+-- Additional indexes for common query patterns
+CREATE INDEX idx_active_sessions_mat_org ON active_sessions_mat(organization_name);
+CREATE INDEX idx_active_sessions_mat_interviewer ON active_sessions_mat(interviewer_email);
+CREATE INDEX idx_active_sessions_mat_risk ON active_sessions_mat(risk_score DESC);
+
+-- Function to refresh the materialized view
+CREATE OR REPLACE FUNCTION refresh_active_sessions_mat()
+RETURNS void AS $$
+BEGIN
+    REFRESH MATERIALIZED VIEW CONCURRENTLY active_sessions_mat;
+END;
+$$ LANGUAGE plpgsql;
+*/
 
 -- High risk sessions view
 CREATE VIEW high_risk_sessions AS

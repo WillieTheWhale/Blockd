@@ -67,17 +67,52 @@ class RedisClient {
   }
 
   /**
-   * Create Redis cluster client
+   * Parse cluster nodes from environment variable.
+   * Expected format: "host1:port1,host2:port2,host3:port3"
+   * Example: REDIS_CLUSTER_NODES="172.28.0.11:6379,172.28.0.12:6379,172.28.0.13:6379"
+   *
+   * Falls back to localhost:6379 if not configured.
+   */
+  private parseClusterNodes(): Array<{ host: string; port: number }> {
+    const nodesEnv = process.env.REDIS_CLUSTER_NODES;
+
+    if (!nodesEnv) {
+      console.warn('[Redis] REDIS_CLUSTER_NODES not configured, using localhost:6379');
+      return [{ host: 'localhost', port: 6379 }];
+    }
+
+    const nodes: Array<{ host: string; port: number }> = [];
+    const nodeStrings = nodesEnv.split(',').map(s => s.trim()).filter(Boolean);
+
+    for (const nodeStr of nodeStrings) {
+      const [host, portStr] = nodeStr.split(':');
+      if (!host) {
+        console.warn(`[Redis] Invalid cluster node format: ${nodeStr}, skipping`);
+        continue;
+      }
+      const port = parseInt(portStr || '6379', 10);
+      if (isNaN(port) || port < 1 || port > 65535) {
+        console.warn(`[Redis] Invalid port in cluster node: ${nodeStr}, using 6379`);
+        nodes.push({ host, port: 6379 });
+      } else {
+        nodes.push({ host, port });
+      }
+    }
+
+    if (nodes.length === 0) {
+      console.warn('[Redis] No valid cluster nodes parsed, using localhost:6379');
+      return [{ host: 'localhost', port: 6379 }];
+    }
+
+    return nodes;
+  }
+
+  /**
+   * Create Redis cluster client.
+   * Cluster nodes are configured via REDIS_CLUSTER_NODES environment variable.
    */
   private createClusterClient(): Cluster {
-    const nodes = [
-      { host: '172.28.0.11', port: 6379 },
-      { host: '172.28.0.12', port: 6379 },
-      { host: '172.28.0.13', port: 6379 },
-      { host: '172.28.0.14', port: 6379 },
-      { host: '172.28.0.15', port: 6379 },
-      { host: '172.28.0.16', port: 6379 },
-    ];
+    const nodes = this.parseClusterNodes();
 
     const options: ClusterOptions = {
       redisOptions: {
@@ -471,24 +506,26 @@ class RedisClient {
    */
   async disconnect(): Promise<void> {
     // Remove event listeners before disconnecting
+    // Cast to EventEmitter to access off() method which exists at runtime
+    const emitter = this.client as unknown as import('events').EventEmitter;
     if (this.connectHandler) {
-      this.client.removeListener('connect', this.connectHandler);
+      emitter.off('connect', this.connectHandler);
       this.connectHandler = undefined;
     }
     if (this.readyHandler) {
-      this.client.removeListener('ready', this.readyHandler);
+      emitter.off('ready', this.readyHandler);
       this.readyHandler = undefined;
     }
     if (this.errorHandler) {
-      this.client.removeListener('error', this.errorHandler);
+      emitter.off('error', this.errorHandler);
       this.errorHandler = undefined;
     }
     if (this.closeHandler) {
-      this.client.removeListener('close', this.closeHandler);
+      emitter.off('close', this.closeHandler);
       this.closeHandler = undefined;
     }
     if (this.reconnectingHandler) {
-      this.client.removeListener('reconnecting', this.reconnectingHandler);
+      emitter.off('reconnecting', this.reconnectingHandler);
       this.reconnectingHandler = undefined;
     }
     await this.client.quit();

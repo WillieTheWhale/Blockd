@@ -17,6 +17,69 @@ export interface RateLimitOptions {
 }
 
 /**
+ * In-memory rate limiter fallback for when Redis is unavailable
+ * Uses a simple sliding window algorithm with automatic cleanup
+ */
+class InMemoryRateLimiter {
+  private buckets: Map<string, { count: number; resetAt: number }> = new Map();
+  private cleanupInterval: NodeJS.Timeout | null = null;
+
+  constructor() {
+    // Cleanup expired entries every 60 seconds
+    this.cleanupInterval = setInterval(() => this.cleanup(), 60000);
+  }
+
+  check(key: string, max: number, windowSeconds: number): { allowed: boolean; remaining: number; resetAt: Date } {
+    const now = Date.now();
+    const bucket = this.buckets.get(key);
+
+    // If no bucket or bucket has expired, create a new one
+    if (!bucket || bucket.resetAt <= now) {
+      this.buckets.set(key, {
+        count: 1,
+        resetAt: now + windowSeconds * 1000,
+      });
+      return {
+        allowed: true,
+        remaining: max - 1,
+        resetAt: new Date(now + windowSeconds * 1000),
+      };
+    }
+
+    // Increment the counter
+    bucket.count++;
+    const allowed = bucket.count <= max;
+    const remaining = Math.max(0, max - bucket.count);
+
+    return {
+      allowed,
+      remaining,
+      resetAt: new Date(bucket.resetAt),
+    };
+  }
+
+  private cleanup(): void {
+    const now = Date.now();
+    for (const [key, bucket] of this.buckets.entries()) {
+      if (bucket.resetAt <= now) {
+        this.buckets.delete(key);
+      }
+    }
+  }
+
+  destroy(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+    }
+    this.buckets.clear();
+  }
+}
+
+// Singleton instance for in-memory rate limiting fallback
+const inMemoryRateLimiter = new InMemoryRateLimiter();
+
+/**
  * Create rate limit middleware
  */
 export function createRateLimiter(options: RateLimitOptions) {
@@ -60,12 +123,32 @@ export function createRateLimiter(options: RateLimitOptions) {
         throw error;
       }
 
-      // Log error but don't block request if Redis is down
-      request.log.error({ err: error }, 'Rate limiting error');
+      // Log error but use in-memory fallback if Redis is down
+      request.log.error({ err: error }, 'Rate limiting error - using in-memory fallback');
 
-      // Fail open - allow request if Redis is unavailable
+      // In-memory fallback rate limiter
+      const fallbackResult = inMemoryRateLimiter.check(key, options.max, options.timeWindow);
+
       reply.header('X-RateLimit-Limit', options.max.toString());
-      reply.header('X-RateLimit-Remaining', options.max.toString());
+      reply.header('X-RateLimit-Remaining', fallbackResult.remaining.toString());
+      reply.header('X-RateLimit-Reset', fallbackResult.resetAt.toISOString());
+
+      if (!fallbackResult.allowed) {
+        const retryAfter = Math.ceil(
+          (fallbackResult.resetAt.getTime() - Date.now()) / 1000
+        );
+        reply.header('Retry-After', retryAfter.toString());
+
+        throw new TooManyRequestsError(
+          `Rate limit exceeded. Try again in ${retryAfter} seconds`,
+          {
+            limit: options.max,
+            remaining: 0,
+            resetAt: fallbackResult.resetAt.toISOString(),
+            retryAfter,
+          }
+        );
+      }
     }
   };
 }

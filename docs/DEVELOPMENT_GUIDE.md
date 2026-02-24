@@ -17,6 +17,7 @@ A comprehensive guide for developing, testing, and deploying the Blockd intervie
 9. [Connecting Everything Together](#9-connecting-everything-together)
 10. [Troubleshooting Common Issues](#10-troubleshooting-common-issues)
 11. [Glossary of Terms](#11-glossary-of-terms)
+12. [TypeScript Configuration](#12-typescript-configuration)
 
 ---
 
@@ -247,10 +248,35 @@ docker compose ps
 # blockd-redis          running (healthy)
 # blockd-rabbitmq       running (healthy)
 # blockd-minio          running (healthy)
-# blockd-api-gateway    running
-# blockd-auth-service   running
-# blockd-ai-detection   running
+# blockd-api-gateway    running (healthy)
+# blockd-auth-service   running (healthy)
+# blockd-ai-detection   running (healthy)
 # ... etc
+```
+
+### Understanding Health Checks
+
+All services have Docker health checks configured. A service shows `(healthy)` when:
+
+| Service | Health Check | Interval |
+|---------|--------------|----------|
+| postgres | `pg_isready` command | 10s |
+| redis | `redis-cli ping` | 10s |
+| rabbitmq | `rabbitmq-diagnostics ping` | 30s |
+| minio | `mc ready local` | 30s |
+| api-gateway | HTTP GET `/health` | 30s |
+| auth-service | HTTP GET `/health` | 30s |
+| session-service | HTTP GET `/health` | 30s |
+| ai-detection | `curl /health` | 30s |
+| eye-tracking | `curl /health` | 30s |
+| response-timing | `curl /health` | 30s |
+| video-service | `curl /health` | 30s |
+| celery-worker | `celery inspect ping` | 60s |
+| frontend | HTTP GET `/` | 30s |
+
+If a service shows `(unhealthy)`, check its logs:
+```bash
+docker compose logs SERVICE_NAME
 ```
 
 ### Viewing Logs
@@ -1003,12 +1029,83 @@ npm install --registry https://registry.npmmirror.com
 
 ---
 
+---
+
+## 12. TypeScript Configuration
+
+### Strict Mode
+
+All Node.js backend services use TypeScript with strict mode enabled. This provides better type safety and catches errors at compile time.
+
+**Key strict mode settings (in `tsconfig.json`):**
+```json
+{
+  "compilerOptions": {
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true
+  }
+}
+```
+
+### Type Checking Before Commit
+
+Always run type checking before committing changes:
+
+```bash
+# Check for type errors without compiling
+cd backend/api-gateway
+npx tsc --noEmit
+
+# Build to verify compilation
+npm run build
+```
+
+### Common Type Errors and Fixes
+
+**1. Implicit any type:**
+```typescript
+// Bad - implicit any
+function process(data) { ... }
+
+// Good - explicit type
+function process(data: UserData) { ... }
+```
+
+**2. Possibly undefined:**
+```typescript
+// Bad - user.name might be undefined
+const name = user.name.toUpperCase();
+
+// Good - handle undefined case
+const name = user.name?.toUpperCase() ?? 'Unknown';
+```
+
+**3. Type assertion when needed:**
+```typescript
+// When you know more than TypeScript
+const element = document.getElementById('app') as HTMLDivElement;
+```
+
+### Frontend TypeScript
+
+The frontend (`frontend/interviewer-app`) also uses strict TypeScript with additional settings:
+
+- `noUncheckedIndexedAccess: true` - Array/object indexing returns `T | undefined`
+- Full React type support via `@types/react`
+
+---
+
 ## Next Steps
 
 1. **Start small** - Run Docker Compose and explore the frontend
 2. **Make a change** - Edit a React component and see it update
 3. **Test an API** - Use cURL or Postman to call endpoints
 4. **Read the code** - Explore the service you're most interested in
-5. **Ask questions** - Open an issue on GitHub if stuck
+5. **Check types** - Run `npx tsc --noEmit` before committing
+6. **Ask questions** - Open an issue on GitHub if stuck
 
 Happy developing!

@@ -4,6 +4,7 @@ import logging
 import os
 import tempfile
 from typing import Optional, Tuple
+import numpy as np
 from pydub import AudioSegment
 import librosa
 import soundfile as sf
@@ -141,7 +142,7 @@ class AudioProcessingService:
         self,
         audio_path: str,
         sample_rate: Optional[int] = None
-    ) -> Tuple[any, int]:
+    ) -> Tuple[np.ndarray, int]:
         """
         Load audio file for analysis using librosa
 

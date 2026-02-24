@@ -6,6 +6,7 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { getUserById } from '../services/user.service';
 import { MFARequiredError } from '../lib/errors';
+import { JWTPayload } from '../types/jwt.types';
 
 /**
  * Middleware to check if MFA is required and verified
@@ -36,11 +37,13 @@ export async function checkMFA(
       return;
     }
 
-    // If MFA is enabled for user, check if it's been verified
+    // If MFA is enabled for user, check if it's been verified via JWT claim
     if (user.mfa_enabled) {
-      // Check if request has MFA verification marker
-      // This would be set by the login endpoint after MFA verification
-      const mfaVerified = request.headers['x-mfa-verified'] === 'true';
+      // Check the mfa_verified claim in the JWT token (set during MFA login flow)
+      // This is secure because JWT claims are cryptographically signed and cannot be spoofed
+      // Note: request.user is populated from the verified JWT by the auth middleware
+      const jwtPayload = request.user as JWTPayload;
+      const mfaVerified = jwtPayload.mfa_verified === true;
 
       if (!mfaVerified) {
         throw new MFARequiredError();

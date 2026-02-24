@@ -5,7 +5,7 @@ Uses SQLAlchemy with PostgreSQL and pgvector
 import uuid
 from datetime import datetime
 from typing import Optional, Dict, Any, List
-from sqlalchemy import create_engine, Column, String, Text, Integer, DECIMAL, TIMESTAMP, JSON, Index
+from sqlalchemy import create_engine, Column, String, Text, Integer, Boolean, DECIMAL, TIMESTAMP, JSON, Index
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.dialects.postgresql import UUID, insert
@@ -64,7 +64,7 @@ class AnswerAnalysis(Base):
     similarity_scores = Column(JSON, default={})
     response_timing = Column(JSON, default={})
     perplexity_score = Column(DECIMAL(10, 6))
-    is_ai_generated = Column(String(10))  # Using String instead of Boolean for compatibility
+    is_ai_generated = Column(Boolean)  # Boolean type for AI generated flag
     confidence_score = Column(DECIMAL(5, 4))
     metadata = Column(JSON, default={})
     analyzed_at = Column(TIMESTAMP(timezone=True), nullable=False, default=datetime.utcnow)
@@ -293,7 +293,7 @@ class DatabaseManager:
                 risk_score=risk_score,
                 similarity_scores=similarity_scores,
                 perplexity_score=perplexity_score,
-                is_ai_generated="true" if is_ai_generated else "false",
+                is_ai_generated=is_ai_generated,
                 confidence_score=confidence_score,
                 response_timing=response_timing or {},
                 metadata=metadata or {}

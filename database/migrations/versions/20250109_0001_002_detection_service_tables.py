@@ -235,6 +235,8 @@ def upgrade() -> None:
             ON word_timestamps(transcription_id);
         CREATE INDEX IF NOT EXISTS idx_word_timestamps_timing
             ON word_timestamps(start_time, end_time);
+        CREATE INDEX IF NOT EXISTS idx_word_timestamps_transcription_index
+            ON word_timestamps(transcription_id, word_index);
     """))
 
     # Pause events table
@@ -656,6 +658,36 @@ def downgrade() -> None:
     """Drop all detection service tables"""
     conn = op.get_bind()
 
+    # Allowlist of valid table names to prevent SQL injection
+    ALLOWED_TABLES = frozenset([
+        # Response timing tables
+        'filler_word_reference',
+        'timing_anomalies',
+        'filler_word_events',
+        'pause_events',
+        'word_timestamps',
+        'transcriptions',
+        'timing_sessions',
+        'response_timing_analysis',
+        # Eye tracking tables
+        'gaze_anomalies',
+        'gaze_summaries',
+        'gaze_events',
+        'gaze_sessions',
+        # AI detection tables
+        'answer_analysis',
+        'ai_answer_cache',
+    ])
+
+    # Allowlist of valid enum names to prevent SQL injection
+    ALLOWED_ENUMS = frozenset([
+        'analysis_status',
+        'difficulty_level',
+        'anomaly_type',
+        'risk_level',
+        'gaze_anomaly_type',
+    ])
+
     # Drop tables in reverse order of dependencies
     tables = [
         # Response timing tables
@@ -678,6 +710,8 @@ def downgrade() -> None:
     ]
 
     for table in tables:
+        if table not in ALLOWED_TABLES:
+            raise ValueError(f"Invalid table name: {table}")
         conn.execute(sa.text(f"DROP TABLE IF EXISTS {table} CASCADE"))
 
     # Drop triggers
@@ -696,6 +730,8 @@ def downgrade() -> None:
     ]
 
     for enum in enums:
+        if enum not in ALLOWED_ENUMS:
+            raise ValueError(f"Invalid enum name: {enum}")
         conn.execute(sa.text(f"DROP TYPE IF EXISTS {enum} CASCADE"))
 
     print("Detection service tables dropped successfully")

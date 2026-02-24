@@ -1,6 +1,7 @@
 import { ReactNode } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { isApiError } from '@/lib/api-client'
 import { Toaster } from '@/components/ui/toast'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { ErrorBoundary, ErrorFallback } from '@/components/ErrorBoundary'
@@ -43,9 +44,8 @@ const queryClient = new QueryClient({
       // Retry failed requests with exponential backoff
       retry: (failureCount, error) => {
         // Don't retry on 4xx errors (client errors)
-        if (error && typeof error === 'object' && 'status' in error) {
-          const status = (error as { status: number }).status
-          if (status >= 400 && status < 500) {
+        if (isApiError(error)) {
+          if (error.status >= 400 && error.status < 500) {
             return false
           }
         }

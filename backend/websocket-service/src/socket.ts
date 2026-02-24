@@ -22,6 +22,93 @@ import {
   HealthCheckContext,
 } from '../lib/health-check';
 
+// Connection limits configuration
+const CONNECTION_LIMITS = {
+  maxConnectionsPerIp: 10,
+  maxGlobalConnections: 10000,
+  cleanupIntervalMs: 60000, // Clean up stale IP entries every minute
+};
+
+// Track connections per IP address
+const connectionsByIp: Map<string, Set<string>> = new Map();
+let totalConnections = 0;
+
+// Track interval IDs for graceful cleanup
+const intervalIds: Set<NodeJS.Timeout> = new Set();
+
+/**
+ * Get client IP from socket handshake
+ */
+function getClientIp(socket: { handshake: { address: string; headers: Record<string, string | string[] | undefined> } }): string {
+  // Check for forwarded IP (behind proxy/load balancer)
+  const forwardedFor = socket.handshake.headers['x-forwarded-for'];
+  if (forwardedFor) {
+    const ip = Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor.split(',')[0].trim();
+    return ip;
+  }
+  return socket.handshake.address;
+}
+
+/**
+ * Check if connection should be allowed based on limits
+ */
+function checkConnectionLimits(ip: string): { allowed: boolean; reason?: string } {
+  // Check global connection limit
+  if (totalConnections >= CONNECTION_LIMITS.maxGlobalConnections) {
+    return { allowed: false, reason: 'Server at maximum capacity' };
+  }
+
+  // Check per-IP connection limit
+  const ipConnections = connectionsByIp.get(ip);
+  if (ipConnections && ipConnections.size >= CONNECTION_LIMITS.maxConnectionsPerIp) {
+    return { allowed: false, reason: 'Too many connections from this IP' };
+  }
+
+  return { allowed: true };
+}
+
+/**
+ * Track new connection
+ */
+function trackConnection(ip: string, socketId: string): void {
+  if (!connectionsByIp.has(ip)) {
+    connectionsByIp.set(ip, new Set());
+  }
+  connectionsByIp.get(ip)!.add(socketId);
+  totalConnections++;
+}
+
+/**
+ * Remove connection tracking
+ */
+function untrackConnection(ip: string, socketId: string): void {
+  const ipConnections = connectionsByIp.get(ip);
+  if (ipConnections) {
+    ipConnections.delete(socketId);
+    if (ipConnections.size === 0) {
+      connectionsByIp.delete(ip);
+    }
+  }
+  totalConnections = Math.max(0, totalConnections - 1);
+}
+
+/**
+ * Get connection statistics
+ */
+export function getConnectionStats(): {
+  totalConnections: number;
+  uniqueIps: number;
+  maxConnectionsPerIp: number;
+  maxGlobalConnections: number;
+} {
+  return {
+    totalConnections,
+    uniqueIps: connectionsByIp.size,
+    maxConnectionsPerIp: CONNECTION_LIMITS.maxConnectionsPerIp,
+    maxGlobalConnections: CONNECTION_LIMITS.maxGlobalConnections,
+  };
+}
+
 // Global health check context (set after server initialization)
 let healthCheckContext: HealthCheckContext | null = null;
 
@@ -199,6 +286,31 @@ export function createSocketServer(
     allowEIO3: false, // Disable Engine.IO v3 compatibility
     serveClient: false, // Don't serve client files
     connectTimeout: 45000,
+    // Connection state recovery allows clients to reconnect and receive missed events
+    connectionStateRecovery: {
+      maxDisconnectionDuration: 2 * 60 * 1000, // 2 minutes
+    },
+    // Connection limit validation happens in allowRequest
+    allowRequest: (req, callback) => {
+      const ip = req.headers['x-forwarded-for']
+        ? (Array.isArray(req.headers['x-forwarded-for'])
+            ? req.headers['x-forwarded-for'][0]
+            : req.headers['x-forwarded-for'].split(',')[0].trim())
+        : req.socket?.remoteAddress || 'unknown';
+
+      const limitCheck = checkConnectionLimits(ip);
+      if (!limitCheck.allowed) {
+        logger.warn('Connection rejected due to limits', {
+          ip,
+          reason: limitCheck.reason,
+          totalConnections,
+          connectionsFromIp: connectionsByIp.get(ip)?.size || 0,
+        });
+        callback(limitCheck.reason || 'Connection limit exceeded', false);
+        return;
+      }
+      callback(null, true);
+    },
   };
 
   const io = new Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>(
@@ -206,11 +318,35 @@ export function createSocketServer(
     socketOptions
   );
 
+  // Track connections and disconnections
+  io.on('connection', (socket) => {
+    const ip = getClientIp(socket);
+    trackConnection(ip, socket.id);
+
+    logger.debug('Connection tracked', {
+      socketId: socket.id,
+      ip,
+      totalConnections,
+      connectionsFromIp: connectionsByIp.get(ip)?.size || 0,
+    });
+
+    socket.on('disconnect', () => {
+      untrackConnection(ip, socket.id);
+      logger.debug('Connection untracked', {
+        socketId: socket.id,
+        ip,
+        totalConnections,
+      });
+    });
+  });
+
   logger.info('Socket.io server created', {
     cors: config.allowedOrigins,
     transports: config.transports,
     pingInterval: config.pingInterval,
     pingTimeout: config.pingTimeout,
+    maxConnectionsPerIp: CONNECTION_LIMITS.maxConnectionsPerIp,
+    maxGlobalConnections: CONNECTION_LIMITS.maxGlobalConnections,
   });
 
   return io;
@@ -259,7 +395,7 @@ export function setupEventMonitoring(
   });
 
   // Log server-level metrics periodically
-  setInterval(() => {
+  const metricsInterval = setInterval(() => {
     const sockets = io.sockets.sockets;
     const socketCount = sockets.size;
 
@@ -270,6 +406,20 @@ export function setupEventMonitoring(
       });
     }
   }, 60000); // Every minute
+
+  // Store interval ID for cleanup
+  intervalIds.add(metricsInterval);
+}
+
+/**
+ * Clear all tracked intervals
+ */
+export function clearAllIntervals(): void {
+  for (const intervalId of intervalIds) {
+    clearInterval(intervalId);
+  }
+  intervalIds.clear();
+  logger.info('Cleared all tracked intervals');
 }
 
 /**
@@ -281,6 +431,9 @@ export async function gracefulShutdown(
   redisAdapter?: RedisAdapterManager
 ): Promise<void> {
   logger.info('Starting graceful shutdown...');
+
+  // Clear all tracked intervals first
+  clearAllIntervals();
 
   // Stop accepting new connections
   httpServer.close(() => {

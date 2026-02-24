@@ -340,8 +340,8 @@ def run_tests():
     try:
         redis = get_redis_client()
         redis.close()
-    except:
-        pass
+    except Exception:
+        pass  # Ignore cleanup errors
 
     exit(0 if passed == total else 1)
 
