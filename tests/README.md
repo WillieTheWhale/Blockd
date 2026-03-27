@@ -308,7 +308,7 @@ npm run reports:coverage
 
 ### GitHub Actions Integration
 
-The tests are designed to run in CI/CD pipelines. See Agent 20's CI/CD configuration for details.
+The tests are designed to run in CI/CD pipelines.
 
 **Key Integration Points:**
 
@@ -538,10 +538,8 @@ When adding new tests:
 For issues or questions about the testing infrastructure:
 - Check this README
 - Review existing tests for examples
-- Check Agent 19 specification: `/home/user/Blockd/docs/agents19-20-testing-cicd.json`
 - Contact the testing team
 
 ---
 
 **Last Updated**: 2025-11-24
-**Agent**: Agent 19 - Integration & E2E Testing Developer

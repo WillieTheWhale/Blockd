@@ -137,7 +137,6 @@ Blockd/
 | Document | Description |
 |----------|-------------|
 | [Changelog](./CHANGELOG.md) | Version history and release notes |
-| [CLAUDE.md](./CLAUDE.md) | AI assistant guidance and development reference |
 | [Architecture](./docs/ARCHITECTURE.md) | System architecture overview |
 | [API Reference](./docs/API_REFERENCE.md) | REST API documentation |
 | [Database](./docs/DATABASE.md) | Database schema and setup |

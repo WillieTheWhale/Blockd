@@ -203,8 +203,7 @@ Blockd/
 │
 ├── database/                   # Database schema and migrations
 ├── docs/                       # Documentation (you're reading this!)
-├── docker-compose.yml         # Defines how to run all services
-└── CLAUDE.md                  # AI assistant instructions
+└── docker-compose.yml         # Defines how to run all services
 ```
 
 ---

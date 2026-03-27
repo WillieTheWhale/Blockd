@@ -1,6 +1,5 @@
 # Blockd Database Infrastructure
 
-**Agent 1: Database Architect**
 **PostgreSQL 18.1 + TimescaleDB 2.x + pgvector 0.7.x**
 **Created: 2025-11-24**
 
@@ -451,40 +450,40 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO blockd_ap
 
 ## Documentation
 
-- **Schema Documentation**: `/docs/agent1-database-schema.json`
+- **Schema Documentation**: `/docs/DATABASE.md`
 - **Migration Guide**: `/database/migrations/README.md`
 - **Seed Data Guide**: `/database/seeds/README.md`
 
-## Next Steps for Other Agents
+## Integration Notes
 
-### Agent 2 (Redis & Cache Infrastructure)
+### Redis & Cache Infrastructure
 - Cache session data from `interview_sessions` table
 - Cache AI answer results from `ai_answer_cache` table
 - Implement rate limiting with Redis
 
-### Agent 5 (API Gateway)
+### API Gateway
 - Connect to database using `DATABASE_URL`
 - Implement connection pooling
 - Create endpoints for CRUD operations
 
-### Agent 6 (Authentication Service)
+### Authentication Service
 - Query `users` table for authentication
 - Validate bcrypt password hashes
 - Implement MFA with `mfa_secret` field
 
-### Agent 9 (AI Detection Service)
+### AI Detection Service
 - Query `ai_answer_cache` for similarity detection
 - Use `find_similar_ai_answers()` function
 - Store results in `answer_analysis` table
 
-### Agent 10 (Eye Tracking Service)
+### Eye Tracking Service
 - Insert gaze data into `gaze_events` hypertable
 - Use batch inserts for performance
 - Query with TimescaleDB time-based functions
 
 ## Support
 
-For database-related questions, contact **Agent 1: Database Architect** or refer to the comprehensive documentation in `/docs/agent1-database-schema.json`.
+For database-related questions, refer to the comprehensive documentation in `/docs/DATABASE.md`.
 
 ---
 

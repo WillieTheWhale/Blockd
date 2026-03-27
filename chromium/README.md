@@ -654,7 +654,7 @@ Blockd Browser is based on Chromium and inherits its open-source license (BSD-st
 
 For build issues or questions:
 - **GitHub Issues:** https://github.com/WillieTheWhale/Blockd/issues
-- **Documentation:** `/home/user/Blockd/docs/agents16-18-chromium-architecture.json`
+- **Documentation:** `/docs/CHROMIUM_BROWSER.md`
 
 ---
 

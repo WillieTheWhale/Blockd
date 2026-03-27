@@ -1886,8 +1886,6 @@ curl -X GET https://api.blockd.site/api/v1/reports/123e4567-e89b-12d3-a456-42661
 
 ## Additional Resources
 
-- **OpenAPI Specification**: See `agent5-api-specification.json` for complete schema definitions
-- **Authentication Flows**: See `agent6-auth-flows.json` for detailed authentication flow documentation
 - **WebSocket Protocol**: See `WEBSOCKET_PROTOCOL.md` for real-time data streaming
 - **Swagger UI**: Available at `https://api.blockd.site/docs` (development)
 

@@ -341,4 +341,4 @@ For issues and questions:
 
 ---
 
-Built with by the Blockd Team | Agent 9: AI Detection Service Developer
+Built by the Blockd Team

@@ -2097,7 +2097,6 @@ LOG_FORMAT=json                        # json | pretty
 
 For detailed implementation examples and source code, refer to:
 - `/backend/websocket-service/README.md`
-- `/docs/agent8-websocket-protocol.json`
 
 For issues or questions regarding the WebSocket protocol, contact the Blockd development team.
 

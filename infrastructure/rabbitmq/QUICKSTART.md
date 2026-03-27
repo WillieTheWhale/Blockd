@@ -215,7 +215,7 @@ docker-compose up -d
 
 - Full documentation: `README.md`
 - Architecture diagrams: `ARCHITECTURE.md`
-- JSON topology: `/home/user/Blockd/docs/agent3-message-queue-topology.json`
+- Architecture documentation: See `ARCHITECTURE.md`
 
 ## Support
 

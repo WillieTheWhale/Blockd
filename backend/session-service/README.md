@@ -451,10 +451,10 @@ See `.env.example` for all configuration options.
 
 ## Integration Points
 
-- **Database**: PostgreSQL (from Agent 1)
-- **Cache**: Redis (from Agent 2)
-- **Auth**: JWT validation (from Agent 6)
-- **Message Queue**: RabbitMQ (from Agent 3)
+- **Database**: PostgreSQL
+- **Cache**: Redis
+- **Auth**: JWT validation
+- **Message Queue**: RabbitMQ
 - **Video Service**: Recording start/stop
 - **AI Detection Service**: Answer analysis
 - **Gaze Tracking Service**: Eye tracking data
@@ -465,4 +465,4 @@ MIT
 
 ## Author
 
-Blockd Team - Agent 7: Session Management Developer
+Blockd Team

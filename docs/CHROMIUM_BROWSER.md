@@ -1388,13 +1388,12 @@ Add new security detections as cheating methods evolve:
 
 ### Blockd Documentation
 - **System Architecture:** `docs/SYSTEM_DESIGN.md`
-- **API Specification:** `docs/agent5-api-specification.json`
-- **Chromium Architecture:** `docs/agents16-18-chromium-architecture.json`
+- **API Reference:** `docs/API_REFERENCE.md`
+- **Chromium Browser Guide:** `docs/CHROMIUM_BROWSER.md`
 - **Backend:** `backend/` directory
 - **Frontend:** `frontend/interviewer-app/`
 
 ### Related Files
-- **Architecture JSON:** `docs/agents16-18-chromium-architecture.json`
 - **Build Scripts:** `chromium/build.sh`, `chromium/setup.sh`
 - **Installer Scripts:** `chromium/build_installers.sh`
 - **Patches:** `chromium/patches/`
@@ -1448,7 +1447,7 @@ ls -lh out/Blockd/chrome                                 # Check size
 2. Review build log: `out/Blockd/build.log`
 3. Enable verbose logging: `--enable-logging --v=2`
 4. Check GitHub issues: https://github.com/WillieTheWhale/Blockd/issues
-5. Review architecture specification: `docs/agents16-18-chromium-architecture.json`
+5. Review architecture specification: `docs/CHROMIUM_BROWSER.md`
 
 ### Reporting Build Issues
 Include:

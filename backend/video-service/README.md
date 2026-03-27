@@ -498,4 +498,4 @@ For issues and questions:
 
 ## Contributors
 
-- Agent 12: Video Processing Service Developer
+- Blockd Team

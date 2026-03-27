@@ -436,7 +436,7 @@ Monitor these Redis metrics:
 - [Redis Documentation](https://redis.io/documentation)
 - [ioredis Documentation](https://github.com/redis/ioredis)
 - [redis-py Documentation](https://redis-py.readthedocs.io/)
-- [Blockd Documentation](/docs/agent2-caching-strategy.json)
+- [Blockd Documentation](/docs/)
 
 ## License
 

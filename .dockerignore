@@ -6,10 +6,7 @@
 # Documentation
 *.md
 docs/
-CLAUDE.md
-DEVELOPMENT_PLAN.json
 TECHNOLOGY_VERSIONS.json
-blockd_plan.xml
 
 # IDE
 .vscode/

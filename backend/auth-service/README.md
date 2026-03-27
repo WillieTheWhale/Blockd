@@ -455,10 +455,10 @@ The auth service is designed to work behind an API gateway. The gateway should:
 - Forward user info from JWT to downstream services
 
 ### Database Schema
-The service uses the shared PostgreSQL database with the `users` and `organizations` tables. Schema is managed by Agent 1.
+The service uses the shared PostgreSQL database with the `users` and `organizations` tables.
 
 ### Cache/Redis
-Session tokens and rate limiting data are stored in Redis (managed by Agent 2).
+Session tokens and rate limiting data are stored in Redis.
 
 ## Troubleshooting
 
