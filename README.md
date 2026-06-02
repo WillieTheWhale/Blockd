@@ -228,7 +228,7 @@ Follow [Conventional Commits](https://conventionalcommits.org/):
 
 ## License
 
-Proprietary - All rights reserved.
+MIT License
 
 ## Support
 
